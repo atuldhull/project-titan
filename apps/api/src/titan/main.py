@@ -12,15 +12,19 @@ from fastapi import FastAPI
 
 from titan import clients
 from titan.gateway.middleware import RequestContextMiddleware
+from titan.observability import otel
 from titan.observability.health import router as health_router
 from titan.observability.logging import configure_logging
+from titan.observability.metrics import REDMetricsMiddleware
+from titan.observability.metrics import router as metrics_router
 from titan.settings import Settings, get_settings
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the titan-core FastAPI application."""
     active_settings = settings if settings is not None else get_settings()
-    configure_logging(active_settings.log_level)
+    configure_logging(active_settings.log_level, service="titan-api")
+    otel.setup_tracing(active_settings, service_name="titan-api")
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -28,6 +32,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.state.redis = clients.create_redis(active_settings)
         application.state.http = clients.create_http_client(active_settings)
         application.state.readyz_budget_seconds = active_settings.readyz_budget_seconds
+        otel.instrument_engine(active_settings, application.state.engine)
         try:
             yield
         finally:
@@ -43,8 +48,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         debug=active_settings.debug,
         lifespan=lifespan,
     )
+    # Starlette: last-added runs OUTERMOST. RED is outermost so the histogram
+    # observes every request even if inner middleware raises.
     app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(REDMetricsMiddleware)
     app.include_router(health_router)
+    app.include_router(metrics_router)
+    otel.instrument_app(active_settings, app)
     return app
 
 

@@ -1,0 +1,33 @@
+# Promtail: ship titan container JSON logs to Loki with labels
+# {namespace, service, level} ONLY — low cardinality per Vol 9 §6.3;
+# everything else stays queryable from the JSON body.
+
+server:
+  http_listen_port: 9080
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: titan-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        filters:
+          - name: label
+            values: ["com.docker.compose.project=titan"]
+    relabel_configs:
+      - target_label: namespace
+        replacement: titan
+      - source_labels: ["__meta_docker_container_label_com_docker_compose_service"]
+        target_label: service
+    pipeline_stages:
+      - docker: {}
+      - json:
+          expressions:
+            level: level
+      - labels:
+          level:

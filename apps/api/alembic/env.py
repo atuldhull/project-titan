@@ -11,7 +11,7 @@ from titan.settings import get_settings
 config = context.config
 
 # Migration output obeys TITAN-BCK-024 like every other process: JSON to stdout.
-configure_logging(get_settings().log_level)
+configure_logging(get_settings().log_level, service="titan-migrate")
 
 # Models arrive in Phase 6; migrations are hand-written (see alembic/README),
 # so no autogenerate metadata is wired on purpose.

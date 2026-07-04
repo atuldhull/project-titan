@@ -17,6 +17,8 @@ from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from titan.observability.metrics import READYZ_DEPENDENCY_UP
+
 router = APIRouter()
 
 _OK = "ok"
@@ -91,6 +93,9 @@ async def readyz(request: Request, response: Response) -> ReadyzResponse:
 
     results = dict(await asyncio.gather(*(_run(name, check) for name, check in checks.items())))
     failing = sorted(name for name, status in results.items() if status != _OK)
+
+    for name, status in results.items():
+        READYZ_DEPENDENCY_UP.labels(dependency=name).set(1 if status == _OK else 0)
 
     if failing:
         response.status_code = 503

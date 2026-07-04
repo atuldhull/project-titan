@@ -6,8 +6,10 @@ and ``project_id`` where applicable, bound by later phases). Stdlib logging
 (uvicorn, alembic, sqlalchemy) is routed through the same JSON renderer so the
 container emits exactly one log format.
 
-``trace_id``/``span_id`` are emitted as ``null`` until Phase 4 wires
-OpenTelemetry (TITAN-BCK-025), which replaces :func:`_add_trace_ids`.
+``trace_id``/``span_id`` come from the active OpenTelemetry span
+(TITAN-BCK-025) and are ``null`` when no span is recording — log/trace
+correlation in Grafana works via these fields. ``service`` identifies the
+emitting process for Loki JSON-body queries (Vol 9 §6.3).
 """
 
 import logging
@@ -15,12 +17,18 @@ import sys
 from typing import Any
 
 import structlog
+from opentelemetry import trace
 from structlog.types import EventDict, Processor
 
 
 def _add_trace_ids(_: Any, __: str, event_dict: EventDict) -> EventDict:
-    event_dict.setdefault("trace_id", None)
-    event_dict.setdefault("span_id", None)
+    span_context = trace.get_current_span().get_span_context()
+    if span_context.is_valid:
+        event_dict.setdefault("trace_id", format(span_context.trace_id, "032x"))
+        event_dict.setdefault("span_id", format(span_context.span_id, "016x"))
+    else:
+        event_dict.setdefault("trace_id", None)
+        event_dict.setdefault("span_id", None)
     return event_dict
 
 
@@ -43,11 +51,17 @@ _SHARED_PROCESSORS: list[Processor] = [
 ]
 
 
-def configure_logging(level: str = "INFO") -> None:
+def configure_logging(level: str = "INFO", service: str = "titan-api") -> None:
     """Configure structlog and stdlib logging for JSON-to-stdout."""
+
+    def add_service(_: Any, __: str, event_dict: EventDict) -> EventDict:
+        event_dict.setdefault("service", service)
+        return event_dict
+
+    shared: list[Processor] = [add_service, *_SHARED_PROCESSORS]
     structlog.configure(
         processors=[
-            *_SHARED_PROCESSORS,
+            *shared,
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
         wrapper_class=structlog.stdlib.BoundLogger,
@@ -56,7 +70,7 @@ def configure_logging(level: str = "INFO") -> None:
     )
 
     formatter = structlog.stdlib.ProcessorFormatter(
-        foreign_pre_chain=_SHARED_PROCESSORS,
+        foreign_pre_chain=shared,
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
             structlog.processors.JSONRenderer(),

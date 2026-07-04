@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     # /readyz dependency-check budget in seconds (Vol 3 §12: 500 ms)
     readyz_budget_seconds: float = 0.5
 
+    # OTLP trace export (TITAN-BCK-025). Empty = tracing disabled (no
+    # collector running); Compose obs profile sets http://otel-collector:4317.
+    otel_exporter_otlp_endpoint: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

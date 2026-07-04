@@ -24,7 +24,7 @@ async def run() -> None:
 
 def main() -> None:
     """Process entrypoint for ``python -m titan.worker``."""
-    configure_logging(get_settings().log_level)
+    configure_logging(get_settings().log_level, service="titan-worker")
     asyncio.run(run())
 
 

@@ -53,4 +53,5 @@ domain modules may only be imported through their public `service.py` interface.
 - [x] Phase 1 — Monorepo scaffold & toolchain
 - [x] Phase 2 — Compose core stack + FastAPI skeleton + health
 - [x] Phase 3 — CI quality gates + Pydantic→TypeScript bridge
-- [ ] Phase 4 — Observability foundation in Compose (next)
+- [x] Phase 4 — Observability foundation in Compose
+- [ ] Phase 5 — Dashboard shell (13-surface nav + design system) (next)
