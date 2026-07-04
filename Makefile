@@ -26,6 +26,7 @@ lint-style:
 	cd $(API_DIR) && uv run ruff format --check .
 	cd $(WEB_DIR) && npm run lint
 	cd $(WEB_DIR) && npm run format:check
+	cd $(WEB_DIR) && npm run lint:proofs
 
 # Module boundaries: TITAN-BCK-001/004 independence + ADR-007 provider-SDK contract
 boundaries:
