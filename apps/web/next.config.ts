@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Vol 9 §3.3: the titan-frontend image ships Next.js standalone output.
+  output: "standalone",
 };
 
 export default nextConfig;

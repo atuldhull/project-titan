@@ -10,7 +10,7 @@ WEB_DIR := apps/web
 ## dev: run the API (uvicorn, reload) and the web app (next dev) together.
 ## Docker Compose replaces this as the primary dev loop in Phase 2.
 dev:
-	( cd $(API_DIR) && uv run uvicorn titan.main:app --reload --port 8000 ) & \
+	( cd $(API_DIR) && uv run --env-file $(CURDIR)/.env uvicorn titan.main:app --reload --port 8000 ) & \
 	( cd $(WEB_DIR) && npm run dev ) & \
 	wait
 
@@ -27,8 +27,10 @@ lint:
 	cd $(WEB_DIR) && npm run typecheck
 	cd packages/schemas && npm run typecheck
 
+# --env-file pins the repo-root .env so host-side runs always target THIS
+# project's containers (ports may be remapped there), never defaults.
 migrate:
-	@echo "migrate: not yet wired: Alembic migrations arrive in Phase 2"
+	cd $(API_DIR) && uv run --env-file $(CURDIR)/.env alembic upgrade head
 
 seed:
 	@echo "seed: not yet wired: the seed script arrives in Phase 6"

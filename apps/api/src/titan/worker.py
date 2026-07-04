@@ -2,24 +2,29 @@
 
 Runs from the same image as titan-core with entrypoint ``python -m titan.worker``.
 Redis Streams consumer groups are registered by later phases; this entrypoint
-starts, reports an empty consumer registry, and exits cleanly.
+starts with structured logging, reports an empty consumer registry, and exits
+cleanly.
 """
 
 import asyncio
-import logging
 
-logger = logging.getLogger("titan.worker")
+import structlog
+
+from titan.observability.logging import configure_logging
+from titan.settings import get_settings
+
+logger = structlog.get_logger("titan.worker")
 
 
 async def run() -> None:
     """Start the worker loop over all registered stream consumers."""
     consumers: list[str] = []
-    logger.info("titan-worker starting: %d stream consumers registered", len(consumers))
+    logger.info("worker.start", registered_consumers=len(consumers))
 
 
 def main() -> None:
     """Process entrypoint for ``python -m titan.worker``."""
-    logging.basicConfig(level=logging.INFO)
+    configure_logging(get_settings().log_level)
     asyncio.run(run())
 
 
