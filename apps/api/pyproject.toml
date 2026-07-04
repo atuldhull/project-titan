@@ -22,6 +22,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "pytest>=8.2",
+    "pytest-cov>=5.0",
     "import-linter>=2.0",
 ]
 # Minimal closure for the titan-migrate image (Vol 9 §3.3: "Alembic +
@@ -48,20 +49,36 @@ target-version = "py312"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "SIM", "TID"]
+# ASYNC = flake8-async blocking-call detection (TITAN-BCK-002 acceptance).
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "TID", "ASYNC"]
+
+# ADR-007: provider SDKs are banned everywhere except the titan.llm gateway
+# (per-file exemption below). Belt-and-braces with the import-linter contract.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"anthropic".msg = "Provider SDKs only inside titan.llm — the LLM gateway (ADR-007)"
+"openai".msg = "Provider SDKs only inside titan.llm — the LLM gateway (ADR-007)"
+"google.generativeai".msg = "Provider SDKs only inside titan.llm — the LLM gateway (ADR-007)"
+"google.genai".msg = "Provider SDKs only inside titan.llm — the LLM gateway (ADR-007)"
+"ollama".msg = "Provider SDKs only inside titan.llm — the LLM gateway (ADR-007)"
+
+[tool.ruff.lint.per-file-ignores]
+"src/titan/llm/**" = ["TID251"]
 
 [tool.mypy]
 strict = true
 python_version = "3.12"
-files = ["src", "tests"]
+files = ["src", "tests", "scripts"]
 mypy_path = "src"
 plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# TITAN-FND-064: >=80% coverage on core backend code, enforced locally and in CI.
+addopts = "--cov=titan --cov-report=term-missing --cov-fail-under=80"
 
 [tool.importlinter]
 root_package = "titan"
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "Domain modules are independent except via public service interfaces (TITAN-BCK-001/004)"
@@ -79,6 +96,28 @@ modules = [
 ]
 ignore_imports = ["titan.** -> titan.*.service"]
 unmatched_ignore_imports_alerting = "none"
+
+[[tool.importlinter.contracts]]
+name = "Provider SDKs are confined to the LLM gateway module (ADR-007)"
+type = "forbidden"
+source_modules = [
+    "titan.main",
+    "titan.worker",
+    "titan.settings",
+    "titan.clients",
+    "titan.gateway",
+    "titan.identity",
+    "titan.projects",
+    "titan.orchestrator",
+    "titan.agents",
+    "titan.runs",
+    "titan.messaging",
+    "titan.memory",
+    "titan.plugins",
+    "titan.events",
+    "titan.observability",
+]
+forbidden_modules = ["anthropic", "openai", "google", "ollama"]
 
 [[tool.importlinter.contracts]]
 name = "Shared libraries never import domain modules (Vol 3 §3: events/observability are libraries)"

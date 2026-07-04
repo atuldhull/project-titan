@@ -1,0 +1,14 @@
+# Gitleaks config (TITAN-FND-062). Extends the default ruleset; allowlists
+# vendored/generated trees that are never committed, so filesystem-mode scans
+# match what git-mode CI enforces.
+
+[extend]
+useDefault = true
+
+[allowlist]
+paths = [
+    '''\.venv/''',
+    '''node_modules/''',
+    '''\.next/''',
+    '''\.git/''',
+]

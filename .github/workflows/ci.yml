@@ -1,0 +1,95 @@
+# PROJECT TITAN — CI quality gates (Phase 3; TITAN-FND-062/064, TITAN-BCK-001/002/027).
+# Stage order per Vol 9 §3: lint → typecheck → tests (build/scan/publish join in
+# Phase 76). Every job calls the same Makefile targets developers run locally.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/web/package-lock.json
+            packages/schemas/package-lock.json
+      - run: cd apps/api && uv sync --frozen
+      - run: cd apps/web && npm ci
+      - run: make lint-style
+      - run: make boundaries
+
+  typecheck:
+    # Vol 9 §3.1: stage order is fixed — lint → typecheck → tests.
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/web/package-lock.json
+            packages/schemas/package-lock.json
+      - run: cd apps/api && uv sync --frozen
+      - run: cd apps/web && npm ci
+      - run: cd packages/schemas && npm ci
+      - run: make typecheck
+
+  test:
+    needs: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: cd apps/api && uv sync --frozen
+      # pytest carries the coverage gate: --cov-fail-under=80 (TITAN-FND-064)
+      - run: make test
+
+  types-drift:
+    needs: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/schemas/package-lock.json
+      - run: cd apps/api && uv sync --frozen
+      - run: cd packages/schemas && npm ci
+      # Regenerate OpenAPI + TS types; any uncommitted diff fails (TITAN-BCK-027)
+      - run: make check-types-drift
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # TITAN-FND-062: secret scanning gates every push — the exact command
+      # developers run locally (no gitleaks-action: it needs a license for org
+      # repos and would break command-set parity).
+      - run: make secret-scan

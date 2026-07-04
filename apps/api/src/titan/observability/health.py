@@ -2,14 +2,17 @@
 
 ``/healthz`` is pure liveness — it touches no dependencies. ``/readyz`` checks
 PostgreSQL, Redis, and Qdrant concurrently inside the 500 ms budget and
-returns 503 naming every failing dependency.
+returns 503 naming every failing dependency. Response shapes are Pydantic
+models so they land in the OpenAPI document and the generated TypeScript
+client (TITAN-BCK-027).
 """
 
 import asyncio
-from typing import cast
+from typing import Literal, cast
 
 import httpx
 from fastapi import APIRouter, Request, Response
+from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -17,6 +20,20 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 router = APIRouter()
 
 _OK = "ok"
+
+
+class HealthzResponse(BaseModel):
+    """Liveness probe response."""
+
+    status: Literal["alive"]
+
+
+class ReadyzResponse(BaseModel):
+    """Readiness probe response; ``failing`` is non-empty exactly when unready."""
+
+    status: Literal["ready", "unready"]
+    checks: dict[str, str]
+    failing: list[str] = Field(default_factory=list)
 
 
 async def _check_postgres(engine: AsyncEngine) -> str:
@@ -36,15 +53,23 @@ async def _check_qdrant(http: httpx.AsyncClient) -> str:
     return _OK
 
 
-@router.get("/api/v1/healthz")
-@router.get("/healthz")
-async def healthz() -> dict[str, str]:
-    return {"status": "alive"}
+@router.get("/api/v1/healthz", response_model=HealthzResponse)
+@router.get("/healthz", response_model=HealthzResponse)
+async def healthz() -> HealthzResponse:
+    return HealthzResponse(status="alive")
 
 
-@router.get("/api/v1/readyz")
-@router.get("/readyz")
-async def readyz(request: Request, response: Response) -> dict[str, object]:
+@router.get(
+    "/api/v1/readyz",
+    response_model=ReadyzResponse,
+    responses={503: {"model": ReadyzResponse, "description": "One or more dependencies failing"}},
+)
+@router.get(
+    "/readyz",
+    response_model=ReadyzResponse,
+    responses={503: {"model": ReadyzResponse, "description": "One or more dependencies failing"}},
+)
+async def readyz(request: Request, response: Response) -> ReadyzResponse:
     app_state = request.app.state
     budget = cast(float, app_state.readyz_budget_seconds)
 
@@ -69,5 +94,5 @@ async def readyz(request: Request, response: Response) -> dict[str, object]:
 
     if failing:
         response.status_code = 503
-        return {"status": "unready", "failing": failing, "checks": results}
-    return {"status": "ready", "checks": results}
+        return ReadyzResponse(status="unready", failing=failing, checks=results)
+    return ReadyzResponse(status="ready", checks=results)
