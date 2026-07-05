@@ -66,7 +66,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Gateway slot strategies — Phase 8 fills auth below; 9/13 fill the rest.
+    # Gateway slot strategies. Phase 8 fills auth below. RBAC (Phase 9) is
+    # enforced NOT by this middleware slot but by the per-route Requires
+    # dependency (spec §3.4 "one enforcement point: a FastAPI dependency") —
+    # permissions are route-specific, so a blanket middleware can't decide
+    # them. The RBACSlot stays a documented pass-through: the §9.1 pipeline
+    # position is reserved, the route-guard check guarantees every route
+    # carries a Requires. Building a second middleware net here would be the
+    # "second authorization mechanism" the phase forbids. Rate-limit: Phase 13.
     app.state.auth_strategy = None
     app.state.rbac_strategy = None
     app.state.rate_limit_strategy = None

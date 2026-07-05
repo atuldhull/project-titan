@@ -50,6 +50,10 @@ class Principal(BaseModel):
     jti: str
     family_id: str | None = None
     agent_id: uuid.UUID | None = None
+    # Agent's bound project (TITAN-BCK-021: operator scoped to their project).
+    # None until the agent→project binding lands with the agents table
+    # (Phase 26); agents are fail-closed on all projects until then.
+    project_id: uuid.UUID | None = None
 
 
 class TokenPair(BaseModel):

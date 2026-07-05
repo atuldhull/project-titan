@@ -7,8 +7,8 @@ API_DIR := apps/api
 WEB_DIR := apps/web
 SCHEMAS_DIR := packages/schemas
 
-.PHONY: dev test test-schema lint lint-style boundaries typecheck migrate seed \
-        generate-types check-types-drift secret-scan
+.PHONY: dev test test-schema lint lint-style boundaries route-guards typecheck \
+        migrate seed generate-types check-types-drift lint-openapi secret-scan
 
 ## dev: run the API (uvicorn, reload) and the web app (next dev) together.
 ## Docker Compose is the primary dev loop from Phase 2 onward.
@@ -32,6 +32,10 @@ lint-style:
 boundaries:
 	cd $(API_DIR) && uv run lint-imports
 
+# TITAN-BCK-021 / TITAN-SEC-030: every API route must carry an RBAC guard.
+route-guards:
+	cd $(API_DIR) && uv run python scripts/check_route_guards.py
+
 # Static typing: mypy --strict (api) + tsc --noEmit strict (web, schemas)
 typecheck:
 	cd $(API_DIR) && uv run mypy
@@ -39,7 +43,7 @@ typecheck:
 	cd $(SCHEMAS_DIR) && npm run typecheck
 
 # Developer catch-all — the union of every static gate CI runs.
-lint: lint-style boundaries typecheck lint-openapi
+lint: lint-style boundaries route-guards typecheck lint-openapi
 
 # TITAN-BCK-027: OpenAPI -> TypeScript bridge into packages/schemas
 generate-types:

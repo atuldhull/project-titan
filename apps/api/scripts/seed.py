@@ -32,6 +32,9 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "run:create",
         "message:write",
         "decision:write",
+        # audit:read is explicit: *:read no longer reaches the audit log
+        # (Vol 8 §4.2 grants audit read to Owner + Admin only).
+        "audit:read",
         "*:read",
     ],
     "maintainer": [

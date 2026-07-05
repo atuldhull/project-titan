@@ -58,4 +58,5 @@ domain modules may only be imported through their public `service.py` interface.
 - [x] Phase 6 — PostgreSQL schema, migrations & cycle check (starts M2)
 - [x] Phase 7 — REST conventions framework + gateway middleware
 - [x] Phase 8 — Identity: local auth, JWTs, API keys, service tokens
-- [ ] Phase 9 — RBAC engine + route protection + ownership (next)
+- [x] Phase 9 — RBAC engine + route protection + ownership
+- [ ] Phase 10 — Events infra: QueueBus, Redis Streams & transactional outbox (next)

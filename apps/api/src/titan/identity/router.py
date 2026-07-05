@@ -6,11 +6,12 @@ Private to the identity module; main.py mounts via mount()."""
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Request
 from pydantic import BaseModel, Field
 from starlette.responses import Response
 
 from titan.gateway.problems import ProblemException, problem_type
+from titan.gateway.rbac import RequiresAuth, mark_public
 from titan.identity import service
 from titan.identity.service import AuthenticationFailed, Principal, TokenInvalid, TokenPair
 
@@ -72,6 +73,7 @@ def current_principal(request: Request) -> Principal:
 
 
 @router.post("/token", response_model=TokenPair)
+@mark_public  # pre-auth: minting tokens cannot require an existing token
 async def token(request: Request, grant: PasswordGrant | ApiKeyGrant) -> TokenPair:
     app = request.app
     async with app.state.engine.begin() as conn:
@@ -87,6 +89,7 @@ async def token(request: Request, grant: PasswordGrant | ApiKeyGrant) -> TokenPa
 
 
 @router.post("/refresh", response_model=TokenPair)
+@mark_public  # pre-auth: the access token has expired, that's why we refresh
 async def refresh(request: Request, body: RefreshRequest) -> TokenPair:
     app = request.app
     try:
@@ -99,7 +102,7 @@ async def refresh(request: Request, body: RefreshRequest) -> TokenPair:
         raise _unauthorized(str(exc)) from exc
 
 
-@router.get("/me", response_model=MeResponse)
+@router.get("/me", response_model=MeResponse, dependencies=[Depends(RequiresAuth())])
 async def me(request: Request) -> MeResponse:
     principal = current_principal(request)
     return MeResponse(
@@ -111,7 +114,7 @@ async def me(request: Request) -> MeResponse:
     )
 
 
-@router.post("/revoke", status_code=204)
+@router.post("/revoke", status_code=204, dependencies=[Depends(RequiresAuth())])
 async def revoke(request: Request) -> Response:
     """Logout: durably revokes the caller's refresh family + denylists jti."""
     principal = current_principal(request)
@@ -119,7 +122,12 @@ async def revoke(request: Request) -> Response:
     return Response(status_code=204)
 
 
-@router.post("/api-keys", response_model=ApiKeyResponse, status_code=201)
+@router.post(
+    "/api-keys",
+    response_model=ApiKeyResponse,
+    status_code=201,
+    dependencies=[Depends(RequiresAuth())],
+)
 async def create_api_key(request: Request, body: ApiKeyRequest) -> ApiKeyResponse:
     principal = current_principal(request)
     if principal.kind != "user":

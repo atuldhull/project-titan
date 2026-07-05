@@ -31,6 +31,7 @@ jobs:
       - run: cd apps/web && npm ci
       - run: make lint-style
       - run: make boundaries
+      - run: make route-guards
 
   typecheck:
     # Vol 9 §3.1: stage order is fixed — lint → typecheck → tests.
