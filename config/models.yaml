@@ -1,0 +1,62 @@
+# PROJECT TITAN — LLM gateway configuration (Vol 7 §8.2, TITAN-INT-060/062).
+#
+# Adding or switching a provider/model for any agent is a change HERE ONLY — no
+# code (TITAN-INT-060). Secrets are referenced as ${ENV_VAR} and resolved from
+# the environment at load time; a missing var resolves to empty, so this file
+# loads and validates even with zero paid keys configured (an adapter that
+# actually needs a key fails clearly at call time). This file is hot-reloadable:
+# edits are picked up on the next request without a restart.
+#
+# For a fully-local, zero-paid-key run, point TITAN_MODELS_CONFIG_PATH at
+# config/models.local.yaml instead (routing.default → local-default via Ollama).
+
+providers:
+  anthropic:
+    api_key: ${ANTHROPIC_API_KEY}
+    base_url: https://api.anthropic.com
+  openai:
+    api_key: ${OPENAI_API_KEY}
+  google:
+    api_key: ${GOOGLE_API_KEY}
+  ollama:
+    base_url: ${TITAN_OLLAMA_BASE_URL}
+
+model_aliases:
+  reasoning-large:
+    provider: anthropic
+    model: claude-opus-4-6
+    price: { input_per_mtok: 15.00, output_per_mtok: 75.00 }
+  coding-default:
+    provider: anthropic
+    model: claude-sonnet-4-5
+    price: { input_per_mtok: 3.00, output_per_mtok: 15.00 }
+  fast-cheap:
+    provider: google
+    model: gemini-2.5-flash
+    price: { input_per_mtok: 0.30, output_per_mtok: 2.50 }
+  local-default:
+    provider: ollama
+    model: qwen3-coder:30b
+  embed-default:
+    provider: ollama
+    model: nomic-embed-text
+    dimensions: 768
+
+routing:
+  default: coding-default
+  embeddings_default: embed-default
+  by_agent:
+    agent.ceo: reasoning-large
+    agent.architect: reasoning-large
+    agent.backend_engineer: coding-default
+    agent.frontend_engineer: coding-default
+    agent.qa: fast-cheap
+    agent.research: fast-cheap
+  fallbacks:
+    coding-default: [local-default] # on outage / rate limit / budget cap
+    reasoning-large: [coding-default, local-default]
+
+budgets:
+  per_project_usd: 25.00
+  per_task_usd: 2.00
+  action_on_exceeded: fallback_then_pause # fallback to local, else pause task

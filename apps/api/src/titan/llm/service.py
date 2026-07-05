@@ -1,9 +1,71 @@
-"""Public service interface of the `llm` module (TITAN-BCK-004).
+"""Public service interface of the `llm` module (TITAN-BCK-004, ADR-007).
 
-Responsibility: provider-agnostic LLM gateway client with config-driven provider switching.
-Owns: no tables.
+Responsibility: provider-agnostic LLM gateway with config-driven provider
+switching. Owns: no tables (usage accounting lands in a later phase).
 
-Only this interface may be imported by other modules; routers, repositories,
-and ORM models stay private to the package. Pydantic v2 DTOs — never
-SQLAlchemy models — cross this boundary.
+Only this interface may be imported by other modules; adapters, the config
+loader, and the FastAPI router stay private to the package. The canonical
+Pydantic DTOs — never provider payloads — cross this boundary.
 """
+
+from pathlib import Path
+
+import httpx
+
+from titan.llm.config import ConfigLoader, GatewayConfig, parse_config
+from titan.llm.gateway import LlmGateway, compute_cost
+from titan.llm.models import (
+    ChatRequest,
+    ChatResponse,
+    EmbeddingsRequest,
+    EmbeddingsResponse,
+    EmbeddingVector,
+    Message,
+    RequestMetadata,
+    StreamDelta,
+    TextPart,
+    ToolCall,
+    ToolChoice,
+    ToolDef,
+    ToolResultPart,
+    ToolUsePart,
+    Usage,
+)
+from titan.settings import Settings
+
+# A generous default; each adapter also sets its own per-request timeout.
+_CLIENT_TIMEOUT = httpx.Timeout(120.0, connect=10.0)
+
+
+def build_gateway(settings: Settings, *, client: httpx.AsyncClient | None = None) -> LlmGateway:
+    """Construct a gateway from settings. Pass ``client`` (e.g. one backed by an
+    ``httpx.MockTransport``) to exercise adapters against recorded wire fixtures;
+    otherwise the gateway owns a real client closed by :meth:`LlmGateway.aclose`."""
+    loader = ConfigLoader(Path(settings.models_config_path))
+    http = client if client is not None else httpx.AsyncClient(timeout=_CLIENT_TIMEOUT)
+    return LlmGateway(loader, http)
+
+
+__all__ = [
+    "ChatRequest",
+    "ChatResponse",
+    "ConfigLoader",
+    "EmbeddingVector",
+    "EmbeddingsRequest",
+    "EmbeddingsResponse",
+    "GatewayConfig",
+    "LlmGateway",
+    "Message",
+    "RequestMetadata",
+    "StreamDelta",
+    "TextPart",
+    "ToolCall",
+    "ToolChoice",
+    "ToolDef",
+    "ToolResultPart",
+    "ToolUsePart",
+    "Usage",
+    "build_gateway",
+    "compute_cost",
+    "parse_config",
+]

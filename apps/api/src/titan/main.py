@@ -28,6 +28,8 @@ from titan.gateway.security import (
 from titan.gateway.slots import AuthenticationSlot, RateLimitSlot, RBACSlot
 from titan.identity import router as identity_router
 from titan.identity.tokens import KeyRing
+from titan.llm import router as llm_router
+from titan.llm import service as llm_service
 from titan.messaging import router as messaging_router
 from titan.observability import otel
 from titan.observability.health import router as health_router
@@ -52,11 +54,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.state.engine = clients.create_engine(active_settings)
         application.state.redis = clients.create_redis(active_settings)
         application.state.http = clients.create_http_client(active_settings)
+        application.state.llm_gateway = llm_service.build_gateway(active_settings)
         application.state.readyz_budget_seconds = active_settings.readyz_budget_seconds
         otel.instrument_engine(active_settings, application.state.engine)
         try:
             yield
         finally:
+            await application.state.llm_gateway.aclose()
             await application.state.http.aclose()
             await application.state.redis.aclose()
             await application.state.engine.dispose()
@@ -119,6 +123,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     agents_router.mount(app)  # /agents registry + :pause/:resume
     messaging_router.mount(app)  # /messages, /decisions, /notifications
     runs_router.mount(app)  # /runs, /tasks/{id}/runs, artifacts
+    llm_router.mount(app)  # /llm/chat, /llm/embeddings — the provider gateway
     otel.instrument_app(active_settings, app)
 
     def custom_openapi() -> dict[str, Any]:

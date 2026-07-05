@@ -1,0 +1,24 @@
+# PROJECT TITAN — fully-local LLM profile (Vol 7 §8.2, TITAN-INT-062).
+#
+# Runs the entire platform with ZERO paid API keys: every route resolves to
+# Ollama. Select it with TITAN_MODELS_CONFIG_PATH=config/models.local.yaml.
+# This is the profile the "local-only" CI lane and the laptop demo use.
+
+providers:
+  ollama:
+    base_url: ${TITAN_OLLAMA_BASE_URL}
+
+model_aliases:
+  local-default:
+    provider: ollama
+    model: qwen3-coder:30b
+  embed-default:
+    provider: ollama
+    model: nomic-embed-text
+    dimensions: 768
+
+routing:
+  default: local-default
+  embeddings_default: embed-default
+  by_agent: {}
+  fallbacks: {}

@@ -416,6 +416,152 @@
         "title": "BoardColumn",
         "type": "object"
       },
+      "ChatRequest": {
+        "additionalProperties": false,
+        "description": "The canonical chat request (\u00a78.1). ``model_alias`` is optional: when\nomitted the gateway routes by ``metadata.agent_id`` then ``routing.default``.",
+        "properties": {
+          "max_tokens": {
+            "exclusiveMinimum": 0.0,
+            "title": "Max Tokens",
+            "type": "integer"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            },
+            "minItems": 1,
+            "title": "Messages",
+            "type": "array"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/RequestMetadata"
+          },
+          "model_alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Alias"
+          },
+          "stream": {
+            "default": false,
+            "title": "Stream",
+            "type": "boolean"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature"
+          },
+          "tool_choice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolChoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ToolDef"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tools"
+          }
+        },
+        "required": [
+          "messages",
+          "max_tokens"
+        ],
+        "title": "ChatRequest",
+        "type": "object"
+      },
+      "ChatResponse": {
+        "additionalProperties": false,
+        "description": "The canonical chat response (\u00a78.1). ``provider``/``model_id`` reflect what\nactually served the call so later fallback substitutions are attributable.",
+        "properties": {
+          "cost_usd": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Cost Usd",
+            "type": "string"
+          },
+          "finish_reason": {
+            "enum": [
+              "stop",
+              "length",
+              "tool_use",
+              "content_filter",
+              "error"
+            ],
+            "title": "Finish Reason",
+            "type": "string"
+          },
+          "latency_ms": {
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "tool_calls": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCall"
+            },
+            "title": "Tool Calls",
+            "type": "array"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Usage"
+          }
+        },
+        "required": [
+          "finish_reason",
+          "usage",
+          "provider",
+          "model_id",
+          "cost_usd",
+          "latency_ms"
+        ],
+        "title": "ChatResponse",
+        "type": "object"
+      },
       "DecisionCreate": {
         "additionalProperties": false,
         "properties": {
@@ -612,6 +758,108 @@
         "title": "DependencyOut",
         "type": "object"
       },
+      "EmbeddingVector": {
+        "additionalProperties": false,
+        "properties": {
+          "embedding": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Embedding",
+            "type": "array"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "index",
+          "embedding"
+        ],
+        "title": "EmbeddingVector",
+        "type": "object"
+      },
+      "EmbeddingsRequest": {
+        "additionalProperties": false,
+        "description": "Embed one or more texts (\u00a78.1). ``model_alias`` defaults to\n``routing.embeddings_default`` \u2014 the provider/model swaps by config only.",
+        "properties": {
+          "input": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Input",
+            "type": "array"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/RequestMetadata"
+          },
+          "model_alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Alias"
+          }
+        },
+        "required": [
+          "input"
+        ],
+        "title": "EmbeddingsRequest",
+        "type": "object"
+      },
+      "EmbeddingsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "cost_usd": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Cost Usd",
+            "type": "string"
+          },
+          "dimensions": {
+            "title": "Dimensions",
+            "type": "integer"
+          },
+          "embeddings": {
+            "items": {
+              "$ref": "#/components/schemas/EmbeddingVector"
+            },
+            "title": "Embeddings",
+            "type": "array"
+          },
+          "latency_ms": {
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Usage"
+          }
+        },
+        "required": [
+          "embeddings",
+          "dimensions",
+          "provider",
+          "model_id",
+          "usage",
+          "cost_usd",
+          "latency_ms"
+        ],
+        "title": "EmbeddingsResponse",
+        "type": "object"
+      },
       "Graph": {
         "properties": {
           "edges": {
@@ -701,6 +949,45 @@
         "title": "HealthzResponse",
         "type": "object"
       },
+      "ImagePart": {
+        "additionalProperties": false,
+        "description": "An inline image (base64). Multimodal inputs (\u00a78.1).",
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/ImageSource"
+          },
+          "type": {
+            "const": "image",
+            "default": "image",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "ImagePart",
+        "type": "object"
+      },
+      "ImageSource": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "title": "Data",
+            "type": "string"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_type",
+          "data"
+        ],
+        "title": "ImageSource",
+        "type": "object"
+      },
       "MarkAllReadResult": {
         "properties": {
           "marked_read": {
@@ -760,6 +1047,64 @@
           "scope"
         ],
         "title": "MeResponse",
+        "type": "object"
+      },
+      "Message": {
+        "additionalProperties": false,
+        "description": "A provider-neutral conversation turn. ``content`` accepts a bare string\n(normalized to a single text part) or an explicit list of parts.",
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "discriminator": {
+                    "mapping": {
+                      "image": "#/components/schemas/ImagePart",
+                      "text": "#/components/schemas/TextPart",
+                      "tool_result": "#/components/schemas/ToolResultPart",
+                      "tool_use": "#/components/schemas/ToolUsePart"
+                    },
+                    "propertyName": "type"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/TextPart"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ImagePart"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ToolUsePart"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ToolResultPart"
+                    }
+                  ]
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Content"
+          },
+          "role": {
+            "enum": [
+              "system",
+              "user",
+              "assistant",
+              "tool"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "Message",
         "type": "object"
       },
       "MessageCreate": {
@@ -1669,6 +2014,47 @@
         "title": "RefreshRequest",
         "type": "object"
       },
+      "RequestMetadata": {
+        "additionalProperties": false,
+        "description": "Attribution for routing, budgets, and audit (\u00a78.1). ``agent_id`` is the\nrouting key consulted by ``routing.by_agent`` (e.g. ``agent.ceo``).",
+        "properties": {
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "title": "RequestMetadata",
+        "type": "object"
+      },
       "RunCreate": {
         "additionalProperties": false,
         "properties": {
@@ -2338,6 +2724,27 @@
         "title": "TaskPatch",
         "type": "object"
       },
+      "TextPart": {
+        "additionalProperties": false,
+        "description": "A run of assistant/user text.",
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "text",
+            "default": "text",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "TextPart",
+        "type": "object"
+      },
       "TokenPair": {
         "description": "Delivery shape for the token endpoints. The future Next.js BFF stores\nthese in httpOnly/Secure/SameSite=Lax cookies (TITAN-SEC-013) \u2014 browser\nJS must never see them; this JSON body is for the BFF/CLI only.",
         "properties": {
@@ -2371,6 +2778,148 @@
           "access_token"
         ],
         "title": "TokenPair",
+        "type": "object"
+      },
+      "ToolCall": {
+        "additionalProperties": false,
+        "description": "A normalized tool call from the model response. ``arguments`` is decoded\nJSON regardless of how the provider transported it.",
+        "properties": {
+          "arguments": {
+            "additionalProperties": true,
+            "title": "Arguments",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ToolCall",
+        "type": "object"
+      },
+      "ToolChoice": {
+        "additionalProperties": false,
+        "description": "How the model may use tools. ``mode='tool'`` forces ``name``.",
+        "properties": {
+          "mode": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "required",
+              "none",
+              "tool"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "ToolChoice",
+        "type": "object"
+      },
+      "ToolDef": {
+        "additionalProperties": false,
+        "description": "A tool the model may call, defined by JSON Schema (draft 2020-12, \u00a74.1).",
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "input_schema": {
+            "additionalProperties": true,
+            "title": "Input Schema",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ToolDef",
+        "type": "object"
+      },
+      "ToolResultPart": {
+        "additionalProperties": false,
+        "description": "The result of a tool call, carried on a ``tool``-role message. The\n``tool_use_id`` ties it back to the originating :class:`ToolUsePart`.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "is_error": {
+            "default": false,
+            "title": "Is Error",
+            "type": "boolean"
+          },
+          "tool_use_id": {
+            "title": "Tool Use Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "tool_result",
+            "default": "tool_result",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool_use_id",
+          "content"
+        ],
+        "title": "ToolResultPart",
+        "type": "object"
+      },
+      "ToolUsePart": {
+        "additionalProperties": false,
+        "description": "A model-requested tool call. Multiple in one assistant message express\nPARALLEL tool calls (TITAN-INT-061).",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input": {
+            "additionalProperties": true,
+            "title": "Input",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "const": "tool_use",
+            "default": "tool_use",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ToolUsePart",
         "type": "object"
       },
       "TransitionRequest": {
@@ -2411,6 +2960,29 @@
           "action"
         ],
         "title": "TransitionRequest",
+        "type": "object"
+      },
+      "Usage": {
+        "additionalProperties": false,
+        "description": "Token accounting (\u00a78.4). ``cached_tokens`` is the prompt-cache read count\nwhere the provider reports it, else 0.",
+        "properties": {
+          "cached_tokens": {
+            "default": 0,
+            "title": "Cached Tokens",
+            "type": "integer"
+          },
+          "input_tokens": {
+            "default": 0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "default": 0,
+            "title": "Output Tokens",
+            "type": "integer"
+          }
+        },
+        "title": "Usage",
         "type": "object"
       }
     }
@@ -2916,6 +3488,88 @@
           }
         },
         "summary": "Healthz"
+      }
+    },
+    "/api/v1/llm/chat": {
+      "post": {
+        "operationId": "chat_api_v1_llm_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Chat",
+        "tags": [
+          "llm"
+        ]
+      }
+    },
+    "/api/v1/llm/embeddings": {
+      "post": {
+        "operationId": "embeddings_api_v1_llm_embeddings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmbeddingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Embeddings",
+        "tags": [
+          "llm"
+        ]
       }
     },
     "/api/v1/notifications": {

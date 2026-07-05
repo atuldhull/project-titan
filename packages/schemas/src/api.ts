@@ -179,6 +179,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/llm/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Chat */
+        post: operations["chat_api_v1_llm_chat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/llm/embeddings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Embeddings */
+        post: operations["embeddings_api_v1_llm_embeddings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/notifications": {
         parameters: {
             query?: never;
@@ -803,6 +837,55 @@ export interface components {
             /** Tasks */
             tasks: components["schemas"]["BoardCard"][];
         };
+        /**
+         * ChatRequest
+         * @description The canonical chat request (§8.1). ``model_alias`` is optional: when
+         *     omitted the gateway routes by ``metadata.agent_id`` then ``routing.default``.
+         */
+        ChatRequest: {
+            /** Max Tokens */
+            max_tokens: number;
+            /** Messages */
+            messages: components["schemas"]["Message"][];
+            metadata?: components["schemas"]["RequestMetadata"];
+            /** Model Alias */
+            model_alias?: string | null;
+            /**
+             * Stream
+             * @default false
+             */
+            stream: boolean;
+            /** Temperature */
+            temperature?: number | null;
+            tool_choice?: components["schemas"]["ToolChoice"] | null;
+            /** Tools */
+            tools?: components["schemas"]["ToolDef"][] | null;
+        };
+        /**
+         * ChatResponse
+         * @description The canonical chat response (§8.1). ``provider``/``model_id`` reflect what
+         *     actually served the call so later fallback substitutions are attributable.
+         */
+        ChatResponse: {
+            /** Cost Usd */
+            cost_usd: string;
+            /**
+             * Finish Reason
+             * @enum {string}
+             */
+            finish_reason: "stop" | "length" | "tool_use" | "content_filter" | "error";
+            /** Latency Ms */
+            latency_ms: number;
+            /** Model Id */
+            model_id: string;
+            /** Provider */
+            provider: string;
+            /** Text */
+            text?: string | null;
+            /** Tool Calls */
+            tool_calls?: components["schemas"]["ToolCall"][];
+            usage: components["schemas"]["Usage"];
+        };
         /** DecisionCreate */
         DecisionCreate: {
             /** Alternatives */
@@ -883,6 +966,41 @@ export interface components {
              */
             task_id: string;
         };
+        /** EmbeddingVector */
+        EmbeddingVector: {
+            /** Embedding */
+            embedding: number[];
+            /** Index */
+            index: number;
+        };
+        /**
+         * EmbeddingsRequest
+         * @description Embed one or more texts (§8.1). ``model_alias`` defaults to
+         *     ``routing.embeddings_default`` — the provider/model swaps by config only.
+         */
+        EmbeddingsRequest: {
+            /** Input */
+            input: string[];
+            metadata?: components["schemas"]["RequestMetadata"];
+            /** Model Alias */
+            model_alias?: string | null;
+        };
+        /** EmbeddingsResponse */
+        EmbeddingsResponse: {
+            /** Cost Usd */
+            cost_usd: string;
+            /** Dimensions */
+            dimensions: number;
+            /** Embeddings */
+            embeddings: components["schemas"]["EmbeddingVector"][];
+            /** Latency Ms */
+            latency_ms: number;
+            /** Model Id */
+            model_id: string;
+            /** Provider */
+            provider: string;
+            usage: components["schemas"]["Usage"];
+        };
         /** Graph */
         Graph: {
             /** Edges */
@@ -931,6 +1049,25 @@ export interface components {
              */
             status: "alive";
         };
+        /**
+         * ImagePart
+         * @description An inline image (base64). Multimodal inputs (§8.1).
+         */
+        ImagePart: {
+            source: components["schemas"]["ImageSource"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "image";
+        };
+        /** ImageSource */
+        ImageSource: {
+            /** Data */
+            data: string;
+            /** Media Type */
+            media_type: string;
+        };
         /** MarkAllReadResult */
         MarkAllReadResult: {
             /** Marked Read */
@@ -954,6 +1091,20 @@ export interface components {
              * Format: uuid
              */
             sub: string;
+        };
+        /**
+         * Message
+         * @description A provider-neutral conversation turn. ``content`` accepts a bare string
+         *     (normalized to a single text part) or an explicit list of parts.
+         */
+        Message: {
+            /** Content */
+            content: string | (components["schemas"]["TextPart"] | components["schemas"]["ImagePart"] | components["schemas"]["ToolUsePart"] | components["schemas"]["ToolResultPart"])[];
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "system" | "user" | "assistant" | "tool";
         };
         /** MessageCreate */
         MessageCreate: {
@@ -1269,6 +1420,19 @@ export interface components {
             /** Refresh Token */
             refresh_token: string;
         };
+        /**
+         * RequestMetadata
+         * @description Attribution for routing, budgets, and audit (§8.1). ``agent_id`` is the
+         *     routing key consulted by ``routing.by_agent`` (e.g. ``agent.ceo``).
+         */
+        RequestMetadata: {
+            /** Agent Id */
+            agent_id?: string | null;
+            /** Project Id */
+            project_id?: string | null;
+            /** Task Id */
+            task_id?: string | null;
+        };
         /** RunCreate */
         RunCreate: {
             /**
@@ -1467,6 +1631,19 @@ export interface components {
             title?: string | null;
         };
         /**
+         * TextPart
+         * @description A run of assistant/user text.
+         */
+        TextPart: {
+            /** Text */
+            text: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "text";
+        };
+        /**
          * TokenPair
          * @description Delivery shape for the token endpoints. The future Next.js BFF stores
          *     these in httpOnly/Secure/SameSite=Lax cookies (TITAN-SEC-013) — browser
@@ -1488,6 +1665,93 @@ export interface components {
              */
             token_type: string;
         };
+        /**
+         * ToolCall
+         * @description A normalized tool call from the model response. ``arguments`` is decoded
+         *     JSON regardless of how the provider transported it.
+         */
+        ToolCall: {
+            /** Arguments */
+            arguments?: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * ToolChoice
+         * @description How the model may use tools. ``mode='tool'`` forces ``name``.
+         */
+        ToolChoice: {
+            /**
+             * Mode
+             * @default auto
+             * @enum {string}
+             */
+            mode: "auto" | "required" | "none" | "tool";
+            /** Name */
+            name?: string | null;
+        };
+        /**
+         * ToolDef
+         * @description A tool the model may call, defined by JSON Schema (draft 2020-12, §4.1).
+         */
+        ToolDef: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Input Schema */
+            input_schema?: {
+                [key: string]: unknown;
+            };
+            /** Name */
+            name: string;
+        };
+        /**
+         * ToolResultPart
+         * @description The result of a tool call, carried on a ``tool``-role message. The
+         *     ``tool_use_id`` ties it back to the originating :class:`ToolUsePart`.
+         */
+        ToolResultPart: {
+            /** Content */
+            content: string;
+            /**
+             * Is Error
+             * @default false
+             */
+            is_error: boolean;
+            /** Tool Use Id */
+            tool_use_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "tool_result";
+        };
+        /**
+         * ToolUsePart
+         * @description A model-requested tool call. Multiple in one assistant message express
+         *     PARALLEL tool calls (TITAN-INT-061).
+         */
+        ToolUsePart: {
+            /** Id */
+            id: string;
+            /** Input */
+            input?: {
+                [key: string]: unknown;
+            };
+            /** Name */
+            name: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "tool_use";
+        };
         /** TransitionRequest */
         TransitionRequest: {
             /** Action */
@@ -1496,6 +1760,28 @@ export interface components {
             actor_agent_id?: string | null;
             /** Comment */
             comment?: string | null;
+        };
+        /**
+         * Usage
+         * @description Token accounting (§8.4). ``cached_tokens`` is the prompt-cache read count
+         *     where the provider reports it, else 0.
+         */
+        Usage: {
+            /**
+             * Cached Tokens
+             * @default 0
+             */
+            cached_tokens: number;
+            /**
+             * Input Tokens
+             * @default 0
+             */
+            input_tokens: number;
+            /**
+             * Output Tokens
+             * @default 0
+             */
+            output_tokens: number;
         };
     };
     responses: never;
@@ -1854,6 +2140,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthzResponse"];
+                };
+            };
+        };
+    };
+    chat_api_v1_llm_chat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    embeddings_api_v1_llm_embeddings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmbeddingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };

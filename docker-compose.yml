@@ -49,9 +49,21 @@ services:
       TITAN_REDIS_URL: redis://redis:6379/0
       TITAN_QDRANT_URL: http://qdrant:6333
       TITAN_OTEL_EXPORTER_OTLP_ENDPOINT: ${TITAN_OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # LLM gateway (Phase 15): config dir mounted read-only below. The default
+      # models.yaml routes to Anthropic (needs ANTHROPIC_API_KEY). For a fully
+      # local, zero-key run set TITAN_MODELS_CONFIG_PATH to the local profile and
+      # start Ollama:  TITAN_MODELS_CONFIG_PATH=/app/config/models.local.yaml
+      #                docker compose --profile local-llm up
+      TITAN_MODELS_CONFIG_PATH: ${TITAN_MODELS_CONFIG_PATH:-/app/config/models.yaml}
+      TITAN_OLLAMA_BASE_URL: ${TITAN_OLLAMA_BASE_URL:-http://ollama:11434}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
     read_only: true
     tmpfs:
       - /tmp
+    volumes:
+      - ./config:/app/config:ro  # models.yaml (hot-reloadable; read-only mount)
     depends_on:
       postgres:
         condition: service_healthy
@@ -85,11 +97,19 @@ services:
       # behind the Storage protocol later); the rootfs stays read-only.
       TITAN_ARTIFACT_ROOT: /tmp/titan-artifacts
       TITAN_WORKER_CONCURRENCY: ${TITAN_WORKER_CONCURRENCY:-4}
+      # LLM gateway config (consumed once the run executor calls it, Phase 17).
+      TITAN_MODELS_CONFIG_PATH: ${TITAN_MODELS_CONFIG_PATH:-/app/config/models.yaml}
+      TITAN_OLLAMA_BASE_URL: ${TITAN_OLLAMA_BASE_URL:-http://ollama:11434}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
     expose:
       - "9100"  # /metrics (scraped by Prometheus under the obs profile)
     read_only: true
     tmpfs:
       - /tmp
+    volumes:
+      - ./config:/app/config:ro  # models.yaml (hot-reloadable; read-only mount)
     depends_on:
       postgres:
         condition: service_healthy

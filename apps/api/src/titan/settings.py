@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     # Filesystem root for the MVP artifact Storage backend (Vol 3 §6).
     artifact_root: str = "/var/lib/titan/artifacts"
 
+    # --- LLM gateway (Phase 15; Vol 7 §8.2, ADR-007) ---
+    # Path to config/models.yaml (hot-reloadable). The container mounts the repo
+    # config dir; ship the local-only profile to run with zero paid API keys.
+    models_config_path: str = "config/models.yaml"
+
     # OTLP trace export (TITAN-BCK-025). Empty = tracing disabled (no
     # collector running); Compose obs profile sets http://otel-collector:4317.
     otel_exporter_otlp_endpoint: str = ""
