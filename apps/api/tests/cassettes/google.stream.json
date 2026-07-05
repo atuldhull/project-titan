@@ -1,0 +1,16 @@
+{
+  "provider": "google",
+  "interactions": [
+    {
+      "request": { "method": "POST", "path": "/v1beta/models/gemini-2.5-flash:streamGenerateContent" },
+      "response": {
+        "status": 200,
+        "sse": [
+          { "candidates": [{ "content": { "role": "model", "parts": [{ "text": "Checking." }] } }] },
+          { "candidates": [{ "content": { "role": "model", "parts": [{ "functionCall": { "name": "get_weather", "args": { "city": "Paris" } } }] } }] },
+          { "candidates": [{ "finishReason": "STOP" }], "usageMetadata": { "promptTokenCount": 20, "candidatesTokenCount": 12 } }
+        ]
+      }
+    }
+  ]
+}

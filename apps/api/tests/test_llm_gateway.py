@@ -34,17 +34,13 @@ from titan.llm.errors import (
 from titan.llm.gateway import LlmGateway, compute_cost
 from titan.llm.models import (
     ChatRequest,
-    ChatResponse,
-    ContentPart,
     Message,
     StreamDelta,
     TextPart,
-    ToolDef,
-    ToolResultPart,
-    ToolUsePart,
     Usage,
 )
 
+from . import _transcript as T
 from .conftest import run_async
 
 # --- config fixtures -------------------------------------------------------
@@ -312,67 +308,20 @@ def test_routing_precedence(tmp_path: Path) -> None:
 # --- golden multi-tool, multi-turn transcript (TITAN-INT-061) --------------
 
 
-def _assistant_from(resp: ChatResponse) -> Message:
-    parts: list[ContentPart] = []
-    if resp.text:
-        parts.append(TextPart(text=resp.text))
-    parts.extend(ToolUsePart(id=c.id, name=c.name, input=c.arguments) for c in resp.tool_calls)
-    return Message(role="assistant", content=parts)
-
-
-def _golden_transcript(gateway: LlmGateway, records: list[dict[str, Any]]) -> None:
-    """Two turns with two PARALLEL tool calls, driving the state the caller
-    would: request → parallel tool_use → tool_results → final text."""
-
-    async def run() -> tuple[ChatResponse, ChatResponse]:
-        tools = [
-            ToolDef(name="get_weather", input_schema={"type": "object"}),
-            ToolDef(name="get_time", input_schema={"type": "object"}),
-        ]
-        first = ChatRequest(
-            messages=[
-                Message(role="system", content="You are helpful."),
-                Message(role="user", content="Weather and time in Paris?"),
-            ],
-            tools=tools,
-            max_tokens=1024,
-        )
-        r1 = await gateway.chat(first)
-
-        # Feed BOTH tool results back as two discrete tool-role turns.
-        convo = list(first.messages)
-        convo.append(_assistant_from(r1))
-        for call in r1.tool_calls:
-            convo.append(
-                Message(
-                    role="tool",
-                    content=[ToolResultPart(tool_use_id=call.id, content="ok")],
-                )
-            )
-        second = ChatRequest(messages=convo, tools=tools, max_tokens=1024)
-        r2 = await gateway.chat(second)
-        return r1, r2
-
-    r1, r2 = run_async(run)
-
-    # Turn 1: parallel tool calls normalized to the canonical shape.
-    assert r1.finish_reason == "tool_use"
-    assert {c.name for c in r1.tool_calls} == {"get_weather", "get_time"}
-    assert all(c.arguments == {"city": "Paris"} for c in r1.tool_calls)
-    assert r1.usage.input_tokens > 0
-
-    # Turn 2: the tool results round-tripped and produced final text.
-    assert r2.finish_reason == "stop"
-    assert r2.text is not None and "Paris" in r2.text
-
-    # The SECOND upstream request carried the tool results back in provider shape.
-    assert len(records) == 2
+def _golden_transcript(
+    gateway: LlmGateway, records: list[dict[str, Any]], *, provider: str, model_id: str
+) -> None:
+    """Drive the shared golden transcript (``tests/_transcript.py``) and assert the
+    canonical result, plus that the second upstream request carried the results."""
+    r1, r2 = T.run_golden_transcript(gateway)
+    T.assert_golden_canonical(r1, r2, provider=provider, model_id=model_id)
+    assert len(records) == 2  # two upstream calls; wire shape asserted by callers
 
 
 def test_golden_transcript_anthropic(tmp_path: Path) -> None:
     records: list[dict[str, Any]] = []
     gateway = _gateway(_write_config(tmp_path), _make_handler(records))
-    _golden_transcript(gateway, records)
+    _golden_transcript(gateway, records, provider="anthropic", model_id="claude-sonnet-4-5")
     second = records[1]
     # Anthropic quirk: the two parallel tool_results are merged into ONE user
     # turn (alternation preserved), following the assistant tool_use turn.
@@ -388,7 +337,7 @@ def test_golden_transcript_ollama_wire(tmp_path: Path) -> None:
     cfg = _FULL_CONFIG.replace("default: coding-default", "default: local-default")
     records: list[dict[str, Any]] = []
     gateway = _gateway(_write_config(tmp_path, cfg), _make_handler(records))
-    _golden_transcript(gateway, records)
+    _golden_transcript(gateway, records, provider="ollama", model_id="qwen3-coder:30b")
     second = records[1]
     # OpenAI/Ollama quirk: tool results are discrete role:'tool' messages keyed
     # by tool_call_id (NOT merged into a user turn).

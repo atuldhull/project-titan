@@ -7,7 +7,8 @@ are *exposed and validated* here so Phase 17 can execute them — this phase doe
 not fail over.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from titan.llm.config import GatewayConfig, Price, ProviderConfig
 from titan.llm.errors import UnknownAliasError
@@ -22,6 +23,7 @@ class ResolvedModel:
     model_id: str
     price: Price | None
     dimensions: int | None
+    options: dict[str, Any] = field(default_factory=dict)
 
 
 class ModelRouter:
@@ -41,6 +43,7 @@ class ModelRouter:
             model_id=spec.model,
             price=spec.price,
             dimensions=spec.dimensions,
+            options=spec.options,
         )
 
     def resolve_chat(self, *, model_alias: str | None, agent_id: str | None) -> ResolvedModel:

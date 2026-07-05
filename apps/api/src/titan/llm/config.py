@@ -55,6 +55,9 @@ class ModelAlias(BaseModel):
     model: str
     dimensions: int | None = None  # embedding aliases declare their vector width
     price: Price | None = None
+    # Per-alias provider options (config-driven quirks, e.g. {strict_tools: true}
+    # for OpenAI). Adapters read what they understand; unknown keys are ignored.
+    options: dict[str, Any] = Field(default_factory=dict)
 
 
 class Routing(BaseModel):

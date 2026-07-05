@@ -1,0 +1,40 @@
+{
+  "provider": "ollama",
+  "interactions": [
+    {
+      "request": { "method": "POST", "path": "/v1/chat/completions" },
+      "response": {
+        "status": 200,
+        "json": {
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                  { "id": "call_1", "type": "function", "function": { "name": "get_weather", "arguments": "{\"city\": \"Paris\"}" } },
+                  { "id": "call_2", "type": "function", "function": { "name": "get_time", "arguments": "{\"city\": \"Paris\"}" } }
+                ]
+              },
+              "finish_reason": "tool_calls"
+            }
+          ],
+          "usage": { "prompt_tokens": 44, "completion_tokens": 22 }
+        }
+      }
+    },
+    {
+      "request": { "method": "POST", "path": "/v1/chat/completions" },
+      "response": {
+        "status": 200,
+        "json": {
+          "choices": [
+            { "index": 0, "message": { "role": "assistant", "content": "It is 20C and 14:00 in Paris." }, "finish_reason": "stop" }
+          ],
+          "usage": { "prompt_tokens": 79, "completion_tokens": 11 }
+        }
+      }
+    }
+  ]
+}

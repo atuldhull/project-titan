@@ -15,7 +15,7 @@ from decimal import Decimal
 
 import httpx
 
-from titan.llm.adapters import AnthropicAdapter, OllamaAdapter
+from titan.llm.adapters import AnthropicAdapter, GoogleAdapter, OllamaAdapter, OpenAIAdapter
 from titan.llm.adapters.base import ChatAdapter, EmbeddingsAdapter
 from titan.llm.config import ConfigLoader, Price
 from titan.llm.errors import ProviderNotConfiguredError
@@ -49,13 +49,19 @@ class LlmGateway:
     def __init__(self, loader: ConfigLoader, client: httpx.AsyncClient) -> None:
         self._loader = loader
         self._client = client
-        anthropic = AnthropicAdapter()
         ollama = OllamaAdapter()
+        openai = OpenAIAdapter()
         self._chat_adapters: dict[str, ChatAdapter] = {
-            "anthropic": anthropic,
+            "anthropic": AnthropicAdapter(),
+            "openai": openai,
+            "google": GoogleAdapter(),
             "ollama": ollama,
         }
-        self._embed_adapters: dict[str, EmbeddingsAdapter] = {"ollama": ollama}
+        # Ollama + OpenAI expose embeddings; the alias picks provider+model.
+        self._embed_adapters: dict[str, EmbeddingsAdapter] = {
+            "ollama": ollama,
+            "openai": openai,
+        }
 
     async def aclose(self) -> None:
         await self._client.aclose()

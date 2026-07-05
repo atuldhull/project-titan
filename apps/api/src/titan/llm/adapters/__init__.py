@@ -12,7 +12,9 @@ which also makes wire-fixture testing a plain ``httpx.MockTransport`` away.
 
 from titan.llm.adapters.anthropic import AnthropicAdapter
 from titan.llm.adapters.base import ChatAdapter, ChatResult, EmbeddingsAdapter, EmbeddingsResult
+from titan.llm.adapters.google import GoogleAdapter
 from titan.llm.adapters.ollama import OllamaAdapter
+from titan.llm.adapters.openai import OpenAIAdapter
 
 __all__ = [
     "AnthropicAdapter",
@@ -20,5 +22,7 @@ __all__ = [
     "ChatResult",
     "EmbeddingsAdapter",
     "EmbeddingsResult",
+    "GoogleAdapter",
     "OllamaAdapter",
+    "OpenAIAdapter",
 ]

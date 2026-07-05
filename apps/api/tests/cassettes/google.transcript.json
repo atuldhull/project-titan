@@ -1,0 +1,39 @@
+{
+  "provider": "google",
+  "interactions": [
+    {
+      "request": { "method": "POST", "path": "/v1beta/models/gemini-2.5-flash:generateContent" },
+      "response": {
+        "status": 200,
+        "json": {
+          "candidates": [
+            {
+              "content": {
+                "role": "model",
+                "parts": [
+                  { "text": "Let me check both." },
+                  { "functionCall": { "name": "get_weather", "args": { "city": "Paris" } } },
+                  { "functionCall": { "name": "get_time", "args": { "city": "Paris" } } }
+                ]
+              },
+              "finishReason": "STOP"
+            }
+          ],
+          "usageMetadata": { "promptTokenCount": 42, "candidatesTokenCount": 18, "cachedContentTokenCount": 5 }
+        }
+      }
+    },
+    {
+      "request": { "method": "POST", "path": "/v1beta/models/gemini-2.5-flash:generateContent" },
+      "response": {
+        "status": 200,
+        "json": {
+          "candidates": [
+            { "content": { "role": "model", "parts": [{ "text": "It is 20C and 14:00 in Paris." }] }, "finishReason": "STOP" }
+          ],
+          "usageMetadata": { "promptTokenCount": 80, "candidatesTokenCount": 12 }
+        }
+      }
+    }
+  ]
+}

@@ -7,8 +7,8 @@ API_DIR := apps/api
 WEB_DIR := apps/web
 SCHEMAS_DIR := packages/schemas
 
-.PHONY: dev test test-schema lint lint-style boundaries route-guards typecheck \
-        migrate seed generate-types check-types-drift lint-openapi secret-scan
+.PHONY: dev test test-schema test-llm-live lint lint-style boundaries route-guards \
+        typecheck migrate seed generate-types check-types-drift lint-openapi secret-scan
 
 ## dev: run the API (uvicorn, reload) and the web app (next dev) together.
 ## Docker Compose is the primary dev loop from Phase 2 onward.
@@ -76,3 +76,10 @@ seed:
 # Schema/cycle tests against the disposable test database (never the dev DB).
 test-schema:
 	cd $(API_DIR) && uv run --env-file $(CURDIR)/.env pytest -m schema --no-cov
+
+# Live-provider LLM conformance (TITAN-INT-060): hits real Anthropic/OpenAI/
+# Google/Ollama when keys are present, skipping each leg otherwise. Runs as a
+# separate, NON-BLOCKING CI job so real API divergence is caught without gating
+# the main pipeline (no coverage gate here).
+test-llm-live:
+	cd $(API_DIR) && uv run pytest -m live_llm --no-cov

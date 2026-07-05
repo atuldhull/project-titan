@@ -96,6 +96,7 @@ testpaths = ["tests"]
 addopts = "--cov=titan --cov-report=term-missing --cov-fail-under=80"
 markers = [
     "schema: needs a live disposable PostgreSQL 16 (set TITAN_TEST_DATABASE_URL)",
+    "live_llm: hits a real LLM provider (needs API keys / local Ollama); non-blocking CI job",
 ]
 
 [tool.importlinter]

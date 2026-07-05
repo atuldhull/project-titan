@@ -30,6 +30,11 @@ model_aliases:
     provider: anthropic
     model: claude-sonnet-4-5
     price: { input_per_mtok: 3.00, output_per_mtok: 15.00 }
+  openai-default:
+    provider: openai
+    model: gpt-4.1
+    price: { input_per_mtok: 2.00, output_per_mtok: 8.00 }
+    options: { strict_tools: true } # OpenAI strict-mode tool schemas (INT-061)
   fast-cheap:
     provider: google
     model: gemini-2.5-flash

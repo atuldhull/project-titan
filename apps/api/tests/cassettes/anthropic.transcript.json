@@ -1,0 +1,31 @@
+{
+  "provider": "anthropic",
+  "interactions": [
+    {
+      "request": { "method": "POST", "path": "/v1/messages" },
+      "response": {
+        "status": 200,
+        "json": {
+          "content": [
+            { "type": "text", "text": "Let me check both." },
+            { "type": "tool_use", "id": "toolu_1", "name": "get_weather", "input": { "city": "Paris" } },
+            { "type": "tool_use", "id": "toolu_2", "name": "get_time", "input": { "city": "Paris" } }
+          ],
+          "stop_reason": "tool_use",
+          "usage": { "input_tokens": 42, "output_tokens": 18, "cache_read_input_tokens": 5 }
+        }
+      }
+    },
+    {
+      "request": { "method": "POST", "path": "/v1/messages" },
+      "response": {
+        "status": 200,
+        "json": {
+          "content": [{ "type": "text", "text": "It is 20C and 14:00 in Paris." }],
+          "stop_reason": "end_turn",
+          "usage": { "input_tokens": 80, "output_tokens": 12 }
+        }
+      }
+    }
+  ]
+}

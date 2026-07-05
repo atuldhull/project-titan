@@ -113,3 +113,23 @@ jobs:
       # developers run locally (no gitleaks-action: it needs a license for org
       # repos and would break command-set parity).
       - run: make secret-scan
+
+  # Live-provider conformance (TITAN-INT-060 item 4): a SEPARATE, NON-BLOCKING
+  # job so real API divergence is surfaced without failing the main pipeline.
+  # Each provider leg self-skips when its secret is absent, so this is a no-op
+  # (all skipped) on forks/PRs without the org secrets configured.
+  test-llm-live:
+    needs: typecheck
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: cd apps/api && uv sync --frozen
+      - run: make test-llm-live
