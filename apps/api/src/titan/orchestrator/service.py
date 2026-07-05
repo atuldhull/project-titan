@@ -440,6 +440,53 @@ async def claim_and_assign(
         await locks.release(redis, task_id, token)
 
 
+# --- run-lifecycle hooks (called by the worker's run coordinator, §8.2) -----
+
+
+async def start_run_task(
+    conn: AsyncConnection, task_id: uuid.UUID, agent_id: uuid.UUID
+) -> TaskOut | None:
+    """The worker begins a run: move the task assigned|reopened -> in_progress.
+    Idempotent — returns None if the task is not in a startable state (e.g. a
+    reclaimed run whose task is already in_progress)."""
+    task = await get_task(conn, task_id)
+    transition = transitions.resolve(task.status, "start")
+    if transition is None:
+        return None
+    return await apply_transition(
+        conn, task, transition, actor_agent_id=agent_id, actor_user_id=None, comment=None
+    )
+
+
+async def handle_run_result(
+    conn: AsyncConnection,
+    *,
+    task_id: uuid.UUID,
+    agent_id: uuid.UUID,
+    succeeded: bool,
+) -> TaskOut | None:
+    """Drive the state machine from a runs.results message (§8.2): a successful
+    run submits the task for review (in_progress -> in_review). A failed run is
+    terminal and leaves the task in_progress — recovery is a NEW dispatched run
+    (the scheduler re-dispatches, or a human intervenes); it is NOT auto-retried
+    here (only a timed_out run's queue message is retried, by the reaper).
+    Idempotent — a duplicate result finds the task already moved and no-ops."""
+    if not succeeded:
+        return None
+    task = await get_task(conn, task_id)
+    transition = transitions.resolve(task.status, "submit_review")
+    if transition is None:
+        return None
+    return await apply_transition(
+        conn,
+        task,
+        transition,
+        actor_agent_id=agent_id,
+        actor_user_id=None,
+        comment="run succeeded",
+    )
+
+
 # --- read-only project aggregates ------------------------------------------
 
 
@@ -542,9 +589,11 @@ __all__ = [
     "create_task",
     "get_task",
     "graph_for_project",
+    "handle_run_result",
     "invalid_transition",
     "list_tasks",
     "ready_pool",
+    "start_run_task",
     "task_in_project",
     "transitions",
     "update_task",

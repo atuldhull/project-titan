@@ -104,6 +104,80 @@ async def cancel_run(
     return result.one_or_none()
 
 
+# --- worker run lifecycle (§8.2) -------------------------------------------
+# All guarded on the current status so re-delivery/reclaim is idempotent: a run
+# only advances from a non-terminal state, so at most one worker records its
+# result/artifacts (TITAN-BCK-016 'no duplicate side effects').
+
+
+async def mark_running(conn: AsyncConnection, run_id: uuid.UUID) -> Row[Any] | None:
+    """Take (or re-take) a non-terminal run: queued|running|timed_out → running,
+    stamping started_at once and clearing any prior finished_at (a re-taken
+    timed_out run is no longer finished). Returns None ONLY for a missing or
+    terminal (succeeded|failed|cancelled) run — the idempotency gate that lets a
+    reclaimed in-flight/timed-out run retry while a finalized one is skipped."""
+    result = await conn.execute(
+        text(
+            f"UPDATE runs SET status = 'running', started_at = COALESCE(started_at, now()), "
+            f"finished_at = NULL, version = version + 1 "
+            f"WHERE id = :id AND status IN ('queued', 'running', 'timed_out') RETURNING {_RUN_COLS}"
+        ),
+        {"id": run_id},
+    )
+    return result.one_or_none()
+
+
+async def finalize_run(
+    conn: AsyncConnection,
+    run_id: uuid.UUID,
+    *,
+    status: str,
+    output_summary: str | None,
+    error: str | None,
+    provider: str | None,
+    model: str | None,
+    tokens_in: int,
+    tokens_out: int,
+    cost_usd: object,
+) -> Row[Any] | None:
+    """queued|running → terminal (succeeded|failed), recording accounting +
+    finished_at. Returns None if already finalized (a peer won) — the caller
+    then skips artifact/result writes, so there is exactly one finalizer."""
+    result = await conn.execute(
+        text(
+            f"UPDATE runs SET status = :status, output_summary = :output_summary, error = :error, "
+            f"provider = :provider, model = :model, tokens_in = :tokens_in, "
+            f"tokens_out = :tokens_out, cost_usd = :cost_usd, finished_at = now(), "
+            f"version = version + 1 "
+            f"WHERE id = :id AND status IN ('queued', 'running') RETURNING {_RUN_COLS}"
+        ),
+        {
+            "id": run_id,
+            "status": status,
+            "output_summary": output_summary,
+            "error": error,
+            "provider": provider,
+            "model": model,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "cost_usd": cost_usd,
+        },
+    )
+    return result.one_or_none()
+
+
+async def mark_timed_out(conn: AsyncConnection, run_id: uuid.UUID) -> Row[Any] | None:
+    """queued|running → timed_out (stamps finished_at). None if already terminal."""
+    result = await conn.execute(
+        text(
+            f"UPDATE runs SET status = 'timed_out', finished_at = now(), version = version + 1 "
+            f"WHERE id = :id AND status IN ('queued', 'running') RETURNING {_RUN_COLS}"
+        ),
+        {"id": run_id},
+    )
+    return result.one_or_none()
+
+
 async def insert_artifact(
     conn: AsyncConnection,
     *,

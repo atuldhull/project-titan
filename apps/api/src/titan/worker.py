@@ -1,9 +1,10 @@
 """Stream-consumer entrypoint for titan-worker (Vol 3 §2.1, TITAN-BCK-003).
 
 Runs from the same image as titan-core with entrypoint ``python -m titan.worker``.
-At this phase the worker runs the events backbone: the transactional-outbox
-drainer, the demo consumer of stream:events.domain, and the reaper that
-reclaims-and-reprocesses idle-pending work and dead-letters poison messages.
+It runs the events backbone (outbox drainer, demo domain consumer, reaper) AND
+the run lifecycle (Phase 14, §8.2): a bounded run-executor consuming
+stream:runs.execute, its reaper (retry + DLQ), and a results consumer that drives
+the state machine (success → submit_review).
 
 Each loop is independently resilient (self-healing on transient errors) and
 runs under ``gather(return_exceptions=True)`` so one dying loop cannot tear the
@@ -22,6 +23,14 @@ from titan.events import service as events
 from titan.events.consumers import run_domain_consumer, run_drainer, run_reaper
 from titan.events.outbox import OutboxDrainer
 from titan.observability.logging import configure_logging
+from titan.runs.coordinator import (
+    run_execute_reaper,
+    run_executor_loop,
+    run_results_loop,
+    run_results_reaper,
+)
+from titan.runs.executor import StubExecutor
+from titan.runs.storage import FilesystemStorage
 from titan.settings import get_settings
 
 logger = structlog.get_logger("titan.worker")
@@ -36,19 +45,59 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
     redis = clients.create_redis(settings)
     bus = events.build_bus(redis)
     drainer = OutboxDrainer(engine, bus)
+    storage = FilesystemStorage(settings.artifact_root)
+    executor = StubExecutor()
     stop = asyncio.Event()
     consumer_name = "titan-worker-1"
+    # The reaper must only reclaim GENUINELY dead workers: a live worker holds an
+    # in-flight run's message for up to the soft timeout, so min-idle exceeds it.
+    reaper_min_idle_ms = int((settings.run_soft_timeout_seconds + 60.0) * 1000)
 
     start_http_server(METRICS_PORT)  # /metrics for DLQ + stream-depth gauges
     logger.info(
         "worker.start",
-        consumers=["outbox-drainer", "domain-consumer", "reaper"],
+        consumers=[
+            "outbox-drainer",
+            "domain-consumer",
+            "reaper",
+            "runs-executor",
+            "runs-execute-reaper",
+            "runs-results",
+            "runs-results-reaper",
+        ],
+        worker_concurrency=settings.worker_concurrency,
         metrics_port=METRICS_PORT,
     )
     tasks = [
         asyncio.create_task(run_drainer(drainer, stop=stop)),
         asyncio.create_task(run_domain_consumer(engine, bus, consumer_name, stop=stop)),
         asyncio.create_task(run_reaper(engine, bus, consumer_name, stop=stop)),
+        asyncio.create_task(
+            run_executor_loop(
+                engine,
+                bus,
+                storage,
+                executor,
+                consumer_name,
+                stop=stop,
+                concurrency=settings.worker_concurrency,
+                soft_timeout=settings.run_soft_timeout_seconds,
+            )
+        ),
+        asyncio.create_task(
+            run_execute_reaper(
+                engine,
+                bus,
+                storage,
+                executor,
+                consumer_name,
+                stop=stop,
+                soft_timeout=settings.run_soft_timeout_seconds,
+                min_idle_ms=reaper_min_idle_ms,
+            )
+        ),
+        asyncio.create_task(run_results_loop(engine, bus, consumer_name, stop=stop)),
+        asyncio.create_task(run_results_reaper(engine, bus, consumer_name, stop=stop)),
     ]
     try:
         # return_exceptions: a loop that somehow escapes its own guard cannot

@@ -125,6 +125,12 @@ async def get_run(conn: AsyncConnection, run_id: uuid.UUID) -> RunOut:
     return RunOut.model_validate(row)
 
 
+async def find_run(conn: AsyncConnection, run_id: uuid.UUID) -> RunOut | None:
+    """Non-raising lookup for the worker (a vanished run is not a 404)."""
+    row = await repo.get_run(conn, run_id)
+    return RunOut.model_validate(row) if row is not None else None
+
+
 async def list_runs(conn: AsyncConnection, *, task_id: uuid.UUID, keyset: Keyset) -> Page[RunOut]:
     rows = await repo.list_runs_by_task(conn, task_id=task_id, keyset=keyset)
     page, cursor = keyset.paginate(rows)
@@ -140,6 +146,54 @@ async def cancel_run(conn: AsyncConnection, run_id: uuid.UUID) -> RunOut:
             raise not_found("run")
         raise _conflict(f"Run is already {existing.status} and cannot be cancelled.")
     return RunOut.model_validate(row)
+
+
+# --- worker run lifecycle (§8.2); guarded so re-delivery is idempotent ------
+
+
+async def mark_running(conn: AsyncConnection, run_id: uuid.UUID) -> RunOut | None:
+    """Take (or re-take) a non-terminal run: queued|running|timed_out → running
+    (started_at stamped once, finished_at cleared). Returns None only for a
+    missing or terminal (succeeded|failed|cancelled) run — the idempotency gate
+    a reclaimed in-flight/timed-out run passes while a finalized one is skipped."""
+    row = await repo.mark_running(conn, run_id)
+    return RunOut.model_validate(row) if row is not None else None
+
+
+async def finalize_run(
+    conn: AsyncConnection,
+    run_id: uuid.UUID,
+    *,
+    status: Literal["succeeded", "failed"],
+    output_summary: str | None,
+    error: str | None,
+    provider: str | None,
+    model: str | None,
+    tokens_in: int,
+    tokens_out: int,
+    cost_usd: Decimal,
+) -> RunOut | None:
+    """queued|running → succeeded|failed with accounting. Returns None if a peer
+    already finalized it — the caller then skips artifacts/result (one finalizer)."""
+    row = await repo.finalize_run(
+        conn,
+        run_id,
+        status=status,
+        output_summary=output_summary,
+        error=error,
+        provider=provider,
+        model=model,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cost_usd=cost_usd,
+    )
+    return RunOut.model_validate(row) if row is not None else None
+
+
+async def mark_timed_out(conn: AsyncConnection, run_id: uuid.UUID) -> RunOut | None:
+    """queued|running → timed_out; None if already terminal."""
+    row = await repo.mark_timed_out(conn, run_id)
+    return RunOut.model_validate(row) if row is not None else None
 
 
 # --- artifacts -------------------------------------------------------------
@@ -190,8 +244,12 @@ __all__ = [
     "RunStatus",
     "cancel_run",
     "create_run",
+    "finalize_run",
+    "find_run",
     "get_run",
     "list_artifacts",
     "list_runs",
+    "mark_running",
+    "mark_timed_out",
     "record_artifact",
 ]

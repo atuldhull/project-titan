@@ -81,6 +81,10 @@ services:
       TITAN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-titan}:${POSTGRES_PASSWORD:-titan}@postgres:5432/${POSTGRES_DB:-titan}
       TITAN_REDIS_URL: redis://redis:6379/0
       TITAN_QDRANT_URL: http://qdrant:6333
+      # Artifacts live on the writable tmpfs at MVP (object storage swaps in
+      # behind the Storage protocol later); the rootfs stays read-only.
+      TITAN_ARTIFACT_ROOT: /tmp/titan-artifacts
+      TITAN_WORKER_CONCURRENCY: ${TITAN_WORKER_CONCURRENCY:-4}
     expose:
       - "9100"  # /metrics (scraped by Prometheus under the obs profile)
     read_only: true

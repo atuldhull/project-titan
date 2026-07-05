@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     # /readyz dependency-check budget in seconds (Vol 3 §12: 500 ms)
     readyz_budget_seconds: float = 0.5
 
+    # --- Worker / run lifecycle (Phase 14; TITAN-BCK-017, §8.2) ---
+    # Max runs executed concurrently in ONE worker (asyncio task-group bound).
+    worker_concurrency: int = 4
+    # Soft per-run timeout; a run exceeding it becomes `timed_out` and retries.
+    run_soft_timeout_seconds: float = 900.0
+    # Filesystem root for the MVP artifact Storage backend (Vol 3 §6).
+    artifact_root: str = "/var/lib/titan/artifacts"
+
     # OTLP trace export (TITAN-BCK-025). Empty = tracing disabled (no
     # collector running); Compose obs profile sets http://otel-collector:4317.
     otel_exporter_otlp_endpoint: str = ""
