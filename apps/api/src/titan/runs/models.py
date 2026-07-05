@@ -5,7 +5,16 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import BigInteger, ForeignKey, Index, Integer, Numeric, Text, text
+from sqlalchemy import (
+    BigInteger,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,6 +24,8 @@ from titan.db import Base, ConventionsMixin, uuid7
 class Run(ConventionsMixin, Base):
     __tablename__ = "runs"
     __table_args__ = (
+        # One attempt number per task (§8.2 attempt = max+1); see migration 0006.
+        UniqueConstraint("task_id", "attempt", name="uq_runs_task_id_attempt"),
         Index("idx_runs_task", "task_id", text("attempt DESC")),
         Index(
             "idx_runs_status",

@@ -158,6 +158,29 @@ class PermissionResolver:
         return permission_granted(permission, granted)
 
 
+async def authorize_in_project(
+    request: Request,
+    project_id: uuid.UUID,
+    permission: str,
+    *,
+    resource: str = "resource",
+) -> None:
+    """Object-level authorization for a route whose project is only known after
+    the target row is loaded (object-addressed routes like /tasks/{id} or
+    /runs/{id}, whose project comes from the row, not the path).
+
+    Resolves the caller's permissions IN THAT PROJECT: no visibility there is a
+    404 (existence never leaked, TITAN-SEC-032); visible-but-underpowered is a
+    403. Works for org-wide and project-scoped principals alike.
+    """
+    resolver = get_resolver(request)
+    granted = await resolver.project_permissions(project_id)
+    if not granted:
+        raise not_found(resource)
+    if not permission_granted(permission, granted):
+        raise forbidden(permission)
+
+
 async def require_object_in_project(
     resolver: "PermissionResolver",
     object_project_id: uuid.UUID | None,

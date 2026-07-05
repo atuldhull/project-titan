@@ -19,14 +19,7 @@ from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
 
 from titan.gateway.concurrency import require_if_match, set_etag, version_conflict
 from titan.gateway.pagination import Page, Pagination, keyset_from
-from titan.gateway.rbac import (
-    Requires,
-    RequiresAuth,
-    forbidden,
-    get_resolver,
-    not_found,
-    permission_granted,
-)
+from titan.gateway.rbac import Requires, RequiresAuth, authorize_in_project
 from titan.identity.service import Principal
 from titan.orchestrator import service
 from titan.orchestrator.service import (
@@ -48,17 +41,9 @@ _Authenticated = Annotated[Principal, Depends(RequiresAuth())]
 
 
 async def _authorize_task(request: Request, task: TaskOut, permission: str) -> None:
-    """Object-level authorization for an object-addressed task route.
-
-    Resolves the caller's permissions IN THE TASK'S OWN PROJECT: no visibility
-    there is a 404 (existence never leaked), visible-but-underpowered is a 403.
-    """
-    resolver = get_resolver(request)
-    granted = await resolver.project_permissions(task.project_id)
-    if not granted:
-        raise not_found("task")
-    if not permission_granted(permission, granted):
-        raise forbidden(permission)
+    """Object-level authorization for an object-addressed task route: authorize
+    against the task's own project (404 out-of-scope, 403 underpowered)."""
+    await authorize_in_project(request, task.project_id, permission, resource="task")
 
 
 # --- project-nested task routes --------------------------------------------

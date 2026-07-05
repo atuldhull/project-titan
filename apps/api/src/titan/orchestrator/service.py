@@ -206,6 +206,16 @@ async def update_task(
     return task
 
 
+async def task_in_project(
+    conn: AsyncConnection, task_id: uuid.UUID, project_id: uuid.UUID
+) -> bool:
+    """True if the task exists AND belongs to ``project_id`` — the cross-module
+    referential check callers use before linking to a task (e.g. a message's
+    task_id must live in the message's project)."""
+    row = await repo.get_task(conn, task_id)
+    return row is not None and row.project_id == project_id
+
+
 async def add_dependency(
     conn: AsyncConnection, *, task_id: uuid.UUID, depends_on_id: uuid.UUID, actor: str
 ) -> DependencyOut:
@@ -325,5 +335,6 @@ __all__ = [
     "get_task",
     "graph_for_project",
     "list_tasks",
+    "task_in_project",
     "update_task",
 ]

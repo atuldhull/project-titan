@@ -11,6 +11,7 @@ variable from TITAN_DATABASE_URL for exactly that reason.
 import asyncio
 import os
 from collections.abc import Callable, Iterator
+from functools import lru_cache
 from typing import Any, TypeVar
 
 import pytest
@@ -96,3 +97,130 @@ def migrated_engine(schema_url: str) -> Iterator[AsyncEngine]:
     engine = create_async_engine(schema_url, poolclass=NullPool)
     yield engine
     run_async(engine.dispose)
+
+
+# Roles seeded by the `api` fixture (the §9.3 bundles from scripts.seed).
+_ROLES = ("owner", "admin", "maintainer", "operator", "viewer")
+
+
+@lru_cache(maxsize=1)
+def _test_jwt_key_b64() -> str:
+    """A stable RSA keypair for the test session so a token minted by one app
+    instance still verifies after a 'restart' (a fresh create_app). Without a
+    fixed key each app mints an ephemeral keypair and cross-instance tokens 401.
+    """
+    import base64
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem = key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    return base64.b64encode(pem).decode()
+
+
+@pytest.fixture
+def api(
+    migrated_engine: AsyncEngine, schema_url: str, monkeypatch: pytest.MonkeyPatch
+) -> "Iterator[dict[str, Any]]":
+    """A TestClient over the real schema with the 5 §9.3 roles + one user each
+    (org-wide) + a project-scoped-only user seeded, fakeredis, and helpers:
+    ``token_for(role)``, ``user_ids``, ``grant_project_role`` and
+    ``new_client()`` (a fresh app instance on the SAME DB, for restart tests).
+    """
+    import uuid
+
+    import fakeredis.aioredis
+    from fastapi.testclient import TestClient
+    from scripts.seed import ROLE_PERMISSIONS
+
+    from titan import clients
+    from titan.db import uuid7
+    from titan.main import create_app
+    from titan.settings import Settings
+
+    fake = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    monkeypatch.setattr(clients, "create_redis", lambda _settings: fake)
+
+    user_ids: dict[str, uuid.UUID] = {}
+
+    async def seed() -> None:
+        import json as _json
+
+        async with migrated_engine.begin() as conn:
+            for name, perms in ROLE_PERMISSIONS.items():
+                await conn.execute(
+                    text(
+                        "INSERT INTO roles (id, name, permissions) VALUES (:id, :n, :p) "
+                        "ON CONFLICT (name) DO UPDATE SET permissions = :p"
+                    ),
+                    {"id": uuid7(), "n": name, "p": _json.dumps(perms)},
+                )
+            for role in (*_ROLES, "scoped"):
+                uid = uuid7()
+                user_ids[role] = uid
+                await conn.execute(
+                    text(
+                        "INSERT INTO users (id, email, display_name, auth_provider, auth_subject)"
+                        " VALUES (:id, :email, :dn, 'local', :subj)"
+                    ),
+                    {"id": uid, "email": f"{role}-{uid}@titan.local", "dn": role, "subj": str(uid)},
+                )
+                if role in _ROLES:
+                    await conn.execute(
+                        text(
+                            "INSERT INTO user_roles (id, user_id, role_id, project_id) "
+                            "SELECT :rid, :uid, r.id, NULL FROM roles r WHERE r.name = :role"
+                        ),
+                        {"rid": uuid7(), "uid": uid, "role": role},
+                    )
+
+    run_async(seed)
+
+    settings = Settings(
+        database_url=schema_url,
+        jwt_private_key_b64=_test_jwt_key_b64(),
+        otel_exporter_otlp_endpoint="",
+        _env_file=None,
+    )
+    app = create_app(settings)
+
+    def grant_project_role(role_user: str, project_id: str, role: str) -> None:
+        async def grant() -> None:
+            async with migrated_engine.begin() as conn:
+                await conn.execute(
+                    text(
+                        "INSERT INTO user_roles (id, user_id, role_id, project_id) "
+                        "SELECT :rid, :uid, r.id, :pid FROM roles r WHERE r.name = :role"
+                    ),
+                    {"rid": uuid7(), "uid": user_ids[role_user], "pid": project_id, "role": role},
+                )
+
+        run_async(grant)
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+
+        def token_for(role: str, roles: "list[str] | None" = None) -> dict[str, str]:
+            access, _ = app.state.keyring.mint(
+                sub=str(user_ids[role]),
+                roles=roles if roles is not None else ([role] if role in _ROLES else []),
+                scope="user",
+            )
+            return {"Authorization": f"Bearer {access}"}
+
+        def new_client() -> TestClient:
+            """A fresh app on the SAME database — a process 'restart'."""
+            return TestClient(create_app(settings), raise_server_exceptions=False)
+
+        yield {
+            "client": client,
+            "token_for": token_for,
+            "grant_project_role": grant_project_role,
+            "user_ids": user_ids,
+            "engine": migrated_engine,
+            "new_client": new_client,
+        }

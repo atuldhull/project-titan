@@ -15,6 +15,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.openapi.utils import get_openapi
 
 from titan import clients
+from titan.agents import router as agents_router
 from titan.gateway.idempotency import IdempotencyMiddleware
 from titan.gateway.middleware import RequestContextMiddleware
 from titan.gateway.openapi import problemify_openapi
@@ -27,6 +28,7 @@ from titan.gateway.security import (
 from titan.gateway.slots import AuthenticationSlot, RateLimitSlot, RBACSlot
 from titan.identity import router as identity_router
 from titan.identity.tokens import KeyRing
+from titan.messaging import router as messaging_router
 from titan.observability import otel
 from titan.observability.health import router as health_router
 from titan.observability.logging import configure_logging
@@ -34,6 +36,7 @@ from titan.observability.metrics import REDMetricsMiddleware
 from titan.observability.metrics import router as metrics_router
 from titan.orchestrator import router as tasks_router
 from titan.projects import router as projects_router
+from titan.runs import router as runs_router
 from titan.settings import Settings, get_settings
 
 
@@ -113,6 +116,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     identity_router.mount(app)  # /auth/* + fills the authentication slot
     projects_router.mount(app)  # /projects, /milestones, /sprints, board/graph
     tasks_router.mount(app)  # /tasks, /projects/{id}/tasks, dependencies
+    agents_router.mount(app)  # /agents registry + :pause/:resume
+    messaging_router.mount(app)  # /messages, /decisions, /notifications
+    runs_router.mount(app)  # /runs, /tasks/{id}/runs, artifacts
     otel.instrument_app(active_settings, app)
 
     def custom_openapi() -> dict[str, Any]:

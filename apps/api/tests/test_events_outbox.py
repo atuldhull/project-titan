@@ -21,6 +21,20 @@ from titan.events.streams import STREAM_EVENTS_DOMAIN
 pytestmark = pytest.mark.schema
 
 
+@pytest.fixture(autouse=True)
+def _clean_event_tables(migrated_engine: Any) -> None:
+    """These tests assert on the WHOLE outbox/inbox, so start each from empty —
+    other suites (Phase 11/12 API tests) commit domain events to the same
+    session DB and leave them undrained, which would otherwise inflate counts."""
+
+    async def clean() -> None:
+        async with migrated_engine.begin() as conn:
+            await conn.execute(text("DELETE FROM event_inbox"))
+            await conn.execute(text("DELETE FROM outbox"))
+
+    run_async(clean)
+
+
 def _bus() -> tuple[RedisStreamBus, Any]:
     redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
     return RedisStreamBus(redis), redis

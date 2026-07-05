@@ -2,9 +2,23 @@
 any module).
 """
 
-from typing import Any, ClassVar
+import json
+from typing import Annotated, Any, ClassVar
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, BeforeValidator, model_validator
+
+
+def _decode_jsonb(value: Any) -> Any:
+    """Normalize a jsonb column value to a Python object.
+
+    SQLAlchemy's asyncpg dialect may hand back a jsonb column as either the
+    decoded object or the raw JSON string depending on the registered codec, so
+    response DTOs decode defensively before validation."""
+    return json.loads(value) if isinstance(value, str) else value
+
+
+#: A jsonb object field on a response DTO (decodes a str payload if needed).
+JsonbDict = Annotated[dict[str, Any], BeforeValidator(_decode_jsonb)]
 
 
 class RejectNullFields(BaseModel):
