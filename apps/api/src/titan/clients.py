@@ -19,8 +19,15 @@ def create_engine(settings: Settings) -> AsyncEngine:
 
 
 def create_redis(settings: Settings) -> Redis:
-    """Async Redis client (redis.asyncio)."""
-    return Redis.from_url(settings.redis_url, decode_responses=True)
+    """Async Redis client (redis.asyncio). Absorbs transient reconnects so a
+    routine Redis restart/failover doesn't surface as an error to callers."""
+    return Redis.from_url(
+        settings.redis_url,
+        decode_responses=True,
+        health_check_interval=30,
+        retry_on_timeout=True,
+        socket_keepalive=True,
+    )
 
 
 def create_http_client(settings: Settings) -> httpx.AsyncClient:

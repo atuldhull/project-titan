@@ -69,6 +69,29 @@ services:
       retries: 12
       start_period: 10s
 
+  worker:
+    build:
+      context: ./apps/api
+      dockerfile: ../../infra/docker/titan-worker.Dockerfile
+    # Self-heal on crash (defense in depth beyond the loops' own resilience).
+    restart: unless-stopped
+    environment:
+      TITAN_ENVIRONMENT: local
+      TITAN_LOG_LEVEL: ${TITAN_LOG_LEVEL:-INFO}
+      TITAN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-titan}:${POSTGRES_PASSWORD:-titan}@postgres:5432/${POSTGRES_DB:-titan}
+      TITAN_REDIS_URL: redis://redis:6379/0
+      TITAN_QDRANT_URL: http://qdrant:6333
+    expose:
+      - "9100"  # /metrics (scraped by Prometheus under the obs profile)
+    read_only: true
+    tmpfs:
+      - /tmp
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   postgres:
     image: postgres:16-alpine
     ports:
@@ -89,7 +112,9 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    # AOF everysec (ADR-BCK-02): bounds the crash-loss window to ≤1s; the
+    # transactional outbox re-drain covers even that window.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
     ports:
       # Spec default 6379; override REDIS_PORT in .env on host conflict.
       - "${REDIS_PORT:-6379}:6379"

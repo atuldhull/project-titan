@@ -59,4 +59,5 @@ domain modules may only be imported through their public `service.py` interface.
 - [x] Phase 7 — REST conventions framework + gateway middleware
 - [x] Phase 8 — Identity: local auth, JWTs, API keys, service tokens
 - [x] Phase 9 — RBAC engine + route protection + ownership
-- [ ] Phase 10 — Events infra: QueueBus, Redis Streams & transactional outbox (next)
+- [x] Phase 10 — Events infra: QueueBus, Redis Streams & transactional outbox
+- [ ] Phase 11 — Domain modules I: projects, milestones, sprints, tasks (next)

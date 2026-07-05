@@ -26,6 +26,19 @@ READYZ_DEPENDENCY_UP = Gauge(
     ["dependency"],
 )
 
+# Queue observability (Vol 3 §12, TITAN-BCK-011).
+STREAM_DLQ_DEPTH = Gauge(
+    "titan_stream_dlq_depth",
+    "Dead-letter entries per stream (poison messages)",
+    ["stream"],
+)
+
+STREAM_DEPTH = Gauge(
+    "titan_stream_depth",
+    "Pending (unacked) entries per stream consumer group",
+    ["stream", "group"],
+)
+
 router = APIRouter()
 
 _FIXED_PATHS = frozenset({"/api/docs", "/api/openapi.json", "/metrics"})

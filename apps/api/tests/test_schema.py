@@ -33,7 +33,9 @@ CORE_TABLES = {
 }
 # …plus identity credential tables added in Phase 8 (migration 0004).
 IDENTITY_TABLES = {"local_credentials", "refresh_tokens", "api_keys"}
-EXPECTED_TABLES = CORE_TABLES | IDENTITY_TABLES
+# …plus the events inbox ledger added in Phase 10 (migration 0005).
+EVENTS_TABLES = {"event_inbox"}
+EXPECTED_TABLES = CORE_TABLES | IDENTITY_TABLES | EVENTS_TABLES
 
 EXPECTED_INDEXES = {
     "projects": {"idx_projects_status"},

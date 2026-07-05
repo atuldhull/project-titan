@@ -1,7 +1,8 @@
-"""Transactional outbox table (Vol 3 §6, TITAN-BCK-005).
+"""Events tables: outbox (Vol 3 §6) + event_inbox (consumer idempotency ledger).
 
-Owned by the events library; domain modules write rows in their own
-transactions and the Phase-10 publisher drains them to Redis Streams.
+The events module is a library (Vol 3 §3) — outbox is the transactional
+outbox (TITAN-BCK-005); event_inbox is the inbox pattern the demo consumer
+uses so replaying a stream produces no duplicate side effects (TITAN-BCK-010).
 """
 
 import uuid
@@ -29,3 +30,19 @@ class Outbox(ConventionsMixin, Base):
     topic: Mapped[str] = mapped_column(Text, nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     published_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+
+class EventInbox(ConventionsMixin, Base):
+    """Idempotency ledger keyed on event_id ALONE: the demo consumer inserts
+    ON CONFLICT DO NOTHING, so re-delivery OR replaying the whole stream into
+    a fresh consumer group produces no duplicate side effect in Postgres
+    (TITAN-BCK-010 acceptance). consumer_group records who processed it first."""
+
+    __tablename__ = "event_inbox"
+
+    event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    consumer_group: Mapped[str] = mapped_column(Text, nullable=False)
+    topic: Mapped[str] = mapped_column(Text, nullable=False)
+    processed_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
+    )
