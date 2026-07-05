@@ -88,6 +88,19 @@ export interface components {
             status: "alive";
         };
         /**
+         * Problem
+         * @description RFC 9457 Problem Details (§4.1 error contract)
+         */
+        Problem: {
+            detail?: string;
+            errors?: Record<string, never>[];
+            instance?: string;
+            status: number;
+            title: string;
+            /** @default about:blank */
+            type: string;
+        };
+        /**
          * ReadyzResponse
          * @description Readiness probe response; ``failing`` is non-empty exactly when unready.
          */

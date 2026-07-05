@@ -1,0 +1,62 @@
+# Spectral ruleset encoding the Vol 3 §4.1 API conventions (TITAN-BCK-006).
+# Run: npx spectral lint packages/schemas/openapi.json --ruleset .spectral.yaml
+extends: []
+
+rules:
+  titan-base-path:
+    description: All paths live under /api/v1 (URI versioning) or are probe/metrics endpoints.
+    severity: error
+    given: $.paths[*]~
+    then:
+      function: pattern
+      functionOptions:
+        match: "^/(api/v1/|healthz$|readyz$|metrics$)"
+
+  titan-kebab-case-resources:
+    description: "Resource segments are plural kebab-case; {params} and :verb actions allowed (AIP-136), including {param}:verb."
+    severity: error
+    given: $.paths[*]~
+    then:
+      function: pattern
+      functionOptions:
+        match: "^/([a-z0-9-]+|\\{[a-z_]+\\})(:[a-z-]+)?(/([a-z0-9-]+|\\{[a-z_]+\\})(:[a-z-]+)?)*$"
+
+  titan-snake-case-properties:
+    description: JSON bodies are snake_case (Pydantic native).
+    severity: error
+    given: $.components.schemas[*].properties[*]~
+    then:
+      function: pattern
+      functionOptions:
+        match: "^[a-z][a-z0-9_]*$"
+
+  titan-errors-are-problem-json:
+    description: Every 4xx/5xx response body is RFC 9457 application/problem+json (probe endpoints exempt — readyz's 503 documents its own diagnostic model).
+    severity: error
+    given: $.paths[?(!@property.match(/healthz|readyz/))][*].responses[?(@property.match(/^[45]\d\d$/))].content[*]~
+    then:
+      function: pattern
+      functionOptions:
+        match: "^application/problem\\+json$"
+
+  titan-timestamps-rfc3339:
+    description: Timestamp fields declare format date-time (RFC 3339 UTC).
+    severity: error
+    given: $.components.schemas[*].properties[?(@property.match(/_at$/))]
+    then:
+      # Both clauses: format must EXIST (a missing format would otherwise
+      # pass the pattern check silently) and must be date-time.
+      - field: format
+        function: defined
+      - field: format
+        function: pattern
+        functionOptions:
+          match: "^date-time$"
+
+  titan-list-envelope:
+    description: "Paginated list schemas use the {items, next_cursor} envelope."
+    severity: error
+    given: $.components.schemas[?(@ && @.properties && @.properties.items && @.properties.next_cursor == null)]
+    then:
+      field: properties.next_cursor
+      function: truthy

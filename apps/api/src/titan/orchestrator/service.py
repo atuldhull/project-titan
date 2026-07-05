@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from titan.orchestrator.errors import DependencyCycleError
 
+__all__ = ["DependencyCycleError", "add_task_dependency"]
+
 # Transaction-scoped advisory lock serializing ALL dependency-graph writes.
 # Without it, two READ COMMITTED transactions inserting A→B and B→A each see
 # a snapshot without the other's edge and both commit — a persistent cycle.

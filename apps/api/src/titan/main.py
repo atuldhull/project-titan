@@ -1,17 +1,30 @@
 """FastAPI application factory for titan-core (TITAN-BCK-001).
 
-``uvicorn titan.main:app`` starts the full API. The lifespan owns the async
-backing-service clients (created lazily, closed on shutdown); routers and
-middleware accumulate here phase by phase on this single factory.
+``uvicorn titan.main:app`` starts the full API. The §9.1 gateway middleware
+stack lives here, in its mandated order; routers and strategies accumulate
+phase by phase on this single factory.
 """
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.openapi.utils import get_openapi
 
 from titan import clients
+from titan.gateway.idempotency import IdempotencyMiddleware
 from titan.gateway.middleware import RequestContextMiddleware
+from titan.gateway.openapi import problemify_openapi
+from titan.gateway.problems import register_problem_handlers
+from titan.gateway.security import (
+    BodySizeCapMiddleware,
+    DocsAuthGuardMiddleware,
+    SecurityHeadersMiddleware,
+)
+from titan.gateway.slots import AuthenticationSlot, RateLimitSlot, RBACSlot
 from titan.observability import otel
 from titan.observability.health import router as health_router
 from titan.observability.logging import configure_logging
@@ -25,6 +38,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     active_settings = settings if settings is not None else get_settings()
     configure_logging(active_settings.log_level, service="titan-api")
     otel.setup_tracing(active_settings, service_name="titan-api")
+    production = active_settings.environment == "production"
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -44,17 +58,60 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title=active_settings.app_name,
         version="0.1.0",
         docs_url="/api/docs",
+        redoc_url=None,  # one documented docs surface, guarded in production
         openapi_url="/api/openapi.json",
         debug=active_settings.debug,
         lifespan=lifespan,
     )
-    # Starlette: last-added runs OUTERMOST. RED is outermost so the histogram
-    # observes every request even if inner middleware raises.
+
+    # Gateway slot strategies — Phases 8/9/13 assign real implementations.
+    app.state.auth_strategy = None
+    app.state.rbac_strategy = None
+    app.state.rate_limit_strategy = None
+
+    # §9.1 middleware order, outermost first:
+    #   RED metrics (observability, transparent)
+    #   → security headers (TITAN-BCK-019 — near-outermost so EVERY response,
+    #     including short-circuits like 413/401/replays, carries them)
+    #   → request-ID injection → CORS → authentication → RBAC → rate limiting
+    #   → idempotency replay → docs guard → body-size cap → compression → router.
+    # Starlette runs the LAST-added middleware OUTERMOST, so registration below
+    # is that list reversed.
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
+    app.add_middleware(BodySizeCapMiddleware)
+    app.add_middleware(DocsAuthGuardMiddleware, production=production)
+    app.add_middleware(IdempotencyMiddleware)
+    app.add_middleware(RateLimitSlot)
+    app.add_middleware(RBACSlot)
+    app.add_middleware(AuthenticationSlot)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=active_settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware, production=production)
     app.add_middleware(REDMetricsMiddleware)
+
+    register_problem_handlers(app, production=production)
     app.include_router(health_router)
     app.include_router(metrics_router)
     otel.instrument_app(active_settings, app)
+
+    def custom_openapi() -> dict[str, Any]:
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            routes=app.routes,
+        )
+        app.openapi_schema = problemify_openapi(schema)
+        return app.openapi_schema
+
+    app.openapi = custom_openapi  # type: ignore[method-assign]
     return app
 
 

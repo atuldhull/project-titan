@@ -99,6 +99,8 @@ jobs:
       - run: cd packages/schemas && npm ci
       # Regenerate OpenAPI + TS types; any uncommitted diff fails (TITAN-BCK-027)
       - run: make check-types-drift
+      # §4.1 conventions over the OpenAPI document (TITAN-BCK-006)
+      - run: make lint-openapi
 
   secrets:
     runs-on: ubuntu-latest

@@ -39,7 +39,7 @@ typecheck:
 	cd $(SCHEMAS_DIR) && npm run typecheck
 
 # Developer catch-all — the union of every static gate CI runs.
-lint: lint-style boundaries typecheck
+lint: lint-style boundaries typecheck lint-openapi
 
 # TITAN-BCK-027: OpenAPI -> TypeScript bridge into packages/schemas
 generate-types:
@@ -51,6 +51,10 @@ generate-types:
 check-types-drift: generate-types
 	git diff --exit-code -- $(SCHEMAS_DIR)
 	@test -z "$$(git status --porcelain -- $(SCHEMAS_DIR) | grep '^??')" || { git status --porcelain -- $(SCHEMAS_DIR) | grep '^??'; echo 'untracked generated files in $(SCHEMAS_DIR)'; exit 1; }
+
+# TITAN-BCK-006 acceptance: spectral ruleset over the OpenAPI document.
+lint-openapi:
+	cd $(SCHEMAS_DIR) && npm run lint:openapi
 
 # TITAN-FND-062: secret scanning — same engine and mode CI uses (git history),
 # via Docker locally. MSYS2_ARG_CONV_EXCL stops Git Bash mangling /repo.

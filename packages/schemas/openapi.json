@@ -16,6 +16,39 @@
         "title": "HealthzResponse",
         "type": "object"
       },
+      "Problem": {
+        "description": "RFC 9457 Problem Details (\u00a74.1 error contract)",
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "errors": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "default": "about:blank",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "status"
+        ],
+        "title": "Problem",
+        "type": "object"
+      },
       "ReadyzResponse": {
         "description": "Readiness probe response; ``failing`` is non-empty exactly when unready.",
         "properties": {

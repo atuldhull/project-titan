@@ -7,9 +7,11 @@
   "types": "src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "generate": "openapi-typescript openapi.json -o src/api.ts"
+    "generate": "openapi-typescript openapi.json -o src/api.ts",
+    "lint:openapi": "spectral lint openapi.json --ruleset ../../.spectral.yaml --fail-severity error"
   },
   "devDependencies": {
+    "@stoplight/spectral-cli": "6.16.1",
     "openapi-typescript": "7.13.0",
     "typescript": "5.9.3"
   }
