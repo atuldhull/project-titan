@@ -1,0 +1,200 @@
+"""Schema acceptance tests (TITAN-BCK-008): pytest -m schema."""
+
+import time
+import uuid
+
+import pytest
+from sqlalchemy import Connection, inspect, text
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+import titan.schema  # noqa: F401 — registers all models on Base.metadata
+from tests.conftest import downgrade_base, run_async, upgrade_head
+from titan.db import uuid7
+
+pytestmark = pytest.mark.schema
+
+EXPECTED_TABLES = {
+    "users",
+    "roles",
+    "user_roles",
+    "projects",
+    "milestones",
+    "sprints",
+    "agents",
+    "tasks",
+    "task_dependencies",
+    "runs",
+    "artifacts",
+    "messages",
+    "decisions",
+    "outbox",
+    "notifications",
+}
+
+EXPECTED_INDEXES = {
+    "projects": {"idx_projects_status"},
+    "agents": {"idx_agents_project_role"},
+    "tasks": {"idx_tasks_project_status_priority", "idx_tasks_assignee"},
+    "runs": {"idx_runs_task", "idx_runs_status"},
+    "artifacts": {"idx_artifacts_project_kind"},
+    "messages": {"idx_messages_thread", "idx_messages_project_kind"},
+    "decisions": {"idx_decisions_project"},
+    "outbox": {"idx_outbox_unpublished"},
+    "notifications": {"idx_notifications_unread"},
+}
+
+PARTIAL_INDEXES = {
+    "idx_tasks_assignee",
+    "idx_runs_status",
+    "idx_outbox_unpublished",
+    "idx_notifications_unread",
+}
+
+
+def test_all_fifteen_tables_exist(migrated_engine: AsyncEngine) -> None:
+    async def tables() -> set[str]:
+        async with migrated_engine.connect() as conn:
+            return set(await conn.run_sync(lambda sc: inspect(sc).get_table_names()))
+
+    found = run_async(tables)
+    assert found - {"alembic_version"} == EXPECTED_TABLES
+
+
+def test_conventions_columns_on_every_table(migrated_engine: AsyncEngine) -> None:
+    async def check() -> list[str]:
+        missing: list[str] = []
+        async with migrated_engine.connect() as conn:
+
+            def gather(sc: Connection) -> None:
+                inspector = inspect(sc)
+                for table in EXPECTED_TABLES:
+                    cols = {c["name"] for c in inspector.get_columns(table)}
+                    for required in ("created_at", "updated_at", "version"):
+                        if required not in cols:
+                            missing.append(f"{table}.{required}")
+
+            await conn.run_sync(gather)
+        return missing
+
+    assert run_async(check) == []
+
+
+def test_specified_indexes_exist_with_partials(migrated_engine: AsyncEngine) -> None:
+    async def check() -> tuple[set[str], set[str]]:
+        found: set[str] = set()
+        partial: set[str] = set()
+        async with migrated_engine.connect() as conn:
+
+            def gather(sc: Connection) -> None:
+                inspector = inspect(sc)
+                for table in EXPECTED_TABLES:
+                    for index in inspector.get_indexes(table):
+                        name = index["name"]
+                        assert name is not None
+                        found.add(name)
+                        if index.get("dialect_options", {}).get("postgresql_where") is not None:
+                            partial.add(name)
+
+            await conn.run_sync(gather)
+        return found, partial
+
+    found, partial = run_async(check)
+    for table, expected in EXPECTED_INDEXES.items():
+        assert expected <= found, f"missing indexes on {table}: {expected - found}"
+    assert partial >= PARTIAL_INDEXES
+
+
+def test_index_predicates_and_ordering_exact(migrated_engine: AsyncEngine) -> None:
+    """Pin the partial predicates and DESC ordering via pg_get_indexdef."""
+    expectations = {
+        "idx_tasks_assignee": ["WHERE", "assigned", "in_progress"],
+        "idx_runs_status": ["WHERE", "queued", "running"],
+        "idx_outbox_unpublished": ["WHERE", "published_at IS NULL"],
+        "idx_notifications_unread": ["WHERE", "read_at IS NULL"],
+        "idx_runs_task": ["attempt DESC"],
+        "idx_messages_project_kind": ["created_at DESC"],
+        "idx_decisions_project": ["created_at DESC"],
+    }
+
+    async def defs() -> dict[str, str]:
+        async with migrated_engine.connect() as conn:
+            rows = await conn.execute(
+                text("SELECT indexname, indexdef FROM pg_indexes WHERE indexname = ANY(:names)"),
+                {"names": list(expectations)},
+            )
+            return {str(name): str(definition) for name, definition in rows.fetchall()}
+
+    definitions = run_async(defs)
+    for name, fragments in expectations.items():
+        assert name in definitions, f"index {name} missing"
+        for fragment in fragments:
+            assert fragment in definitions[name], (
+                f"{name}: expected {fragment!r} in {definitions[name]}"
+            )
+
+
+def test_citext_email_is_case_insensitive(migrated_engine: AsyncEngine) -> None:
+    async def check() -> int | None:
+        async with migrated_engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO users (id, email, display_name, auth_provider, auth_subject) "
+                    "VALUES (:id, :email, 'Case Test', 'local', :subj)"
+                ),
+                {"id": uuid7(), "email": "Case.Test@Example.COM", "subj": str(uuid.uuid4())},
+            )
+            hit = await conn.execute(
+                text("SELECT 1 FROM users WHERE email = 'case.test@example.com'")
+            )
+            return hit.scalar()
+
+    assert run_async(check) == 1
+
+
+def test_updated_at_trigger_fires(migrated_engine: AsyncEngine) -> None:
+    user_id = uuid7()
+
+    async def insert() -> str:
+        async with migrated_engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO users (id, email, display_name, auth_provider, auth_subject) "
+                    "VALUES (:id, :email, 'Trigger Test', 'local', :subj)"
+                ),
+                {"id": user_id, "email": f"trigger-{user_id}@titan.local", "subj": str(user_id)},
+            )
+            row = await conn.execute(
+                text("SELECT updated_at FROM users WHERE id = :id"), {"id": user_id}
+            )
+            return str(row.scalar())
+
+    async def update() -> str:
+        async with migrated_engine.begin() as conn:
+            await conn.execute(
+                text("UPDATE users SET display_name = 'Trigger Fired' WHERE id = :id"),
+                {"id": user_id},
+            )
+            row = await conn.execute(
+                text("SELECT updated_at FROM users WHERE id = :id"), {"id": user_id}
+            )
+            return str(row.scalar())
+
+    before = run_async(insert)
+    time.sleep(0.02)  # now() is transaction-stable; ensure distinct tx timestamps
+    after = run_async(update)
+    assert after > before
+
+
+def test_downgrade_upgrade_round_trip(migrated_engine: AsyncEngine, schema_url: str) -> None:
+    downgrade_base(schema_url)
+
+    async def tables() -> set[str]:
+        async with migrated_engine.connect() as conn:
+            return set(await conn.run_sync(lambda sc: inspect(sc).get_table_names()))
+
+    stripped = run_async(tables)
+    assert stripped - {"alembic_version"} == set()
+
+    upgrade_head(schema_url)
+    restored = run_async(tables)
+    assert restored - {"alembic_version"} == EXPECTED_TABLES

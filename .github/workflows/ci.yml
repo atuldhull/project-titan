@@ -56,6 +56,23 @@ jobs:
   test:
     needs: typecheck
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: titan
+          POSTGRES_PASSWORD: titan
+          POSTGRES_DB: titan_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U titan -d titan_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      # Disposable DB for the schema/cycle suites (pytest -m schema)
+      TITAN_TEST_DATABASE_URL: postgresql+asyncpg://titan:titan@localhost:5432/titan_test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

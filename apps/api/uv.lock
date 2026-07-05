@@ -293,6 +293,23 @@ wheels = [
 ]
 
 [[package]]
+name = "hypothesis"
+version = "6.156.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "sortedcontainers" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d0/3d/1a0e54652f1b3cad354949ba83f6ab211048ff3a6cfb24edcddc748a8be1/hypothesis-6.156.1-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:0409dea0c0b48705cad8413468282af9c5e7d3a017b6c2b94ef80e7ba4b64862", size = 749005, upload-time = "2026-07-03T14:30:26.045Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/e5/c8b6084023faabef7612ea0169fd4df565fdc5fd73f47484e5edf03640fb/hypothesis-6.156.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:72b9305414c20802540ec0cd798478c9e06c8a248ce32d7df04722b64d7150ad", size = 741899, upload-time = "2026-07-03T14:30:34.442Z" },
+    { url = "https://files.pythonhosted.org/packages/48/ac/51644c53ae055a3a3411906cc8e41e5dd53af487ca76465342256e4f18c1/hypothesis-6.156.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:40584eed6a57c402d8ab32ea5c1779bae6f7390ff33d073c876e09dc8af31941", size = 1069788, upload-time = "2026-07-03T14:31:24.552Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/43/d2ec198fa56f72f8690563247e5e71a81cf5f1c9c42e977008b76338803f/hypothesis-6.156.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:76f2aaa6725185f16a8fa7b58e0ba5d5119cafa33eae5e5dec996d6a28cd9dc6", size = 1119541, upload-time = "2026-07-03T14:30:15.15Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/a0/ba8a1bf72988e7b8b743b4f4f30705fe1c2128780a7d93b203cdeb6bae79/hypothesis-6.156.1-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:bac95ae29f7850a923f43bc7e21bbc7ee8b8094bbf07691be4f153e537b5d3db", size = 1243864, upload-time = "2026-07-03T14:30:47.869Z" },
+    { url = "https://files.pythonhosted.org/packages/74/a3/f30ebb96f099f19e71361aefb233542f3763a0fb7c0ba3c84513c353b065/hypothesis-6.156.1-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:8159b5e93a7724920cf55dd4ec743a84fc9c3c457a6736a92283aa4068f54daa", size = 1286401, upload-time = "2026-07-03T14:30:07.762Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/a9/19b36a5deb78217f4f6214c7be36a14cf2da8b29392199bcd18a0628b9b8/hypothesis-6.156.1-cp312-cp312-win_amd64.whl", hash = "sha256:d8e7deed3bc76c8c12c30e092e228a6978180f2bcab9483f5fb22240cd8eaa7d", size = 637634, upload-time = "2026-07-03T14:30:40.794Z" },
+]
+
+[[package]]
 name = "idna"
 version = "3.18"
 source = { registry = "https://pypi.org/simple" }
@@ -838,6 +855,15 @@ wheels = [
 ]
 
 [[package]]
+name = "sortedcontainers"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/c4/ba2f8066cceb6f23394729afe52f3bf7adec04bf9ed2c820b39e19299111/sortedcontainers-2.4.0.tar.gz", hash = "sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88", size = 30594, upload-time = "2021-05-16T22:03:42.897Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/32/46/9cb0e58b2deb7f82b84065f37f3bffeb12413f947f9388e4cac22c4621ce/sortedcontainers-2.4.0-py2.py3-none-any.whl", hash = "sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0", size = 29575, upload-time = "2021-05-16T22:03:41.177Z" },
+]
+
+[[package]]
 name = "sqlalchemy"
 version = "2.0.51"
 source = { registry = "https://pypi.org/simple" }
@@ -911,6 +937,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "hypothesis" },
     { name = "import-linter" },
     { name = "mypy" },
     { name = "pytest" },
@@ -950,6 +977,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "hypothesis", specifier = ">=6.100" },
     { name = "import-linter", specifier = ">=2.0" },
     { name = "mypy", specifier = ">=1.11" },
     { name = "pytest", specifier = ">=8.2" },

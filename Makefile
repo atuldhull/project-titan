@@ -7,7 +7,7 @@ API_DIR := apps/api
 WEB_DIR := apps/web
 SCHEMAS_DIR := packages/schemas
 
-.PHONY: dev test lint lint-style boundaries typecheck migrate seed \
+.PHONY: dev test test-schema lint lint-style boundaries typecheck migrate seed \
         generate-types check-types-drift secret-scan
 
 ## dev: run the API (uvicorn, reload) and the web app (next dev) together.
@@ -63,4 +63,8 @@ migrate:
 	cd $(API_DIR) && uv run --env-file $(CURDIR)/.env alembic upgrade head
 
 seed:
-	@echo "seed: not yet wired: the seed script arrives in Phase 6"
+	cd $(API_DIR) && uv run --env-file $(CURDIR)/.env python scripts/seed.py
+
+# Schema/cycle tests against the disposable test database (never the dev DB).
+test-schema:
+	cd $(API_DIR) && uv run --env-file $(CURDIR)/.env pytest -m schema --no-cov
