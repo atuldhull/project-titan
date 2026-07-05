@@ -7,6 +7,7 @@ Usage: uv run --env-file ../../.env python scripts/seed.py
 """
 
 import asyncio
+import os
 import sys
 
 from sqlalchemy import text
@@ -15,6 +16,7 @@ from sqlalchemy.dialects.postgresql import insert
 from titan import clients
 from titan.db import uuid7
 from titan.identity.models import Role, User
+from titan.identity.service import set_local_password
 from titan.observability.logging import configure_logging
 from titan.settings import get_settings
 
@@ -89,10 +91,28 @@ async def seed() -> None:
             )
 
             await conn.execute(_GRANT_OWNER, {"id": uuid7(), "email": ADMIN_EMAIL})
+
+            admin_id = (
+                await conn.execute(
+                    text("SELECT id FROM users WHERE email = :email"), {"email": ADMIN_EMAIL}
+                )
+            ).scalar_one()
+            password = os.environ.get("TITAN_BOOTSTRAP_ADMIN_PASSWORD")
+            if password is None:
+                if settings.environment != "local":
+                    raise SystemExit(
+                        "refusing to seed the default admin password outside local; "
+                        "set TITAN_BOOTSTRAP_ADMIN_PASSWORD"
+                    )
+                password = "titan-local-admin"
+            await set_local_password(conn, admin_id, password)
     finally:
         await engine.dispose()
 
-    sys.stdout.write("seeded: 5 roles, local admin (admin@titan.local, org-wide owner)\n")
+    sys.stdout.write(
+        "seeded: 5 roles, local admin (admin@titan.local, org-wide owner, "
+        "password from TITAN_BOOTSTRAP_ADMIN_PASSWORD or dev default)\n"
+    )
 
 
 def main() -> None:

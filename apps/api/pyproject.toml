@@ -22,6 +22,8 @@ dependencies = [
     "opentelemetry-instrumentation-sqlalchemy>=0.48b0",
     "opentelemetry-instrumentation-redis>=0.48b0",
     "opentelemetry-instrumentation-httpx>=0.48b0",
+    "pyjwt[crypto]>=2.9",
+    "argon2-cffi>=23.1",
 ]
 
 [dependency-groups]

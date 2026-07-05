@@ -13,7 +13,8 @@ from titan.db import uuid7
 
 pytestmark = pytest.mark.schema
 
-EXPECTED_TABLES = {
+# The Phase-6 15-table data spine…
+CORE_TABLES = {
     "users",
     "roles",
     "user_roles",
@@ -30,6 +31,9 @@ EXPECTED_TABLES = {
     "outbox",
     "notifications",
 }
+# …plus identity credential tables added in Phase 8 (migration 0004).
+IDENTITY_TABLES = {"local_credentials", "refresh_tokens", "api_keys"}
+EXPECTED_TABLES = CORE_TABLES | IDENTITY_TABLES
 
 EXPECTED_INDEXES = {
     "projects": {"idx_projects_status"},

@@ -25,6 +25,8 @@ from titan.gateway.security import (
     SecurityHeadersMiddleware,
 )
 from titan.gateway.slots import AuthenticationSlot, RateLimitSlot, RBACSlot
+from titan.identity import router as identity_router
+from titan.identity.tokens import KeyRing
 from titan.observability import otel
 from titan.observability.health import router as health_router
 from titan.observability.logging import configure_logging
@@ -64,10 +66,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Gateway slot strategies — Phases 8/9/13 assign real implementations.
+    # Gateway slot strategies — Phase 8 fills auth below; 9/13 fill the rest.
     app.state.auth_strategy = None
     app.state.rbac_strategy = None
     app.state.rate_limit_strategy = None
+    app.state.keyring = KeyRing(active_settings)
 
     # §9.1 middleware order, outermost first:
     #   RED metrics (observability, transparent)
@@ -98,6 +101,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_problem_handlers(app, production=production)
     app.include_router(health_router)
     app.include_router(metrics_router)
+    identity_router.mount(app)  # /auth/* + fills the authentication slot
     otel.instrument_app(active_settings, app)
 
     def custom_openapi() -> dict[str, Any]:

@@ -4,6 +4,94 @@
  */
 
 export interface paths {
+    "/api/v1/auth/api-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Api Key */
+        post: operations["create_api_key_api_v1_auth_api_keys_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Me */
+        get: operations["me_api_v1_auth_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh */
+        post: operations["refresh_api_v1_auth_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke
+         * @description Logout: durably revokes the caller's refresh family + denylists jti.
+         */
+        post: operations["revoke_api_v1_auth_revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Token */
+        post: operations["token_api_v1_auth_token_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/healthz": {
         parameters: {
             query?: never;
@@ -76,6 +164,33 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ApiKeyGrant */
+        ApiKeyGrant: {
+            /** Api Key */
+            api_key: string;
+            /**
+             * Grant Type
+             * @constant
+             */
+            grant_type: "api_key";
+        };
+        /** ApiKeyRequest */
+        ApiKeyRequest: {
+            /** Agent Id */
+            agent_id?: string | null;
+            /** Name */
+            name: string;
+        };
+        /** ApiKeyResponse */
+        ApiKeyResponse: {
+            /** Api Key */
+            api_key: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
         /**
          * HealthzResponse
          * @description Liveness probe response.
@@ -86,6 +201,38 @@ export interface components {
              * @constant
              */
             status: "alive";
+        };
+        /** MeResponse */
+        MeResponse: {
+            /** Agent Id */
+            agent_id?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "user" | "agent";
+            /** Roles */
+            roles: string[];
+            /** Scope */
+            scope: string;
+            /**
+             * Sub
+             * Format: uuid
+             */
+            sub: string;
+        };
+        /** PasswordGrant */
+        PasswordGrant: {
+            /** Email */
+            email: string;
+            /**
+             * Grant Type
+             * @default password
+             * @constant
+             */
+            grant_type: "password";
+            /** Password */
+            password: string;
         };
         /**
          * Problem
@@ -117,6 +264,33 @@ export interface components {
              */
             status: "ready" | "unready";
         };
+        /** RefreshRequest */
+        RefreshRequest: {
+            /** Refresh Token */
+            refresh_token: string;
+        };
+        /**
+         * TokenPair
+         * @description Delivery shape for the token endpoints. The future Next.js BFF stores
+         *     these in httpOnly/Secure/SameSite=Lax cookies (TITAN-SEC-013) — browser
+         *     JS must never see them; this JSON body is for the BFF/CLI only.
+         */
+        TokenPair: {
+            /** Access Token */
+            access_token: string;
+            /**
+             * Expires In
+             * @default 900
+             */
+            expires_in: number;
+            /** Refresh Token */
+            refresh_token?: string | null;
+            /**
+             * Token Type
+             * @default Bearer
+             */
+            token_type: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -126,6 +300,143 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    create_api_key_api_v1_auth_api_keys_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    me_api_v1_auth_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+        };
+    };
+    refresh_api_v1_auth_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    revoke_api_v1_auth_revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    token_api_v1_auth_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordGrant"] | components["schemas"]["ApiKeyGrant"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     healthz_api_v1_healthz_get: {
         parameters: {
             query?: never;

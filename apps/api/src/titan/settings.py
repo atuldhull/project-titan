@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     # collector running); Compose obs profile sets http://otel-collector:4317.
     otel_exporter_otlp_endpoint: str = ""
 
+    # --- Identity (Phase 8; TITAN-BCK-020, TITAN-SEC-011) ---
+    # AUTH_MODE=local runs fully offline; oidc joins in M7 hardening.
+    auth_mode: Literal["local", "oidc"] = "local"
+    org: str = "titan"
+    jwt_audience: str = "titan-api"
+    jwt_issuer: str = "titan"
+    # Base64-encoded RSA private key PEM; empty = ephemeral dev keypair.
+    jwt_private_key_b64: str = ""
+
     # CORS allowlist (§9.1; dev default per spec). Env: comma-separated or
     # JSON list in TITAN_CORS_ORIGINS. NoDecode: the validator below owns
     # parsing (pydantic-settings would otherwise demand JSON and crash on

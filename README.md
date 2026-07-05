@@ -57,4 +57,5 @@ domain modules may only be imported through their public `service.py` interface.
 - [x] Phase 5 — Dashboard shell (13-surface nav + design system) — M1 complete
 - [x] Phase 6 — PostgreSQL schema, migrations & cycle check (starts M2)
 - [x] Phase 7 — REST conventions framework + gateway middleware
-- [ ] Phase 8 — Identity: local auth, JWTs, API keys, service tokens (next)
+- [x] Phase 8 — Identity: local auth, JWTs, API keys, service tokens
+- [ ] Phase 9 — RBAC engine + route protection + ownership (next)
