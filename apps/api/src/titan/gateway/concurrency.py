@@ -10,6 +10,17 @@ from fastapi import Request, Response
 from titan.gateway.problems import ProblemException, problem_type
 
 
+def version_conflict() -> ProblemException:
+    """412 for a lost optimistic-lock race: the If-Match matched the version we
+    read, but a concurrent commit moved it before our guarded UPDATE landed."""
+    return ProblemException(
+        status=412,
+        title="Precondition failed",
+        detail="The resource was modified concurrently; re-read and retry.",
+        problem_type=problem_type("version-conflict"),
+    )
+
+
 def etag_for(version: int) -> str:
     return f'"v{version}"'
 

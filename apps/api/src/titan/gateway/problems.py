@@ -2,8 +2,9 @@
 
 Every error response is ``application/problem+json`` with
 ``{type, title, status, detail, instance, errors[]}``. Domain exceptions
-(e.g. the orchestrator's DependencyCycleError) map here so modules never
-hand-build error payloads.
+subclass :class:`ProblemException` (e.g. the orchestrator's
+DependencyCycleError) so the generic handler renders them — the gateway, being
+shared infrastructure, never imports a domain module.
 """
 
 from typing import Any
@@ -15,10 +16,17 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from titan.orchestrator.service import DependencyCycleError
-
 PROBLEM_CONTENT_TYPE = "application/problem+json"
 _TYPE_BASE = "https://titan.dev/errors"
+
+# Framework HTTPException statuses → titan.dev type slugs, so a 404/405/415 the
+# router raises carries a machine-routable type like every domain error.
+_HTTP_TYPE_SLUGS: dict[int, str] = {
+    404: "not-found",
+    405: "method-not-allowed",
+    406: "not-acceptable",
+    415: "unsupported-media-type",
+}
 
 
 class Problem(BaseModel):
@@ -91,18 +99,6 @@ def register_problem_handlers(app: FastAPI, production: bool = False) -> None:
             headers=exc.headers,
         )
 
-    @app.exception_handler(DependencyCycleError)
-    async def on_cycle(request: Request, exc: DependencyCycleError) -> JSONResponse:
-        return problem_response(
-            request,
-            Problem(
-                type=exc.problem_type,
-                title="Invalid dependency cycle",
-                status=exc.status_code,
-                detail=str(exc),
-            ),
-        )
-
     @app.exception_handler(RequestValidationError)
     async def on_validation(request: Request, exc: RequestValidationError) -> JSONResponse:
         return problem_response(
@@ -125,9 +121,16 @@ def register_problem_handlers(app: FastAPI, production: bool = False) -> None:
 
     @app.exception_handler(StarletteHTTPException)
     async def on_http(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        # Give framework-generated errors (unmatched-route 404, method 405,
+        # media-type 415, …) a titan.dev/errors/* type slug too, so EVERY error
+        # the API emits carries a machine-routable type — not just domain ones.
         return problem_response(
             request,
-            Problem(title=exc.detail or "HTTP error", status=exc.status_code),
+            Problem(
+                type=problem_type(_HTTP_TYPE_SLUGS.get(exc.status_code, "http")),
+                title=exc.detail or "HTTP error",
+                status=exc.status_code,
+            ),
             headers=dict(exc.headers or {}),
         )
 

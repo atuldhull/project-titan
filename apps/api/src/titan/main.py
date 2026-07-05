@@ -32,6 +32,8 @@ from titan.observability.health import router as health_router
 from titan.observability.logging import configure_logging
 from titan.observability.metrics import REDMetricsMiddleware
 from titan.observability.metrics import router as metrics_router
+from titan.orchestrator import router as tasks_router
+from titan.projects import router as projects_router
 from titan.settings import Settings, get_settings
 
 
@@ -109,6 +111,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(metrics_router)
     identity_router.mount(app)  # /auth/* + fills the authentication slot
+    projects_router.mount(app)  # /projects, /milestones, /sprints, board/graph
+    tasks_router.mount(app)  # /tasks, /projects/{id}/tasks, dependencies
     otel.instrument_app(active_settings, app)
 
     def custom_openapi() -> dict[str, Any]:

@@ -40,12 +40,29 @@ rules:
         match: "^application/problem\\+json$"
 
   titan-timestamps-rfc3339:
-    description: Timestamp fields declare format date-time (RFC 3339 UTC).
+    description: Non-nullable timestamp fields declare format date-time (RFC 3339 UTC).
     severity: error
-    given: $.components.schemas[*].properties[?(@property.match(/_at$/))]
+    # Flat, required timestamps render as {type: string, format: date-time}.
+    given: $.components.schemas[*].properties[?(@property.match(/_at$/) && @.type == "string")]
     then:
       # Both clauses: format must EXIST (a missing format would otherwise
       # pass the pattern check silently) and must be date-time.
+      - field: format
+        function: defined
+      - field: format
+        function: pattern
+        functionOptions:
+          match: "^date-time$"
+
+  titan-timestamps-rfc3339-nullable:
+    description: Nullable timestamp fields declare format date-time on their string branch (RFC 3339 UTC).
+    severity: error
+    # Nullable timestamps (datetime | None) render as
+    # {anyOf: [{type: string, format: date-time}, {type: null}]}; the format
+    # lives on the string branch, so assert it there. Flat properties have no
+    # .anyOf and are naturally excluded from this path.
+    given: $.components.schemas[*].properties[?(@property.match(/_at$/))].anyOf[?(@.type == "string")]
+    then:
       - field: format
         function: defined
       - field: format
