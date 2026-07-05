@@ -25,6 +25,7 @@ dependencies = [
     "pyjwt[crypto]>=2.9",
     "argon2-cffi>=23.1",
     "pyyaml>=6.0",
+    "jsonschema>=4.23",
 ]
 
 [dependency-groups]
@@ -37,6 +38,7 @@ dev = [
     "import-linter>=2.0",
     "fakeredis>=2.36.2",
     "types-PyYAML>=6.0",
+    "types-jsonschema>=4.23",
 ]
 # Minimal closure for the titan-migrate image (Vol 9 §3.3: "Alembic +
 # migration scripts only") — no FastAPI, no uvicorn.
@@ -116,6 +118,7 @@ modules = [
     "titan.memory",
     "titan.plugins",
     "titan.llm",
+    "titan.tools",
 ]
 ignore_imports = ["titan.** -> titan.*.service"]
 unmatched_ignore_imports_alerting = "none"
@@ -137,6 +140,7 @@ source_modules = [
     "titan.messaging",
     "titan.memory",
     "titan.plugins",
+    "titan.tools",
     "titan.events",
     "titan.observability",
 ]
@@ -156,4 +160,5 @@ forbidden_modules = [
     "titan.memory",
     "titan.plugins",
     "titan.llm",
+    "titan.tools",
 ]

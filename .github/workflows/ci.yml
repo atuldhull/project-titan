@@ -32,6 +32,7 @@ jobs:
       - run: make lint-style
       - run: make boundaries
       - run: make route-guards
+      - run: make agent-purity
 
   typecheck:
     # Vol 9 §3.1: stage order is fixed — lint → typecheck → tests.

@@ -14,6 +14,7 @@ from titan.messaging import models as messaging_models
 from titan.orchestrator import models as orchestrator_models
 from titan.projects import models as projects_models
 from titan.runs import models as runs_models
+from titan.tools import tables as tools_tables
 
 __all__ = [
     "Base",
@@ -25,4 +26,5 @@ __all__ = [
     "orchestrator_models",
     "projects_models",
     "runs_models",
+    "tools_tables",
 ]

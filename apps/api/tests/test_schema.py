@@ -37,7 +37,9 @@ IDENTITY_TABLES = {"local_credentials", "refresh_tokens", "api_keys"}
 EVENTS_TABLES = {"event_inbox"}
 # …plus LLM accounting + budget tables added in Phase 17 (migration 0007).
 LLM_TABLES = {"llm_usage", "budget_holds"}
-EXPECTED_TABLES = CORE_TABLES | IDENTITY_TABLES | EVENTS_TABLES | LLM_TABLES
+# …plus the immutable tool_audit ledger added in Phase 18 (migration 0008).
+TOOLS_TABLES = {"tool_audit"}
+EXPECTED_TABLES = CORE_TABLES | IDENTITY_TABLES | EVENTS_TABLES | LLM_TABLES | TOOLS_TABLES
 
 EXPECTED_INDEXES = {
     "projects": {"idx_projects_status"},
@@ -49,6 +51,7 @@ EXPECTED_INDEXES = {
     "decisions": {"idx_decisions_project"},
     "outbox": {"idx_outbox_unpublished"},
     "notifications": {"idx_notifications_unread"},
+    "tool_audit": {"idx_tool_audit_project_seq", "idx_tool_audit_call", "idx_tool_audit_task"},
 }
 
 PARTIAL_INDEXES = {

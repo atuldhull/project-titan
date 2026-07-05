@@ -40,6 +40,7 @@ from titan.orchestrator import router as tasks_router
 from titan.projects import router as projects_router
 from titan.runs import router as runs_router
 from titan.settings import Settings, get_settings
+from titan.tools import service as tools_service
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -58,6 +59,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             active_settings,
             engine=application.state.engine,
             redis=application.state.redis,
+        )
+        # §4.1 boot-time registry rebuild + the single side-effect chokepoint.
+        application.state.tool_registry = tools_service.build_registry()
+        application.state.tool_bus = tools_service.build_bus(
+            application.state.engine, registry=application.state.tool_registry
         )
         application.state.readyz_budget_seconds = active_settings.readyz_budget_seconds
         otel.instrument_engine(active_settings, application.state.engine)
