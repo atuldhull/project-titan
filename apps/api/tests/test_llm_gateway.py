@@ -497,23 +497,45 @@ def test_unsupported_provider_is_500(tmp_path: Path) -> None:
         run_async(lambda: gateway.chat(req))
 
 
-def test_missing_anthropic_key_is_500(tmp_path: Path) -> None:
+def test_missing_key_falls_back_to_local(tmp_path: Path) -> None:
+    # A missing Anthropic key is a provider failure — with a fallback chain the
+    # gateway recovers on local Ollama, tagged degraded (TITAN-OPS-022).
     cfg = _FULL_CONFIG.replace("api_key: test-anthropic-key, ", "")
+    gateway = _gateway(_write_config(tmp_path, cfg), _make_handler())
+    req = ChatRequest(messages=[Message(role="user", content="x")], max_tokens=8)
+    resp = run_async(lambda: gateway.chat(req))
+    assert resp.provider == "ollama"
+    assert resp.requested_alias == "coding-default"
+    assert resp.served_alias == "local-default"
+    assert resp.degraded_model is True
+
+
+def test_missing_key_without_fallback_is_500(tmp_path: Path) -> None:
+    # No fallback chain → the misconfiguration surfaces as ProviderNotConfigured.
+    cfg = (
+        "providers:\n  anthropic: { base_url: https://api.anthropic.com }\n"
+        "model_aliases:\n  only: { provider: anthropic, model: claude-sonnet-4-5 }\n"
+        "routing:\n  default: only\n"
+    )
     gateway = _gateway(_write_config(tmp_path, cfg), _make_handler())
     req = ChatRequest(messages=[Message(role="user", content="x")], max_tokens=8)
     with pytest.raises(ProviderNotConfiguredError):
         run_async(lambda: gateway.chat(req))
 
 
-def test_upstream_5xx_is_502(tmp_path: Path) -> None:
+def test_all_upstream_down_is_503(tmp_path: Path) -> None:
+    # Both the primary and its fallback 5xx → one paused_provider signal (503),
+    # not the raw per-provider 502 (TITAN-FND-053).
+    from titan.llm.errors import AllProvidersDownError
+
     def boom(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, text="overloaded")
 
     gateway = _gateway(_write_config(tmp_path), boom)
     req = ChatRequest(messages=[Message(role="user", content="x")], max_tokens=8)
-    with pytest.raises(UpstreamProviderError) as exc:
+    with pytest.raises(AllProvidersDownError) as exc:
         run_async(lambda: gateway.chat(req))
-    assert exc.value.status == 502
+    assert exc.value.status == 503
 
 
 # --- cost accounting -------------------------------------------------------

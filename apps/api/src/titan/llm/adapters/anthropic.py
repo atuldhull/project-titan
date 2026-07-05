@@ -14,7 +14,11 @@ import httpx
 
 from titan.llm.adapters.base import ChatResult
 from titan.llm.config import ProviderConfig
-from titan.llm.errors import ProviderNotConfiguredError, UpstreamProviderError
+from titan.llm.errors import (
+    ProviderNotConfiguredError,
+    upstream_from_httpx,
+    upstream_from_response,
+)
 from titan.llm.models import (
     ChatRequest,
     FinishReason,
@@ -185,9 +189,9 @@ class AnthropicAdapter:
                 timeout=_TIMEOUT,
             )
         except httpx.HTTPError as exc:
-            raise UpstreamProviderError("anthropic", str(exc)) from exc
+            raise upstream_from_httpx("anthropic", exc) from exc
         if resp.status_code >= 400:
-            raise UpstreamProviderError("anthropic", f"{resp.status_code}: {resp.text[:500]}")
+            raise upstream_from_response("anthropic", resp, resp.text)
         return _parse_response(resp.json())
 
     async def stream(
@@ -216,7 +220,7 @@ class AnthropicAdapter:
             ) as resp:
                 if resp.status_code >= 400:
                     detail = (await resp.aread()).decode(errors="replace")[:500]
-                    raise UpstreamProviderError("anthropic", f"{resp.status_code}: {detail}")
+                    raise upstream_from_response("anthropic", resp, detail)
                 async for line in resp.aiter_lines():
                     if not line.startswith("data:"):
                         continue
@@ -250,7 +254,7 @@ class AnthropicAdapter:
                         )
                         output_tokens = event.get("usage", {}).get("output_tokens", output_tokens)
         except httpx.HTTPError as exc:
-            raise UpstreamProviderError("anthropic", str(exc)) from exc
+            raise upstream_from_httpx("anthropic", exc) from exc
         usage = Usage(
             input_tokens=input_tokens, output_tokens=output_tokens, cached_tokens=cached_tokens
         )

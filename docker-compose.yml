@@ -55,6 +55,7 @@ services:
       # start Ollama:  TITAN_MODELS_CONFIG_PATH=/app/config/models.local.yaml
       #                docker compose --profile local-llm up
       TITAN_MODELS_CONFIG_PATH: ${TITAN_MODELS_CONFIG_PATH:-/app/config/models.yaml}
+      TITAN_PRICES_CONFIG_PATH: ${TITAN_PRICES_CONFIG_PATH:-/app/config/prices.yaml}
       TITAN_OLLAMA_BASE_URL: ${TITAN_OLLAMA_BASE_URL:-http://ollama:11434}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -99,6 +100,7 @@ services:
       TITAN_WORKER_CONCURRENCY: ${TITAN_WORKER_CONCURRENCY:-4}
       # LLM gateway config (consumed once the run executor calls it, Phase 17).
       TITAN_MODELS_CONFIG_PATH: ${TITAN_MODELS_CONFIG_PATH:-/app/config/models.yaml}
+      TITAN_PRICES_CONFIG_PATH: ${TITAN_PRICES_CONFIG_PATH:-/app/config/prices.yaml}
       TITAN_OLLAMA_BASE_URL: ${TITAN_OLLAMA_BASE_URL:-http://ollama:11434}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

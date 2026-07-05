@@ -22,7 +22,11 @@ import httpx
 
 from titan.llm.adapters.base import ChatResult
 from titan.llm.config import ProviderConfig
-from titan.llm.errors import ProviderNotConfiguredError, UpstreamProviderError
+from titan.llm.errors import (
+    ProviderNotConfiguredError,
+    upstream_from_httpx,
+    upstream_from_response,
+)
 from titan.llm.models import (
     ChatRequest,
     FinishReason,
@@ -223,9 +227,9 @@ class GoogleAdapter:
                 url, headers=_headers(provider), json=_build_payload(req), timeout=_TIMEOUT
             )
         except httpx.HTTPError as exc:
-            raise UpstreamProviderError(_PROVIDER, str(exc)) from exc
+            raise upstream_from_httpx(_PROVIDER, exc) from exc
         if resp.status_code >= 400:
-            raise UpstreamProviderError(_PROVIDER, f"{resp.status_code}: {resp.text[:500]}")
+            raise upstream_from_response(_PROVIDER, resp, resp.text)
         return _parse_response(resp.json())
 
     async def stream(
@@ -247,7 +251,7 @@ class GoogleAdapter:
             ) as resp:
                 if resp.status_code >= 400:
                     detail = (await resp.aread()).decode(errors="replace")[:500]
-                    raise UpstreamProviderError(_PROVIDER, f"{resp.status_code}: {detail}")
+                    raise upstream_from_response(_PROVIDER, resp, detail)
                 async for line in resp.aiter_lines():
                     if not line.startswith("data:"):
                         continue
@@ -273,7 +277,7 @@ class GoogleAdapter:
                     if chunk.get("usageMetadata"):
                         usage = _usage(chunk["usageMetadata"])
         except httpx.HTTPError as exc:
-            raise UpstreamProviderError(_PROVIDER, str(exc)) from exc
+            raise upstream_from_httpx(_PROVIDER, exc) from exc
         yield StreamDelta(type="done", finish_reason=finish, usage=usage)
 
 

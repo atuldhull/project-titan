@@ -1,0 +1,27 @@
+# PROJECT TITAN — versioned LLM price table (Vol 7 §8.4, TITAN-FND-021).
+#
+# Per-million-token prices used for cost metering and pre-request budget
+# estimates. Updatable WITHOUT a deploy: the gateway hot-reloads this file on
+# mtime change, same as models.yaml. Ollama (local) is always priced at 0 — the
+# free-tier platform guarantee. `version` is bumped on every price revision so
+# recorded llm_usage rows remain attributable to the schedule in force.
+#
+# Lookup order: prices[provider][model] → prices[provider]["*"] → default.
+
+version: 1
+
+prices:
+  anthropic:
+    claude-opus-4-6: { input_per_mtok: 15.00, output_per_mtok: 75.00 }
+    claude-sonnet-4-5: { input_per_mtok: 3.00, output_per_mtok: 15.00 }
+    claude-3-5-haiku-latest: { input_per_mtok: 0.80, output_per_mtok: 4.00 }
+  openai:
+    gpt-4.1: { input_per_mtok: 2.00, output_per_mtok: 8.00 }
+    gpt-4o-mini: { input_per_mtok: 0.15, output_per_mtok: 0.60 }
+    text-embedding-3-small: { input_per_mtok: 0.02, output_per_mtok: 0.00 }
+  google:
+    gemini-2.5-flash: { input_per_mtok: 0.30, output_per_mtok: 2.50 }
+  ollama:
+    "*": { input_per_mtok: 0.00, output_per_mtok: 0.00 } # local is free
+
+default: { input_per_mtok: 0.00, output_per_mtok: 0.00 }

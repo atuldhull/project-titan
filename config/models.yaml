@@ -26,22 +26,27 @@ model_aliases:
     provider: anthropic
     model: claude-opus-4-6
     price: { input_per_mtok: 15.00, output_per_mtok: 75.00 }
+    context_window: 200000
   coding-default:
     provider: anthropic
     model: claude-sonnet-4-5
     price: { input_per_mtok: 3.00, output_per_mtok: 15.00 }
+    context_window: 200000
   openai-default:
     provider: openai
     model: gpt-4.1
     price: { input_per_mtok: 2.00, output_per_mtok: 8.00 }
+    context_window: 1000000
     options: { strict_tools: true } # OpenAI strict-mode tool schemas (INT-061)
   fast-cheap:
     provider: google
     model: gemini-2.5-flash
     price: { input_per_mtok: 0.30, output_per_mtok: 2.50 }
+    context_window: 1000000
   local-default:
     provider: ollama
     model: qwen3-coder:30b
+    context_window: 32768
   embed-default:
     provider: ollama
     model: nomic-embed-text

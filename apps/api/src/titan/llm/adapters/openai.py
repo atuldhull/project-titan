@@ -14,7 +14,11 @@ import httpx
 from titan.llm.adapters import _openai_compat as compat
 from titan.llm.adapters.base import ChatResult, EmbeddingsResult
 from titan.llm.config import ProviderConfig
-from titan.llm.errors import ProviderNotConfiguredError, UpstreamProviderError
+from titan.llm.errors import (
+    ProviderNotConfiguredError,
+    upstream_from_httpx,
+    upstream_from_response,
+)
 from titan.llm.models import ChatRequest, EmbeddingsRequest, StreamDelta
 from titan.llm.routing import ResolvedModel
 
@@ -57,9 +61,9 @@ class OpenAIAdapter:
                 timeout=_TIMEOUT,
             )
         except httpx.HTTPError as exc:
-            raise UpstreamProviderError(_PROVIDER, str(exc)) from exc
+            raise upstream_from_httpx(_PROVIDER, exc) from exc
         if resp.status_code >= 400:
-            raise UpstreamProviderError(_PROVIDER, f"{resp.status_code}: {resp.text[:500]}")
+            raise upstream_from_response(_PROVIDER, resp, resp.text)
         return compat.parse_chat_response(resp.json(), provider=_PROVIDER)
 
     async def stream(
@@ -82,11 +86,11 @@ class OpenAIAdapter:
             ) as resp:
                 if resp.status_code >= 400:
                     detail = (await resp.aread()).decode(errors="replace")[:500]
-                    raise UpstreamProviderError(_PROVIDER, f"{resp.status_code}: {detail}")
+                    raise upstream_from_response(_PROVIDER, resp, detail)
                 async for delta in compat.parse_chat_stream(resp):
                     yield delta
         except httpx.HTTPError as exc:
-            raise UpstreamProviderError(_PROVIDER, str(exc)) from exc
+            raise upstream_from_httpx(_PROVIDER, exc) from exc
 
     async def embed(
         self,
@@ -105,9 +109,9 @@ class OpenAIAdapter:
                 timeout=_TIMEOUT,
             )
         except httpx.HTTPError as exc:
-            raise UpstreamProviderError(_PROVIDER, str(exc)) from exc
+            raise upstream_from_httpx(_PROVIDER, exc) from exc
         if resp.status_code >= 400:
-            raise UpstreamProviderError(_PROVIDER, f"{resp.status_code}: {resp.text[:500]}")
+            raise upstream_from_response(_PROVIDER, resp, resp.text)
         return compat.parse_embeddings(resp.json())
 
 

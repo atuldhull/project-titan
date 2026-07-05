@@ -174,7 +174,9 @@ class ToolCall(BaseModel):
 
 class ChatResponse(BaseModel):
     """The canonical chat response (§8.1). ``provider``/``model_id`` reflect what
-    actually served the call so later fallback substitutions are attributable."""
+    actually served the call so fallback substitutions are attributable, and
+    ``degraded_model`` flags a result served by a fallback (Vol 9 §10) so later
+    review logic can tighten. ``requested_alias`` is what routing first chose."""
 
     model_config = _ALLOW_MODEL_FIELDS
     text: str | None = None
@@ -185,6 +187,9 @@ class ChatResponse(BaseModel):
     model_id: str
     cost_usd: Decimal
     latency_ms: int
+    requested_alias: str | None = None
+    served_alias: str | None = None
+    degraded_model: bool = False
 
 
 # --- streaming (one normalized delta shape for every provider) -------------

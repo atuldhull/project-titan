@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     # Path to config/models.yaml (hot-reloadable). The container mounts the repo
     # config dir; ship the local-only profile to run with zero paid API keys.
     models_config_path: str = "config/models.yaml"
+    # Versioned price table for cost metering + budgets (Phase 17; §8.4).
+    prices_config_path: str = "config/prices.yaml"
 
     # OTLP trace export (TITAN-BCK-025). Empty = tracing disabled (no
     # collector running); Compose obs profile sets http://otel-collector:4317.

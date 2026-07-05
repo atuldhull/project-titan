@@ -9,6 +9,7 @@ from titan.agents import models as agents_models
 from titan.db import Base
 from titan.events import models as events_models
 from titan.identity import models as identity_models
+from titan.llm import tables as llm_tables
 from titan.messaging import models as messaging_models
 from titan.orchestrator import models as orchestrator_models
 from titan.projects import models as projects_models
@@ -19,6 +20,7 @@ __all__ = [
     "agents_models",
     "events_models",
     "identity_models",
+    "llm_tables",
     "messaging_models",
     "orchestrator_models",
     "projects_models",

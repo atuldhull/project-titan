@@ -55,6 +55,9 @@ class ModelAlias(BaseModel):
     model: str
     dimensions: int | None = None  # embedding aliases declare their vector width
     price: Price | None = None
+    # Max context tokens — a context-overflow fallback only steps UP to a
+    # larger-context alias (Vol 7 §8.3). None ⇒ unknown (treated as smallest).
+    context_window: int | None = None
     # Per-alias provider options (config-driven quirks, e.g. {strict_tools: true}
     # for OpenAI). Adapters read what they understand; unknown keys are ignored.
     options: dict[str, Any] = Field(default_factory=dict)

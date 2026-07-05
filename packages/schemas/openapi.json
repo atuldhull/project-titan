@@ -499,12 +499,17 @@
       },
       "ChatResponse": {
         "additionalProperties": false,
-        "description": "The canonical chat response (\u00a78.1). ``provider``/``model_id`` reflect what\nactually served the call so later fallback substitutions are attributable.",
+        "description": "The canonical chat response (\u00a78.1). ``provider``/``model_id`` reflect what\nactually served the call so fallback substitutions are attributable, and\n``degraded_model`` flags a result served by a fallback (Vol 9 \u00a710) so later\nreview logic can tighten. ``requested_alias`` is what routing first chose.",
         "properties": {
           "cost_usd": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Cost Usd",
             "type": "string"
+          },
+          "degraded_model": {
+            "default": false,
+            "title": "Degraded Model",
+            "type": "boolean"
           },
           "finish_reason": {
             "enum": [
@@ -528,6 +533,28 @@
           "provider": {
             "title": "Provider",
             "type": "string"
+          },
+          "requested_alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Alias"
+          },
+          "served_alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Served Alias"
           },
           "text": {
             "anyOf": [

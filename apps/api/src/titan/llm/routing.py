@@ -23,6 +23,7 @@ class ResolvedModel:
     model_id: str
     price: Price | None
     dimensions: int | None
+    context_window: int | None = None
     options: dict[str, Any] = field(default_factory=dict)
 
 
@@ -43,8 +44,13 @@ class ModelRouter:
             model_id=spec.model,
             price=spec.price,
             dimensions=spec.dimensions,
+            context_window=spec.context_window,
             options=spec.options,
         )
+
+    def resolve(self, alias: str) -> ResolvedModel:
+        """Resolve a specific alias by name (used to expand a fallback chain)."""
+        return self._resolve_alias(alias)
 
     def resolve_chat(self, *, model_alias: str | None, agent_id: str | None) -> ResolvedModel:
         if model_alias:

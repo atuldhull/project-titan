@@ -864,11 +864,18 @@ export interface components {
         /**
          * ChatResponse
          * @description The canonical chat response (§8.1). ``provider``/``model_id`` reflect what
-         *     actually served the call so later fallback substitutions are attributable.
+         *     actually served the call so fallback substitutions are attributable, and
+         *     ``degraded_model`` flags a result served by a fallback (Vol 9 §10) so later
+         *     review logic can tighten. ``requested_alias`` is what routing first chose.
          */
         ChatResponse: {
             /** Cost Usd */
             cost_usd: string;
+            /**
+             * Degraded Model
+             * @default false
+             */
+            degraded_model: boolean;
             /**
              * Finish Reason
              * @enum {string}
@@ -880,6 +887,10 @@ export interface components {
             model_id: string;
             /** Provider */
             provider: string;
+            /** Requested Alias */
+            requested_alias?: string | null;
+            /** Served Alias */
+            served_alias?: string | null;
             /** Text */
             text?: string | null;
             /** Tool Calls */

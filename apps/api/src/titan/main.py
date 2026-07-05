@@ -54,7 +54,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.state.engine = clients.create_engine(active_settings)
         application.state.redis = clients.create_redis(active_settings)
         application.state.http = clients.create_http_client(active_settings)
-        application.state.llm_gateway = llm_service.build_gateway(active_settings)
+        application.state.llm_gateway = llm_service.build_gateway(
+            active_settings,
+            engine=application.state.engine,
+            redis=application.state.redis,
+        )
         application.state.readyz_budget_seconds = active_settings.readyz_budget_seconds
         otel.instrument_engine(active_settings, application.state.engine)
         try:
