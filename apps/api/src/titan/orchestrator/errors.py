@@ -5,6 +5,32 @@ import uuid
 from titan.gateway.problems import ProblemException
 
 PROBLEM_TYPE_INVALID_DEPENDENCY_CYCLE = "https://titan.dev/errors/invalid-dependency-cycle"
+PROBLEM_TYPE_INVALID_TRANSITION = "https://titan.dev/errors/invalid-transition"
+
+
+def invalid_transition(from_status: str, action: str) -> ProblemException:
+    """409 for an illegal (from_status, action) pair (§4.3 / TITAN-BCK-012)."""
+    return ProblemException(
+        status=409,
+        title="Invalid task transition",
+        detail=f"Action '{action}' is not allowed from status '{from_status}'.",
+        problem_type=PROBLEM_TYPE_INVALID_TRANSITION,
+    )
+
+
+class TransitionConflict(ProblemException):
+    """The guarded status UPDATE moved zero rows: the task left its expected
+    status between load and write (a concurrent transition won). Renders as 409
+    invalid-transition if it reaches the gateway; the scheduler's claim path
+    catches it and treats it as 'lost the race' (returns None)."""
+
+    def __init__(self, from_status: str, action: str) -> None:
+        super().__init__(
+            status=409,
+            title="Invalid task transition",
+            detail=f"Task is no longer in status '{from_status}'; retry '{action}'.",
+            problem_type=PROBLEM_TYPE_INVALID_TRANSITION,
+        )
 
 
 class DependencyCycleError(ProblemException):

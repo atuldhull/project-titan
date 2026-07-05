@@ -580,6 +580,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tasks/{task_id}:transition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transition Task
+         * @description The ONLY way task state moves (TITAN-BCK-012). The transition table maps
+         *     (status, action) to the target state + the permission this route enforces
+         *     object-side; an illegal pair is a 409 invalid-transition.
+         */
+        post: operations["transition_task_api_v1_tasks__task_id__transition_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -1465,6 +1487,15 @@ export interface components {
              * @default Bearer
              */
             token_type: string;
+        };
+        /** TransitionRequest */
+        TransitionRequest: {
+            /** Action */
+            action: string;
+            /** Actor Agent Id */
+            actor_agent_id?: string | null;
+            /** Comment */
+            comment?: string | null;
         };
     };
     responses: never;
@@ -2902,6 +2933,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    transition_task_api_v1_tasks__task_id__transition_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskOut"];
                 };
             };
             /** @description Validation Error */

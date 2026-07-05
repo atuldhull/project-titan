@@ -25,7 +25,6 @@ from titan.gateway.dto import JsonbDict
 from titan.gateway.pagination import Keyset, Page
 from titan.gateway.problems import ProblemException, problem_type
 from titan.messaging import repository as repo
-from titan.orchestrator import service as tasks
 
 # --- messages: kinds + the per-kind body-schema hook -----------------------
 
@@ -186,10 +185,12 @@ async def create_message(
         raise _validation_error("A message must have a sender.")
     validate_message_body(data.kind, data.body)
     # A linked task must live in THIS project (mirrors the decisions
-    # supersedes_id same-project check) — no cross-project references.
-    if data.task_id is not None and not await tasks.task_in_project(
-        conn, data.task_id, project_id
-    ):
+    # supersedes_id same-project check) — no cross-project references. Imported
+    # lazily: the orchestrator imports messaging.service (for transition
+    # messages), so a top-level import here would close a cycle.
+    from titan.orchestrator import service as tasks
+
+    if data.task_id is not None and not await tasks.task_in_project(conn, data.task_id, project_id):
         raise _validation_error("task_id does not reference a task in this project.")
     try:
         row = await repo.insert_message(

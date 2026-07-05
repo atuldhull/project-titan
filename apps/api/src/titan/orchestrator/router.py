@@ -28,6 +28,7 @@ from titan.orchestrator.service import (
     TaskCreate,
     TaskOut,
     TaskPatch,
+    TransitionRequest,
 )
 from titan.projects import service as projects
 
@@ -127,6 +128,40 @@ async def add_dependency(
         return await service.add_dependency(
             conn, task_id=task_id, depends_on_id=body.depends_on_id, actor=str(principal.sub)
         )
+
+
+@router.post("/tasks/{task_id}:transition", response_model=TaskOut)
+async def transition_task(
+    request: Request,
+    task_id: uuid.UUID,
+    body: TransitionRequest,
+    response: Response,
+    principal: _Authenticated,
+) -> TaskOut:
+    """The ONLY way task state moves (TITAN-BCK-012). The transition table maps
+    (status, action) to the target state + the permission this route enforces
+    object-side; an illegal pair is a 409 invalid-transition."""
+    async with request.app.state.engine.connect() as conn:
+        task = await service.get_task(conn, task_id)
+    transition = service.transitions.resolve(task.status, body.action)
+    if transition is None:
+        # Authenticated callers who can't even see the task must still 404, not
+        # leak the state machine — object-authorize on a read permission first.
+        await _authorize_task(request, task, "task:read")
+        raise service.invalid_transition(task.status, body.action)
+    await _authorize_task(request, task, transition.required_permission)
+    actor_user_id = None if body.actor_agent_id is not None else principal.sub
+    async with request.app.state.engine.begin() as conn:
+        updated = await service.apply_transition(
+            conn,
+            task,
+            transition,
+            actor_agent_id=body.actor_agent_id,
+            actor_user_id=actor_user_id,
+            comment=body.comment,
+        )
+    set_etag(response, updated.version)
+    return updated
 
 
 def mount(app: FastAPI) -> None:

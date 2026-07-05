@@ -109,6 +109,17 @@ async def agent_exists(conn: AsyncConnection, agent_id: uuid.UUID) -> bool:
     return await repo.get_agent(conn, agent_id) is not None
 
 
+async def agent_in_project(
+    conn: AsyncConnection, agent_id: uuid.UUID, project_id: uuid.UUID
+) -> bool:
+    """True if the agent exists AND may act in ``project_id`` — its own project,
+    or an org-level template (project_id NULL). The cross-module check the
+    orchestrator uses before assigning/reviewing a task with an agent, so a
+    non-existent or wrong-project actor_agent_id is a 4xx, not a 500 FK error."""
+    row = await repo.get_agent(conn, agent_id)
+    return row is not None and (row.project_id is None or row.project_id == project_id)
+
+
 async def create_agent(conn: AsyncConnection, data: AgentCreate) -> AgentOut:
     try:
         row = await repo.insert_agent(
@@ -190,6 +201,7 @@ __all__ = [
     "AgentRole",
     "AgentStatus",
     "agent_exists",
+    "agent_in_project",
     "create_agent",
     "get_agent",
     "list_agents",
