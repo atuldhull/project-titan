@@ -53,7 +53,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "*:read",
     ],
     # The machine/agent bundle (TITAN-BCK-021): task flow + the sandbox
-    # side-effect scopes the fs/terminal/git/code tools require (Phases 20-21).
+    # side-effect scopes the fs/terminal/git/code tools require (Phases 20-21),
+    # plus the docker/browser scopes for the container + E2E tools (Phase 22).
     "operator": [
         "task:transition",
         "run:create",
@@ -61,6 +62,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "workspace:read",
         "workspace:write",
         "terminal:run",
+        "docker:run",
+        "browser:use",
         "*:read",
     ],
     "viewer": ["*:read"],

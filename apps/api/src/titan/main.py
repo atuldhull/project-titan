@@ -75,11 +75,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.state.sandbox_manager = tools_service.build_sandbox_manager(
             application.state.sandbox_controller
         )
+        # Per-task rootless DinD sidecars (docker.* tools) + headless-browser
+        # containers (browser.* tools); both degrade to TOOL_UNAVAILABLE when no
+        # Docker daemon is reachable (e.g. the socket-less API container).
+        application.state.dind_controller = tools_service.build_dind_controller(
+            active_settings.dind_image,
+            active_settings.dind_preloaded_images,
+            docker_host=active_settings.sandbox_docker_host,
+        )
+        application.state.dind_manager = tools_service.build_dind_manager(
+            application.state.dind_controller
+        )
+        application.state.browser_controller = tools_service.build_browser_controller(
+            active_settings.browser_image, docker_host=active_settings.sandbox_docker_host
+        )
+        application.state.browser_manager = tools_service.build_browser_manager(
+            application.state.browser_controller
+        )
         application.state.tool_bus = tools_service.build_bus(
             application.state.engine,
             registry=application.state.tool_registry,
             workspace_provider=application.state.workspaces,
             sandbox_manager=application.state.sandbox_manager,
+            dind_manager=application.state.dind_manager,
+            browser_manager=application.state.browser_manager,
             redis=application.state.redis,
         )
         application.state.readyz_budget_seconds = active_settings.readyz_budget_seconds
@@ -88,6 +107,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield
         finally:
             await application.state.sandbox_manager.aclose()  # destroy live sandboxes
+            await application.state.dind_manager.aclose()  # destroy DinD sidecars
+            await application.state.browser_manager.aclose()  # destroy browser pages
+            # Sweep any sidecar/browser containers orphaned by a crashed create.
+            await application.state.dind_controller.destroy_all()
+            await application.state.browser_controller.destroy_all()
             await application.state.llm_gateway.aclose()
             await application.state.http.aclose()
             await application.state.redis.aclose()

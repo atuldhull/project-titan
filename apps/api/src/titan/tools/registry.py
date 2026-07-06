@@ -18,7 +18,7 @@ import re
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from jsonschema.validators import Draft202012Validator
 from pydantic import BaseModel, ConfigDict, Field
@@ -29,6 +29,12 @@ from titan.tools.allowlists import allowed_for_role
 from titan.tools.errors import ToolErrorCode
 from titan.tools.sandbox.session import SandboxSession
 from titan.tools.sandbox.workspace import Workspace
+
+if TYPE_CHECKING:
+    # Only for the context's type hints — importing the browser session eagerly
+    # would drag Playwright into every module that imports the registry.
+    from titan.tools.browser.session import BrowserSession
+    from titan.tools.dind.session import DindSession
 
 # Namespaced tool names: fs.read, git.commit, mcp.github.search_issues.
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_-]*)+$")
@@ -54,6 +60,10 @@ class ToolExecutionContext:
     # The task's running sandbox + live output stream (Phase 21). None when no
     # Docker daemon is reachable — terminal/git/code tools then fail closed.
     sandbox: SandboxSession | None = None
+    # The task's rootless DinD sidecar (Phase 22) — docker.* tools; None → closed.
+    dind: "DindSession | None" = None
+    # The task's headless-browser page (Phase 22) — browser.* tools; None → closed.
+    browser: "BrowserSession | None" = None
 
 
 @dataclass

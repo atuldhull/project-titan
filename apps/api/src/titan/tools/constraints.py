@@ -166,6 +166,12 @@ def _host_is_blocked(host: str) -> bool:
     )
 
 
+def host_is_blocked(host: str) -> bool:
+    """Public alias of the private-range/metadata host check, reused by the
+    browser.* SSRF guard (TITAN-SEC-073/074)."""
+    return _host_is_blocked(host)
+
+
 def url_allowlist(field: str, *, allowed_hosts: frozenset[str] | None = None) -> ParamConstraint:
     """Require the named URL argument to be http(s), optionally host-allowlisted,
     with private/link-local/metadata targets blocked (TITAN-SEC-073). An
@@ -196,4 +202,4 @@ def url_allowlist(field: str, *, allowed_hosts: frozenset[str] | None = None) ->
     return check
 
 
-__all__ = ["argv_only", "url_allowlist", "workspace_path"]
+__all__ = ["argv_only", "host_is_blocked", "url_allowlist", "workspace_path"]

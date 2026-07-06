@@ -27,6 +27,7 @@ dependencies = [
     "pyyaml>=6.0",
     "jsonschema>=4.23",
     "docker>=7.1",
+    "playwright>=1.61",
 ]
 
 [dependency-groups]

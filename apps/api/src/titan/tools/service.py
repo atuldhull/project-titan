@@ -24,6 +24,8 @@ from titan.tools.approvals import (
     list_approvals,
     resolve_approval,
 )
+from titan.tools.browser.controller import BrowserController, BrowserServer
+from titan.tools.browser.session import BrowserSession, BrowserSessionManager
 from titan.tools.builtin import register_builtin
 from titan.tools.bus import (
     ApprovalDecision,
@@ -35,6 +37,8 @@ from titan.tools.bus import (
     deny_all_approvals,
 )
 from titan.tools.constraints import argv_only, url_allowlist, workspace_path
+from titan.tools.dind.controller import APP_PORTS, DindController, DindSidecar
+from titan.tools.dind.session import DindSession, DindSessionManager
 from titan.tools.envelopes import Artifact, ToolCallEnvelope, ToolResultEnvelope, new_call
 from titan.tools.errors import TOOL_ERROR_CODES, ToolError, ToolErrorCode
 from titan.tools.redaction import Redactor, default_redactor
@@ -71,6 +75,8 @@ def build_bus(
     rate_limiter: RateLimiter | None = None,
     workspace_provider: WorkspaceProvider | None = None,
     sandbox_manager: SandboxSessionManager | None = None,
+    dind_manager: DindSessionManager | None = None,
+    browser_manager: BrowserSessionManager | None = None,
     redis: Redis | None = None,
 ) -> ToolBus:
     """The production bus. The admin-risk gate defaults to the DB-backed
@@ -78,7 +84,8 @@ def build_bus(
     (e.g. ``deny_all_approvals`` in a closed test). ``workspace_provider`` gives
     fs.* tools their jailed /workspace (Phase 20); ``sandbox_manager`` + ``redis``
     give terminal/git/code tools their per-task sandbox + live output stream
-    (Phase 21)."""
+    (Phase 21); ``dind_manager`` / ``browser_manager`` give docker.* / browser.*
+    their per-task DinD sidecar and headless page (Phase 22)."""
     gate = approval_gate if approval_gate is not None else DbApprovalGate(engine, redactor=redactor)
     return ToolBus(
         registry if registry is not None else build_registry(),
@@ -88,6 +95,8 @@ def build_bus(
         rate_limiter=rate_limiter,
         workspace_provider=workspace_provider,
         sandbox_manager=sandbox_manager,
+        dind_manager=dind_manager,
+        browser_manager=browser_manager,
         redis=redis,
     )
 
@@ -110,6 +119,30 @@ def build_sandbox_manager(controller: SandboxController) -> SandboxSessionManage
     return SandboxSessionManager(controller)
 
 
+def build_dind_controller(
+    image: str, preloaded_images: list[str], *, docker_host: str = ""
+) -> DindController:
+    """The per-task rootless-DinD controller for the docker.* tools (Vol 7 §4.3,
+    TITAN-SEC-044). Degrades gracefully (TOOL_UNAVAILABLE) when no daemon exists."""
+    return DindController(image=image, preloaded_images=preloaded_images, docker_host=docker_host)
+
+
+def build_dind_manager(controller: DindController) -> DindSessionManager:
+    """The per-task DinD-sidecar pool the docker.* tools run against."""
+    return DindSessionManager(controller)
+
+
+def build_browser_controller(image: str, *, docker_host: str = "") -> BrowserController:
+    """The per-task headless-Chromium controller for the browser.* tools
+    (TITAN-INT-032). Degrades gracefully when no Docker daemon is reachable."""
+    return BrowserController(image=image, docker_host=docker_host)
+
+
+def build_browser_manager(controller: BrowserController) -> BrowserSessionManager:
+    """The per-task browser-page pool the browser.* tools drive."""
+    return BrowserSessionManager(controller)
+
+
 async def verify_audit_chain(conn: AsyncConnection, project_id: uuid.UUID) -> int | None:
     """TITAN-INT-024 verification job entry point: the seq of the first
     tampered row in the project's chain, or None when intact."""
@@ -117,12 +150,21 @@ async def verify_audit_chain(conn: AsyncConnection, project_id: uuid.UUID) -> in
 
 
 __all__ = [
+    "APP_PORTS",
     "TOOL_ERROR_CODES",
     "ApprovalDecision",
     "ApprovalGate",
     "ApprovalStatus",
     "Artifact",
+    "BrowserController",
+    "BrowserServer",
+    "BrowserSession",
+    "BrowserSessionManager",
     "DbApprovalGate",
+    "DindController",
+    "DindSession",
+    "DindSessionManager",
+    "DindSidecar",
     "ExecResult",
     "ExecutionOutcome",
     "ParamConstraint",
@@ -151,7 +193,11 @@ __all__ = [
     "WorkspaceManager",
     "WorkspaceProvider",
     "argv_only",
+    "build_browser_controller",
+    "build_browser_manager",
     "build_bus",
+    "build_dind_controller",
+    "build_dind_manager",
     "build_registry",
     "build_sandbox_controller",
     "build_sandbox_manager",

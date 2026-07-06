@@ -56,6 +56,21 @@ class Settings(BaseSettings):
     # set to bind a specific daemon (e.g. tcp://... in CI).
     sandbox_docker_host: str = ""
 
+    # --- docker.* tools: rootless DinD sidecar (Phase 22; Vol 7 §4.3, SEC-044) ---
+    # Per-task rootless Docker-in-Docker daemon the docker.* tools talk to; the
+    # HOST daemon socket is never mounted or reachable from it (TITAN-SEC-044).
+    dind_image: str = "docker:dind-rootless"
+    # Images seeded offline (host `save` | dind `load`) into each per-task dind
+    # daemon so docker.build/compose can build FROM them with zero registry
+    # egress (offline-first). Comma-separated or JSON list in TITAN_DIND_PRELOADED_IMAGES.
+    dind_preloaded_images: Annotated[list[str], NoDecode] = ["titan-sandbox:local"]
+
+    # --- browser.* tools: headless Chromium via Playwright (Phase 22; INT-032) ---
+    # The container running `playwright run-server`; the trusted Tool Host
+    # connects to its websocket. Build:
+    # `docker build -f infra/docker/titan-browser.Dockerfile -t titan-browser:local .`
+    browser_image: str = "titan-browser:local"
+
     # --- LLM gateway (Phase 15; Vol 7 §8.2, ADR-007) ---
     # Path to config/models.yaml (hot-reloadable). The container mounts the repo
     # config dir; ship the local-only profile to run with zero paid API keys.
@@ -82,13 +97,13 @@ class Settings(BaseSettings):
     # the comma-separated form).
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
 
-    @field_validator("cors_origins", mode="before")
+    @field_validator("cors_origins", "dind_preloaded_images", mode="before")
     @classmethod
-    def _parse_origins(cls, value: object) -> object:
+    def _parse_str_list(cls, value: object) -> object:
         if isinstance(value, str):
             if value.lstrip().startswith("["):
                 return json.loads(value)
-            return [origin.strip() for origin in value.split(",") if origin.strip()]
+            return [item.strip() for item in value.split(",") if item.strip()]
         return value
 
 

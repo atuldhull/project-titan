@@ -39,6 +39,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from titan.gateway.rbac import permission_granted
 from titan.tools import repository as repo
 from titan.tools.allowlists import allowed_for_role
+from titan.tools.browser.session import BrowserSession, BrowserSessionManager
+from titan.tools.dind.session import DindSession, DindSessionManager
 from titan.tools.envelopes import Artifact, ToolCallEnvelope, ToolResultEnvelope
 from titan.tools.errors import ToolError, ToolErrorCode
 from titan.tools.redaction import Redactor, default_redactor
@@ -165,6 +167,8 @@ class ToolBus:
         rate_limiter: RateLimiter | None = None,
         workspace_provider: WorkspaceProvider | None = None,
         sandbox_manager: SandboxSessionManager | None = None,
+        dind_manager: DindSessionManager | None = None,
+        browser_manager: BrowserSessionManager | None = None,
         redis: "Redis | None" = None,
     ) -> None:
         self._registry = registry
@@ -176,6 +180,8 @@ class ToolBus:
         )
         self._workspace_provider = workspace_provider
         self._sandbox_manager = sandbox_manager
+        self._dind_manager = dind_manager
+        self._browser_manager = browser_manager
         self._redis = redis
 
     async def invoke(
@@ -343,6 +349,21 @@ class ToolBus:
                 workspace=workspace,
                 stream=stream,
             )
+        # docker.* run against a per-task DinD sidecar (needs the workspace for
+        # compose files / build contexts); browser.* drive a per-task page.
+        dind: DindSession | None = None
+        if self._dind_manager is not None and workspace is not None:
+            dind = DindSession(
+                self._dind_manager,
+                project_id=call.project_id,
+                task_id=call.task_id,
+                workspace=workspace,
+            )
+        browser: BrowserSession | None = None
+        if self._browser_manager is not None:
+            browser = BrowserSession(
+                self._browser_manager, project_id=call.project_id, task_id=call.task_id
+            )
         context = ToolExecutionContext(
             engine=self._engine,
             project_id=call.project_id,
@@ -351,6 +372,8 @@ class ToolBus:
             agent_uuid=caller.agent_uuid,
             workspace=workspace,
             sandbox=sandbox,
+            dind=dind,
+            browser=browser,
         )
         started = time.monotonic()
         try:

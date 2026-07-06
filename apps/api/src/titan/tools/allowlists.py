@@ -27,7 +27,7 @@ _MATRIX: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     # Architect / Research: repo read, web fetch, docs write. Denied: shell,
     # git push, deploy.
     "architect": (
-        (*_READ_REPO, "web.*", "docs.*", "memory.*", *_TASK_READ, "message.*"),
+        (*_READ_REPO, "web.*", "browser.*", "docs.*", "memory.*", *_TASK_READ, "message.*"),
         ("terminal.*", "git.commit", "git.push", *_ALWAYS_DENY),
     ),
     # Backend / Frontend / DB Engineer: sandbox shell, repo read/write on task
@@ -39,6 +39,7 @@ _MATRIX: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
             "fs.*",
             "git.*",
             "code.*",
+            "docker.*",
             "test.*",
             *_TASK_READ,
             "task.transition",
@@ -46,10 +47,19 @@ _MATRIX: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
         ),
         ("plugin.*", *_ALWAYS_DENY),
     ),
-    # QA: sandbox shell, test run, repo read, bug report. Denied: git write
-    # outside test dirs (param constraint on git tools), deploy.
+    # QA: sandbox shell, test run, repo read, browser E2E, bug report. Denied:
+    # git write outside test dirs (param constraint on git tools), deploy.
     "qa": (
-        ("terminal.*", "code.*", "test.*", *_READ_REPO, "git.commit", *_TASK_READ, "message.*"),
+        (
+            "terminal.*",
+            "code.*",
+            "test.*",
+            "browser.*",
+            *_READ_REPO,
+            "git.commit",
+            *_TASK_READ,
+            "message.*",
+        ),
         ("git.push", *_ALWAYS_DENY),
     ),
     # Security: scanners, repo read, report write. Denied: deploy, secret read.
