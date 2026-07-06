@@ -26,6 +26,7 @@ dependencies = [
     "argon2-cffi>=23.1",
     "pyyaml>=6.0",
     "jsonschema>=4.23",
+    "docker>=7.1",
 ]
 
 [dependency-groups]
@@ -92,6 +93,13 @@ module = ["opentelemetry.instrumentation.*"]
 ignore_missing_imports = true
 disallow_untyped_calls = false
 
+[[tool.mypy.overrides]]
+# docker-py ships no py.typed marker / stubs; the Sandbox Controller wraps it
+# behind a typed surface (titan.tools.sandbox.controller).
+module = ["docker", "docker.*"]
+ignore_missing_imports = true
+disallow_untyped_calls = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # TITAN-FND-064: >=80% coverage on core backend code, enforced locally and in CI.
@@ -99,6 +107,7 @@ addopts = "--cov=titan --cov-report=term-missing --cov-fail-under=80"
 markers = [
     "schema: needs a live disposable PostgreSQL 16 (set TITAN_TEST_DATABASE_URL)",
     "live_llm: hits a real LLM provider (needs API keys / local Ollama); non-blocking CI job",
+    "sandbox: needs a reachable Docker daemon + the sandbox base image; non-blocking CI job",
 ]
 
 [tool.importlinter]

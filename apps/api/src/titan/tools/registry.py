@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from titan.llm.service import ToolDef
 from titan.tools.allowlists import allowed_for_role
 from titan.tools.errors import ToolErrorCode
+from titan.tools.sandbox.workspace import Workspace
 
 # Namespaced tool names: fs.read, git.commit, mcp.github.search_issues.
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_-]*)+$")
@@ -39,13 +40,16 @@ _RISK_CLASSES = frozenset({"read", "write", "admin"})
 class ToolExecutionContext:
     """What an executor may know about the call: DB access plus attribution.
     Deliberately NO scopes/role here — authorization is the bus's job and is
-    finished before an executor ever runs."""
+    finished before an executor ever runs. ``workspace`` is the task's jailed
+    ``/workspace`` (None when no workspace provider is wired — fs tools then
+    fail closed with TOOL_UNAVAILABLE)."""
 
     engine: AsyncEngine
     project_id: uuid.UUID
     task_id: uuid.UUID | None
     agent_id: str  # audit label, e.g. "agent.backend_engineer.2"
     agent_uuid: uuid.UUID | None  # DB identity when known (FK attribution)
+    workspace: Workspace | None = None
 
 
 @dataclass

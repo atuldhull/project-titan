@@ -11,6 +11,7 @@ phases register their tools (fs.*, git.*, …) through :class:`ToolSpec` +
 """
 
 import uuid
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
@@ -29,6 +30,7 @@ from titan.tools.bus import (
     RateLimiter,
     ToolBus,
     ToolCaller,
+    WorkspaceProvider,
     deny_all_approvals,
 )
 from titan.tools.constraints import argv_only, url_allowlist, workspace_path
@@ -44,6 +46,9 @@ from titan.tools.registry import (
     ToolRegistry,
     ToolSpec,
 )
+from titan.tools.sandbox.controller import ExecResult, Sandbox, SandboxController
+from titan.tools.sandbox.policy import ResourceLimits, SandboxPolicy
+from titan.tools.sandbox.workspace import Workspace, WorkspaceManager
 
 
 def build_registry() -> ToolRegistry:
@@ -61,10 +66,12 @@ def build_bus(
     redactor: Redactor = default_redactor,
     approval_gate: ApprovalGate | None = None,
     rate_limiter: RateLimiter | None = None,
+    workspace_provider: WorkspaceProvider | None = None,
 ) -> ToolBus:
     """The production bus. The admin-risk gate defaults to the DB-backed
     approval-record flow (TITAN-INT-022); pass ``approval_gate`` to override
-    (e.g. ``deny_all_approvals`` in a closed test)."""
+    (e.g. ``deny_all_approvals`` in a closed test). ``workspace_provider`` gives
+    fs.* tools their jailed /workspace (Phase 20)."""
     gate = approval_gate if approval_gate is not None else DbApprovalGate(engine, redactor=redactor)
     return ToolBus(
         registry if registry is not None else build_registry(),
@@ -72,7 +79,21 @@ def build_bus(
         redactor=redactor,
         approval_gate=gate,
         rate_limiter=rate_limiter,
+        workspace_provider=workspace_provider,
     )
+
+
+def build_workspace_manager(root: str) -> WorkspaceManager:
+    """The per-task workspace manager (a :class:`WorkspaceProvider`) rooted at
+    ``root`` on the host (TITAN-SEC-040)."""
+    return WorkspaceManager(Path(root))
+
+
+def build_sandbox_controller(image: str, *, docker_host: str = "") -> SandboxController:
+    """The Sandbox Controller for hardened per-task code execution (Vol 8 §5).
+    Reachable only when a Docker daemon is available; :meth:`SandboxController.ping`
+    tells callers to degrade gracefully when it is not."""
+    return SandboxController(SandboxPolicy(image=image), docker_host=docker_host)
 
 
 async def verify_audit_chain(conn: AsyncConnection, project_id: uuid.UUID) -> int | None:
@@ -88,11 +109,16 @@ __all__ = [
     "ApprovalStatus",
     "Artifact",
     "DbApprovalGate",
+    "ExecResult",
     "ExecutionOutcome",
     "ParamConstraint",
     "ProjectToolPolicy",
     "RateLimiter",
     "Redactor",
+    "ResourceLimits",
+    "Sandbox",
+    "SandboxController",
+    "SandboxPolicy",
     "ToolApprovalOut",
     "ToolBus",
     "ToolCallEnvelope",
@@ -104,9 +130,14 @@ __all__ = [
     "ToolRegistry",
     "ToolResultEnvelope",
     "ToolSpec",
+    "Workspace",
+    "WorkspaceManager",
+    "WorkspaceProvider",
     "argv_only",
     "build_bus",
     "build_registry",
+    "build_sandbox_controller",
+    "build_workspace_manager",
     "default_redactor",
     "deny_all_approvals",
     "list_approvals",

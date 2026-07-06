@@ -63,8 +63,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         # §4.1 boot-time registry rebuild + the single side-effect chokepoint.
         application.state.tool_registry = tools_service.build_registry()
+        # Per-task workspace jail (fs.* tools) + the hardened sandbox controller
+        # for code execution (Vol 8 §5); the latter degrades gracefully when no
+        # Docker daemon is reachable.
+        application.state.workspaces = tools_service.build_workspace_manager(
+            active_settings.sandbox_workspace_root
+        )
+        application.state.sandbox_controller = tools_service.build_sandbox_controller(
+            active_settings.sandbox_image, docker_host=active_settings.sandbox_docker_host
+        )
         application.state.tool_bus = tools_service.build_bus(
-            application.state.engine, registry=application.state.tool_registry
+            application.state.engine,
+            registry=application.state.tool_registry,
+            workspace_provider=application.state.workspaces,
         )
         application.state.readyz_budget_seconds = active_settings.readyz_budget_seconds
         otel.instrument_engine(active_settings, application.state.engine)

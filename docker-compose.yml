@@ -57,6 +57,10 @@ services:
       TITAN_MODELS_CONFIG_PATH: ${TITAN_MODELS_CONFIG_PATH:-/app/config/models.yaml}
       TITAN_PRICES_CONFIG_PATH: ${TITAN_PRICES_CONFIG_PATH:-/app/config/prices.yaml}
       TITAN_OLLAMA_BASE_URL: ${TITAN_OLLAMA_BASE_URL:-http://ollama:11434}
+      # Per-task workspace jail root (Phase 20). On the writable tmpfs like
+      # artifacts; the rootfs stays read-only. Sandbox code-exec containers are
+      # created by the Sandbox Controller only where a Docker daemon is reachable.
+      TITAN_SANDBOX_WORKSPACE_ROOT: /tmp/titan-workspaces
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
@@ -97,6 +101,7 @@ services:
       # Artifacts live on the writable tmpfs at MVP (object storage swaps in
       # behind the Storage protocol later); the rootfs stays read-only.
       TITAN_ARTIFACT_ROOT: /tmp/titan-artifacts
+      TITAN_SANDBOX_WORKSPACE_ROOT: /tmp/titan-workspaces
       TITAN_WORKER_CONCURRENCY: ${TITAN_WORKER_CONCURRENCY:-4}
       # LLM gateway config (consumed once the run executor calls it, Phase 17).
       TITAN_MODELS_CONFIG_PATH: ${TITAN_MODELS_CONFIG_PATH:-/app/config/models.yaml}

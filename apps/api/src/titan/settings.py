@@ -43,6 +43,17 @@ class Settings(BaseSettings):
     # Filesystem root for the MVP artifact Storage backend (Vol 3 §6).
     artifact_root: str = "/var/lib/titan/artifacts"
 
+    # --- Sandbox + workspaces (Phase 20; Vol 7 §4.3, Vol 8 §5, ADR-SEC-02) ---
+    # Host root under which per-task workspace directories are created. Each
+    # task gets its own subdir (bind-mounted rw at /workspace in its sandbox).
+    sandbox_workspace_root: str = "/var/lib/titan/workspaces"
+    # Minimal base image for per-task sandboxes (hardened runc locally). Must
+    # exist locally / be pullable; alpine gives a shell + coreutils, nothing more.
+    sandbox_image: str = "alpine:3.20"
+    # Empty = the docker SDK's default endpoint (unix socket / Windows npipe);
+    # set to bind a specific daemon (e.g. tcp://... in CI).
+    sandbox_docker_host: str = ""
+
     # --- LLM gateway (Phase 15; Vol 7 §8.2, ADR-007) ---
     # Path to config/models.yaml (hot-reloadable). The container mounts the repo
     # config dir; ship the local-only profile to run with zero paid API keys.

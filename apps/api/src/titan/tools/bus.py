@@ -48,6 +48,7 @@ from titan.tools.registry import (
     ToolRegistry,
     ToolSpec,
 )
+from titan.tools.sandbox.workspace import Workspace
 
 logger = structlog.get_logger("titan.tools.bus")
 tracer = trace.get_tracer("titan.tools")
@@ -81,6 +82,13 @@ class RateLimiter(Protocol):
     auto-approved …; rate-limited')."""
 
     async def allow(self, key: str, limit_per_min: int) -> bool: ...
+
+
+class WorkspaceProvider(Protocol):
+    """Maps a call to its jailed per-task ``/workspace`` (Phase 20). Absent →
+    fs.* tools fail closed with TOOL_UNAVAILABLE."""
+
+    def for_call(self, project_id: uuid.UUID, task_id: uuid.UUID | None) -> Workspace: ...
 
 
 class SlidingWindowRateLimiter:
@@ -152,6 +160,7 @@ class ToolBus:
         redactor: Redactor = default_redactor,
         approval_gate: ApprovalGate = deny_all_approvals,
         rate_limiter: RateLimiter | None = None,
+        workspace_provider: WorkspaceProvider | None = None,
     ) -> None:
         self._registry = registry
         self._engine = engine
@@ -160,6 +169,7 @@ class ToolBus:
         self._rate_limiter: RateLimiter = (
             rate_limiter if rate_limiter is not None else SlidingWindowRateLimiter()
         )
+        self._workspace_provider = workspace_provider
 
     async def invoke(
         self,
@@ -302,12 +312,18 @@ class ToolBus:
     async def _execute(
         self, spec: ToolSpec, call: ToolCallEnvelope, caller: ToolCaller
     ) -> ToolResultEnvelope:
+        workspace = (
+            self._workspace_provider.for_call(call.project_id, call.task_id)
+            if self._workspace_provider is not None
+            else None
+        )
         context = ToolExecutionContext(
             engine=self._engine,
             project_id=call.project_id,
             task_id=call.task_id,
             agent_id=call.agent_id,
             agent_uuid=caller.agent_uuid,
+            workspace=workspace,
         )
         started = time.monotonic()
         try:
@@ -439,5 +455,6 @@ __all__ = [
     "SlidingWindowRateLimiter",
     "ToolBus",
     "ToolCaller",
+    "WorkspaceProvider",
     "deny_all_approvals",
 ]
