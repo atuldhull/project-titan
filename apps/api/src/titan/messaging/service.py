@@ -291,6 +291,7 @@ async def create_notification(
     title: str,
     body: str | None = None,
     link: str | None = None,
+    actor: str = "system",
 ) -> NotificationOut:
     """Persist a notification for a user (TITAN-FRT-038). The seam other modules
     (approval gates, run failures, …) call to raise the bell badge."""
@@ -304,7 +305,19 @@ async def create_notification(
         body=body,
         link=link,
     )
-    return NotificationOut.model_validate(row)
+    notification = NotificationOut.model_validate(row)
+    # §5.2 notifications:{userId} — user-scoped WS delivery via the outbox path.
+    await write_event(
+        conn,
+        STREAM_EVENTS_DOMAIN,
+        {
+            "type": "notification.created",
+            "user_id": str(user_id),
+            "notification": notification.model_dump(mode="json"),
+        },
+        actor=actor,
+    )
+    return notification
 
 
 async def list_notifications(

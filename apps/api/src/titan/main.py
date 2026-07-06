@@ -38,6 +38,8 @@ from titan.observability.metrics import REDMetricsMiddleware
 from titan.observability.metrics import router as metrics_router
 from titan.orchestrator import router as tasks_router
 from titan.projects import router as projects_router
+from titan.realtime import router as realtime_router
+from titan.realtime import service as realtime_service
 from titan.runs import router as runs_router
 from titan.settings import Settings, get_settings
 from titan.tools import router as tools_router
@@ -133,11 +135,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             research_client=application.state.research_client,
             redis=application.state.redis,
         )
+        # Realtime WS backend (TITAN-BCK-007): this replica's local connection
+        # registry + a pub/sub subscriber forwarding fanned-out frames to its
+        # sockets. The domain-stream → pub/sub fan-out consumer runs ONLY in the
+        # worker (a single consumer preserves per-project seq order); every api
+        # replica just subscribes and delivers to its local sockets.
+        application.state.ws_org = active_settings.org
+        application.state.ws_manager = realtime_service.build_manager()
+        application.state.ws_subscriber = realtime_service.build_subscriber(
+            application.state.redis, application.state.ws_manager
+        )
+        await application.state.ws_subscriber.start()
         application.state.readyz_budget_seconds = active_settings.readyz_budget_seconds
         otel.instrument_engine(active_settings, application.state.engine)
         try:
             yield
         finally:
+            await application.state.ws_subscriber.stop()  # stop pub/sub subscriber first
             await application.state.sandbox_manager.aclose()  # destroy live sandboxes
             await application.state.dind_manager.aclose()  # destroy DinD sidecars
             await application.state.browser_manager.aclose()  # destroy browser pages
@@ -211,6 +225,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     runs_router.mount(app)  # /runs, /tasks/{id}/runs, artifacts
     llm_router.mount(app)  # /llm/chat, /llm/embeddings — the provider gateway
     tools_router.mount(app)  # /projects/{id}/tool-approvals — admin-risk gate
+    realtime_router.mount(app)  # /ws — JWT-authenticated realtime channel (ADR-009)
     otel.instrument_app(active_settings, app)
 
     def custom_openapi() -> dict[str, Any]:

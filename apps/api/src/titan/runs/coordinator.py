@@ -23,7 +23,13 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from titan.events.bus import Delivery, QueueBus
-from titan.events.service import STREAM_RUNS_EXECUTE, STREAM_RUNS_RESULTS, dlq_stream, write_event
+from titan.events.service import (
+    STREAM_EVENTS_DOMAIN,
+    STREAM_RUNS_EXECUTE,
+    STREAM_RUNS_RESULTS,
+    dlq_stream,
+    write_event,
+)
 from titan.observability.metrics import STREAM_DEPTH
 from titan.orchestrator import service as orchestrator
 from titan.runs import service as runs
@@ -34,6 +40,33 @@ logger = structlog.get_logger("titan.runs")
 
 RUNS_EXECUTE_GROUP = "titan-runs-execute"
 RUNS_RESULTS_GROUP = "titan-runs-results"
+
+
+async def _emit_run_event(
+    conn: AsyncConnection,
+    event_type: str,
+    *,
+    run: runs.RunOut,
+    project_id: uuid.UUID,
+    status: str,
+    extra: "dict[str, object] | None" = None,
+) -> None:
+    """Emit a run lifecycle event to the domain stream for the WS fan-out
+    (§5 run.started/run.finished). One event path: an outbox row committed with
+    the run's own transaction — the WS backend never reads run state directly."""
+    run_dto: dict[str, object] = {
+        "run_id": str(run.id),
+        "task_id": str(run.task_id),
+        "agent_id": str(run.agent_id),
+        "project_id": str(project_id),
+        "attempt": run.attempt,
+        "status": status,
+    }
+    if extra:
+        run_dto.update(extra)
+    await write_event(
+        conn, STREAM_EVENTS_DOMAIN, {"type": event_type, "run": run_dto}, actor="worker"
+    )
 
 
 async def dispatch_run(
@@ -102,6 +135,10 @@ async def execute_one(
             started = await runs.mark_running(conn, run_id)
             if started is not None:
                 await orchestrator.start_run_task(conn, started.task_id, started.agent_id)
+                task = await orchestrator.get_task(conn, started.task_id)
+                await _emit_run_event(
+                    conn, "run.started", run=started, project_id=task.project_id, status="running"
+                )
         if started is None:
             await bus.ack(STREAM_RUNS_EXECUTE, RUNS_EXECUTE_GROUP, delivery)
             return
@@ -173,6 +210,19 @@ async def _finalize(
                 "succeeded": outcome.status == "succeeded",
             },
             actor="worker",
+        )
+        # §5 run.finished for the WS fan-out — same transaction as the result.
+        await _emit_run_event(
+            conn,
+            "run.finished",
+            run=run,
+            project_id=context.project_id,
+            status=outcome.status,
+            extra={
+                "tokens_in": outcome.tokens_in,
+                "tokens_out": outcome.tokens_out,
+                "cost_usd": str(outcome.cost_usd),
+            },
         )
 
 

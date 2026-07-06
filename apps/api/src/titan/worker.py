@@ -23,6 +23,7 @@ from titan.events import service as events
 from titan.events.consumers import run_domain_consumer, run_drainer, run_reaper
 from titan.events.outbox import OutboxDrainer
 from titan.observability.logging import configure_logging
+from titan.realtime import service as realtime
 from titan.runs.coordinator import (
     run_execute_reaper,
     run_executor_loop,
@@ -45,6 +46,7 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
     redis = clients.create_redis(settings)
     bus = events.build_bus(redis)
     drainer = OutboxDrainer(engine, bus)
+    ws_fanout = realtime.build_fanout(redis, org=settings.org)
     storage = FilesystemStorage(settings.artifact_root)
     executor = StubExecutor()
     stop = asyncio.Event()
@@ -60,6 +62,7 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
             "outbox-drainer",
             "domain-consumer",
             "reaper",
+            "ws-fanout",
             "runs-executor",
             "runs-execute-reaper",
             "runs-results",
@@ -69,9 +72,14 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
         metrics_port=METRICS_PORT,
     )
     tasks = [
-        asyncio.create_task(run_drainer(drainer, stop=stop)),
+        asyncio.create_task(
+            run_drainer(drainer, stop=stop, idle_seconds=settings.outbox_drain_idle_seconds)
+        ),
         asyncio.create_task(run_domain_consumer(engine, bus, consumer_name, stop=stop)),
         asyncio.create_task(run_reaper(engine, bus, consumer_name, stop=stop)),
+        asyncio.create_task(
+            realtime.run_ws_fanout(bus, ws_fanout, f"{consumer_name}-ws", stop=stop)
+        ),
         asyncio.create_task(
             run_executor_loop(
                 engine,

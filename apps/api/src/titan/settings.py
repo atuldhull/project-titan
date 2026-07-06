@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     run_soft_timeout_seconds: float = 900.0
     # Filesystem root for the MVP artifact Storage backend (Vol 3 §6).
     artifact_root: str = "/var/lib/titan/artifacts"
+    # Idle poll interval for the outbox drainer. Small so committed events reach
+    # the queue (and thus the WS fan-out) fast enough for the §5 250 ms budget;
+    # a busy drainer never sleeps (it only pauses when the outbox is empty).
+    outbox_drain_idle_seconds: float = 0.1
 
     # --- Sandbox + workspaces (Phase 20; Vol 7 §4.3, Vol 8 §5, ADR-SEC-02) ---
     # Host root under which per-task workspace directories are created. Each

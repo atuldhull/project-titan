@@ -124,8 +124,12 @@ async def run_reaper(  # pragma: no cover
         await _sleep_or_stop(stop, 30.0)
 
 
-async def run_drainer(drainer: object, *, stop: asyncio.Event) -> None:  # pragma: no cover
-    """Continuously drain the transactional outbox to the queue."""
+async def run_drainer(  # pragma: no cover
+    drainer: object, *, stop: asyncio.Event, idle_seconds: float = 1.0
+) -> None:
+    """Continuously drain the transactional outbox to the queue. ``idle_seconds``
+    bounds how long a committed event waits before publish when the drainer is
+    otherwise idle — kept small in the worker so WS delivery meets the §5 budget."""
     from titan.events.outbox import OutboxDrainer
 
     assert isinstance(drainer, OutboxDrainer)
@@ -137,7 +141,7 @@ async def run_drainer(drainer: object, *, stop: asyncio.Event) -> None:  # pragm
             await _sleep_or_stop(stop, 2.0)
             continue
         if not published:
-            await _sleep_or_stop(stop, 1.0)
+            await _sleep_or_stop(stop, idle_seconds)
 
 
 async def _sleep_or_stop(stop: asyncio.Event, seconds: float) -> None:  # pragma: no cover
