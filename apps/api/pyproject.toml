@@ -28,6 +28,9 @@ dependencies = [
     "jsonschema>=4.23",
     "docker>=7.1",
     "playwright>=1.61",
+    "readability-lxml>=0.8.1",
+    "markdownify>=0.13",
+    "beautifulsoup4>=4.12",
 ]
 
 [dependency-groups]
@@ -98,6 +101,12 @@ disallow_untyped_calls = false
 # docker-py ships no py.typed marker / stubs; the Sandbox Controller wraps it
 # behind a typed surface (titan.tools.sandbox.controller).
 module = ["docker", "docker.*"]
+ignore_missing_imports = true
+disallow_untyped_calls = false
+
+[[tool.mypy.overrides]]
+# readability-lxml + markdownify ship no stubs; wrapped by titan.tools.web.extract.
+module = ["readability", "readability.*", "markdownify"]
 ignore_missing_imports = true
 disallow_untyped_calls = false
 

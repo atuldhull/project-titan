@@ -61,6 +61,15 @@ services:
       # artifacts; the rootfs stays read-only. Sandbox code-exec containers are
       # created by the Sandbox Controller only where a Docker daemon is reachable.
       TITAN_SANDBOX_WORKSPACE_ROOT: /tmp/titan-workspaces
+      # Egress path (Phase 23) — empty by default (deny-all sandbox, web.* off);
+      # set these + `--profile egress` to enable. See .env.example.
+      TITAN_RESEARCH_GATEWAY_URL: ${TITAN_RESEARCH_GATEWAY_URL:-}
+      TITAN_RESEARCH_GATEWAY_TOKEN: ${TITAN_RESEARCH_GATEWAY_TOKEN:-}
+      TITAN_EGRESS_PROXY_SECRET: ${TITAN_EGRESS_PROXY_SECRET:-}
+      TITAN_SANDBOX_EGRESS_NETWORK: ${TITAN_SANDBOX_EGRESS_NETWORK:-}
+      TITAN_SANDBOX_FORWARD_PROXY_URL: ${TITAN_SANDBOX_FORWARD_PROXY_URL:-}
+      TITAN_SANDBOX_PIP_INDEX_URL: ${TITAN_SANDBOX_PIP_INDEX_URL:-}
+      TITAN_SANDBOX_NPM_REGISTRY_URL: ${TITAN_SANDBOX_NPM_REGISTRY_URL:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
@@ -102,6 +111,14 @@ services:
       # behind the Storage protocol later); the rootfs stays read-only.
       TITAN_ARTIFACT_ROOT: /tmp/titan-artifacts
       TITAN_SANDBOX_WORKSPACE_ROOT: /tmp/titan-workspaces
+      # Egress path (Phase 23) — empty by default; set + `--profile egress`.
+      TITAN_RESEARCH_GATEWAY_URL: ${TITAN_RESEARCH_GATEWAY_URL:-}
+      TITAN_RESEARCH_GATEWAY_TOKEN: ${TITAN_RESEARCH_GATEWAY_TOKEN:-}
+      TITAN_EGRESS_PROXY_SECRET: ${TITAN_EGRESS_PROXY_SECRET:-}
+      TITAN_SANDBOX_EGRESS_NETWORK: ${TITAN_SANDBOX_EGRESS_NETWORK:-}
+      TITAN_SANDBOX_FORWARD_PROXY_URL: ${TITAN_SANDBOX_FORWARD_PROXY_URL:-}
+      TITAN_SANDBOX_PIP_INDEX_URL: ${TITAN_SANDBOX_PIP_INDEX_URL:-}
+      TITAN_SANDBOX_NPM_REGISTRY_URL: ${TITAN_SANDBOX_NPM_REGISTRY_URL:-}
       TITAN_WORKER_CONCURRENCY: ${TITAN_WORKER_CONCURRENCY:-4}
       # LLM gateway config (consumed once the run executor calls it, Phase 17).
       TITAN_MODELS_CONFIG_PATH: ${TITAN_MODELS_CONFIG_PATH:-/app/config/models.yaml}
@@ -245,6 +262,82 @@ services:
       - prometheus
       - tempo
       - loki
+
+  # --- Egress path (Phase 23; Vol 8 §5 SEC-042/043) · opt-in: --profile egress ---
+  # searxng: the self-hosted, free default search backend for web.search.
+  searxng:
+    image: searxng/searxng:2025.1.1-0197be6f0
+    profiles: ["egress"]
+    environment:
+      SEARXNG_BASE_URL: http://searxng:8080/
+      # web.search asks for JSON; enable that format.
+      SEARXNG_SETTINGS_PATH: /etc/searxng/settings.yml
+    volumes:
+      - ./infra/searxng:/etc/searxng:ro
+    restart: unless-stopped
+
+  # The audited egress path is TWO services so the sandbox's ONLY reachable peer
+  # is the forward proxy — the caching gateway/mirror is NOT on the sandbox
+  # network, so it cannot be hit directly (bypassing the proxy's auth+audit).
+  # Both run from the titan image with a role flag.
+  #
+  # titan-egress-proxy: the forward proxy (:8080) — dual-homed on the default net
+  # (to reach the gateway + DB) and the INTERNAL sandbox-egress net (sandbox-facing).
+  titan-egress-proxy:
+    build:
+      context: ./apps/api
+      dockerfile: ../../infra/docker/titan-worker.Dockerfile
+    command: ["python", "-m", "titan.tools.egress"]
+    profiles: ["egress"]
+    restart: unless-stopped
+    environment:
+      TITAN_ENVIRONMENT: local
+      TITAN_LOG_LEVEL: ${TITAN_LOG_LEVEL:-INFO}
+      TITAN_EGRESS_ROLE: forward
+      TITAN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-titan}:${POSTGRES_PASSWORD:-titan}@postgres:5432/${POSTGRES_DB:-titan}
+      TITAN_EGRESS_PROXY_SECRET: ${TITAN_EGRESS_PROXY_SECRET:-titan-local-egress-secret}
+      # Derives the mirror-host allowlist (the gateway host pip/npm are pointed at).
+      TITAN_SANDBOX_PIP_INDEX_URL: ${TITAN_SANDBOX_PIP_INDEX_URL:-http://titan-egress-gateway:8090/pypi/simple/}
+      TITAN_SANDBOX_NPM_REGISTRY_URL: ${TITAN_SANDBOX_NPM_REGISTRY_URL:-http://titan-egress-gateway:8090/npm/}
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - default
+      - sandbox-egress
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # titan-egress-gateway: the caching research gateway + pypi/npm mirror (:8090).
+  # ONLY on the default network — reachable by the tool host (web.*) and by the
+  # forward proxy (for pip/npm), never directly by the sandbox.
+  titan-egress-gateway:
+    build:
+      context: ./apps/api
+      dockerfile: ../../infra/docker/titan-worker.Dockerfile
+    command: ["python", "-m", "titan.tools.egress"]
+    profiles: ["egress"]
+    restart: unless-stopped
+    environment:
+      TITAN_ENVIRONMENT: local
+      TITAN_LOG_LEVEL: ${TITAN_LOG_LEVEL:-INFO}
+      TITAN_EGRESS_ROLE: gateway
+      TITAN_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-titan}:${POSTGRES_PASSWORD:-titan}@postgres:5432/${POSTGRES_DB:-titan}
+      TITAN_RESEARCH_GATEWAY_TOKEN: ${TITAN_RESEARCH_GATEWAY_TOKEN:-titan-local-gateway-token}
+      TITAN_SEARXNG_URL: http://searxng:8080
+    read_only: true
+    tmpfs:
+      - /tmp
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+networks:
+  # The sandbox joins ONLY this internal (no-gateway) network; its sole peer is
+  # the forward proxy, so deny-all egress is enforced by topology (SEC-043/045).
+  sandbox-egress:
+    internal: true
 
 volumes:
   pgdata:

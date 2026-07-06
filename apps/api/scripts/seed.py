@@ -64,6 +64,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "terminal:run",
         "docker:run",
         "browser:use",
+        "web:search",
+        "web:fetch",
         "*:read",
     ],
     "viewer": ["*:read"],

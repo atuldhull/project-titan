@@ -54,7 +54,7 @@ class SandboxSessionManager:
             existing = self._pool.get(key)
             if existing is not None:
                 return existing
-            sandbox = await self._controller.create(task_id, workspace)
+            sandbox = await self._controller.create(task_id, workspace, project_id=project_id)
             self._pool[key] = sandbox
             return sandbox
 

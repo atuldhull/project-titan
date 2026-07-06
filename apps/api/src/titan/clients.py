@@ -33,3 +33,9 @@ def create_redis(settings: Settings) -> Redis:
 def create_http_client(settings: Settings) -> httpx.AsyncClient:
     """Async HTTP client, base-URLed at Qdrant (Vol 3 §12 readiness check)."""
     return httpx.AsyncClient(base_url=settings.qdrant_url, timeout=5.0)
+
+
+def create_bare_http_client() -> httpx.AsyncClient:
+    """A plain async HTTP client with no base URL — for the web.* tools' calls to
+    the research gateway (Phase 23)."""
+    return httpx.AsyncClient(timeout=30.0)

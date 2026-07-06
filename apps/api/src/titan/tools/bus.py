@@ -54,6 +54,7 @@ from titan.tools.registry import (
 from titan.tools.sandbox.session import SandboxSession, SandboxSessionManager
 from titan.tools.sandbox.workspace import Workspace
 from titan.tools.streaming import ToolOutputStream
+from titan.tools.web.session import ResearchClient, ResearchSession
 
 logger = structlog.get_logger("titan.tools.bus")
 tracer = trace.get_tracer("titan.tools")
@@ -169,6 +170,7 @@ class ToolBus:
         sandbox_manager: SandboxSessionManager | None = None,
         dind_manager: DindSessionManager | None = None,
         browser_manager: BrowserSessionManager | None = None,
+        research_client: ResearchClient | None = None,
         redis: "Redis | None" = None,
     ) -> None:
         self._registry = registry
@@ -182,6 +184,7 @@ class ToolBus:
         self._sandbox_manager = sandbox_manager
         self._dind_manager = dind_manager
         self._browser_manager = browser_manager
+        self._research_client = research_client
         self._redis = redis
 
     async def invoke(
@@ -364,6 +367,11 @@ class ToolBus:
             browser = BrowserSession(
                 self._browser_manager, project_id=call.project_id, task_id=call.task_id
             )
+        # web.* run in the trusted tool host — no workspace/sandbox needed, just
+        # the boot-time research gateway client wrapped per call.
+        research = (
+            ResearchSession(self._research_client) if self._research_client is not None else None
+        )
         context = ToolExecutionContext(
             engine=self._engine,
             project_id=call.project_id,
@@ -374,6 +382,7 @@ class ToolBus:
             sandbox=sandbox,
             dind=dind,
             browser=browser,
+            research=research,
         )
         started = time.monotonic()
         try:

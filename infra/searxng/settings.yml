@@ -1,0 +1,16 @@
+# SearXNG configuration for TITAN (Phase 23; the web.search default backend).
+# Minimal overrides on top of SearXNG's defaults: enable the JSON response
+# format the gateway queries, and drop the bot limiter so the trusted gateway
+# can query it server-side.
+use_default_settings: true
+
+server:
+  secret_key: "titan-local-searxng-secret"  # local only; override in prod
+  limiter: false
+  image_proxy: false
+
+search:
+  safe_search: 1
+  formats:
+    - html
+    - json

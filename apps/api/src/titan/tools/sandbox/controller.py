@@ -24,8 +24,14 @@ import docker
 import structlog
 from docker.errors import DockerException, ImageNotFound, NotFound
 
+from titan.tools.egress.tokens import mint_task_token
 from titan.tools.errors import ToolError
-from titan.tools.sandbox.policy import ResourceLimits, SandboxPolicy
+from titan.tools.sandbox.policy import (
+    TASK_DEFAULT_WALL_CLOCK_S,
+    EgressConfig,
+    ResourceLimits,
+    SandboxPolicy,
+)
 from titan.tools.sandbox.workspace import MOUNT_POINT, Workspace
 
 logger = structlog.get_logger("titan.tools.sandbox")
@@ -271,9 +277,14 @@ class Sandbox:
 class SandboxController:
     """Creates and destroys per-task sandboxes. One controller per process."""
 
-    def __init__(self, policy: SandboxPolicy, *, docker_host: str = "") -> None:
+    def __init__(
+        self, policy: SandboxPolicy, *, docker_host: str = "", egress: EgressConfig | None = None
+    ) -> None:
         self._policy = policy
         self._docker_host = docker_host
+        # When set, the sandbox joins the egress network + is pointed through the
+        # forward proxy via a per-task credential (Phase 23); otherwise deny-all.
+        self._egress = egress
         self._client: docker.DockerClient | None = None
 
     def _get_client(self) -> docker.DockerClient:
@@ -291,14 +302,17 @@ class SandboxController:
         workspace: Workspace,
         *,
         policy: SandboxPolicy | None = None,
+        project_id: uuid.UUID | None = None,
     ) -> Sandbox:
         """Start a hardened container with ``workspace`` bind-mounted rw at
-        ``/workspace`` and nothing else writable. Raises TOOL_UNAVAILABLE if the
-        daemon or base image is unreachable."""
+        ``/workspace`` and nothing else writable. When egress is configured the
+        sandbox joins the egress network + is pointed through the forward proxy
+        via a per-task credential. Raises TOOL_UNAVAILABLE if the daemon or base
+        image is unreachable."""
         active = policy or self._policy
         try:
             container_id = await asyncio.to_thread(
-                self._create_blocking, task_id, workspace.root, active
+                self._create_blocking, task_id, workspace.root, active, project_id
             )
         except ImageNotFound as exc:
             raise ToolError(
@@ -309,11 +323,20 @@ class SandboxController:
         return Sandbox(self._get_client(), container_id, active)
 
     def _create_blocking(
-        self, task_id: uuid.UUID | None, workspace_root: Path, policy: SandboxPolicy
+        self,
+        task_id: uuid.UUID | None,
+        workspace_root: Path,
+        policy: SandboxPolicy,
+        project_id: uuid.UUID | None,
     ) -> str:
         client = self._get_client()
         name = f"titan-sbx-{task_id or uuid.uuid4()}"
         tmpfs = {path: f"rw,size={size},mode=1777" for path, size in policy.tmpfs.items()}
+        # Deny-all by default; if egress is wired, join the egress network and
+        # inject the proxy/mirror env (deny-all still holds at the network layer —
+        # the only reachable peer on an internal egress network is the proxy).
+        network = self._egress.network if self._egress is not None else policy.network_mode
+        environment = self._egress_env(project_id, task_id) if self._egress is not None else {}
         container = client.containers.run(
             image=policy.image,
             # Keep the sandbox alive for the task; execs land via exec_run.
@@ -323,7 +346,7 @@ class SandboxController:
             remove=False,
             user=policy.user,
             working_dir=MOUNT_POINT,
-            network_mode=policy.network_mode,
+            network_mode=network,
             read_only=policy.read_only_rootfs,
             cap_drop=["ALL"] if policy.drop_all_capabilities else [],
             security_opt=policy.security_opts(),
@@ -333,10 +356,48 @@ class SandboxController:
             tmpfs=tmpfs,
             # The ONLY writable bind — the task's workspace. No socket, no creds.
             volumes={str(workspace_root): {"bind": MOUNT_POINT, "mode": "rw"}},
-            environment={},
+            environment=environment,
             labels={"titan.sandbox": "1", "titan.task": str(task_id or "adhoc")},
         )
         return str(container.id)
+
+    def _egress_env(
+        self, project_id: uuid.UUID | None, task_id: uuid.UUID | None
+    ) -> dict[str, str]:
+        """Proxy + mirror env for a proxied sandbox — the per-task credential is
+        carried in the proxy URL's userinfo so pip/npm/git/curl authenticate to
+        the forward proxy with no extra config."""
+        egress = self._egress
+        assert egress is not None  # guarded by the caller
+        # The token carries the identity (for audit) + the task's reachable hosts:
+        # the configured git-remote hosts here, and any Admin-approved hosts the
+        # forward proxy adds from project_egress_hosts on the off-baseline path.
+        token = mint_task_token(
+            egress.secret,
+            project_id=project_id or uuid.uuid4(),
+            task_id=task_id,
+            agent_id="sandbox",
+            approved_hosts=egress.git_hosts,
+            ttl_seconds=TASK_DEFAULT_WALL_CLOCK_S + 300.0,
+        )
+        proxy_url = f"http://task:{token}@{egress.proxy_host}:{egress.proxy_port}"
+        env = {
+            "HTTP_PROXY": proxy_url,
+            "HTTPS_PROXY": proxy_url,
+            "http_proxy": proxy_url,
+            "https_proxy": proxy_url,
+            "ALL_PROXY": proxy_url,
+            "all_proxy": proxy_url,
+            # Never proxy in-sandbox loopback traffic.
+            "NO_PROXY": "localhost,127.0.0.1",
+            "no_proxy": "localhost,127.0.0.1",
+        }
+        if egress.pip_index_url:
+            env["PIP_INDEX_URL"] = egress.pip_index_url
+            env["PIP_TRUSTED_HOST"] = _host_of(egress.pip_index_url)
+        if egress.npm_registry_url:
+            env["NPM_CONFIG_REGISTRY"] = egress.npm_registry_url
+        return env
 
     async def ping(self) -> bool:
         """True if the daemon is reachable (used to skip sandbox features when
@@ -345,6 +406,12 @@ class SandboxController:
             return bool(await asyncio.to_thread(self._get_client().ping))
         except DockerException:
             return False
+
+
+def _host_of(url: str) -> str:
+    """The bare host of a URL (for PIP_TRUSTED_HOST, which wants host[:port])."""
+    authority = url.split("//", 1)[-1].split("/", 1)[0]
+    return authority.split("@", 1)[-1].split(":", 1)[0]
 
 
 def _cap(text: str, limit: int) -> str:

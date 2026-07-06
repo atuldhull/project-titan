@@ -48,6 +48,27 @@ class ResourceLimits:
 
 
 @dataclass(frozen=True)
+class EgressConfig:
+    """The audited-egress wiring for a proxied sandbox (Phase 23; TITAN-SEC-043).
+
+    When present, the sandbox joins ``network`` (an INTERNAL docker network whose
+    only reachable peer is the forward proxy) instead of ``network_mode=none``,
+    and its pip/npm/git/curl are pointed through the forward proxy via a per-task
+    credential. Absent (the default), the sandbox stays fully deny-all."""
+
+    network: str
+    proxy_host: str
+    proxy_port: int
+    secret: str  # mints the per-task Proxy-Authorization token
+    pip_index_url: str = ""
+    npm_registry_url: str = ""
+    # Git-remote hosts reachable from the sandbox (SEC-043 'the task's git
+    # remote'), embedded in every task token's allowlist. Configured per project;
+    # the connector layer will narrow this to the task's exact remote per-task.
+    git_hosts: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class SandboxPolicy:
     """Per-task container hardening (Vol 8 §5 diagram + §4.3 policy table)."""
 
@@ -90,6 +111,7 @@ __all__ = [
     "CALL_DEFAULT_MEMORY_BYTES",
     "CALL_DEFAULT_NANO_CPUS",
     "CALL_DEFAULT_TIMEOUT_S",
+    "EgressConfig",
     "TASK_DEFAULT_WALL_CLOCK_S",
     "TASK_MAX_MEMORY_BYTES",
     "TASK_MAX_NANO_CPUS",

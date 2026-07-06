@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     # would drag Playwright into every module that imports the registry.
     from titan.tools.browser.session import BrowserSession
     from titan.tools.dind.session import DindSession
+    from titan.tools.web.session import ResearchSession
 
 # Namespaced tool names: fs.read, git.commit, mcp.github.search_issues.
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_-]*)+$")
@@ -64,6 +65,8 @@ class ToolExecutionContext:
     dind: "DindSession | None" = None
     # The task's headless-browser page (Phase 22) — browser.* tools; None → closed.
     browser: "BrowserSession | None" = None
+    # The research fetch-gateway client (Phase 23) — web.* tools; None → closed.
+    research: "ResearchSession | None" = None
 
 
 @dataclass

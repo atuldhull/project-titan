@@ -44,6 +44,23 @@ from titan.tools import router as tools_router
 from titan.tools import service as tools_service
 
 
+def _egress_config(settings: Settings) -> "tools_service.EgressConfig | None":
+    """Build the sandbox egress wiring from settings, or None to keep deny-all."""
+    if not settings.sandbox_egress_network or not settings.sandbox_forward_proxy_url:
+        return None
+    authority = settings.sandbox_forward_proxy_url.split("//", 1)[-1].split("/", 1)[0]
+    host, _, port = authority.partition(":")
+    return tools_service.EgressConfig(
+        network=settings.sandbox_egress_network,
+        proxy_host=host,
+        proxy_port=int(port) if port else 8080,
+        secret=settings.egress_proxy_secret,
+        pip_index_url=settings.sandbox_pip_index_url,
+        npm_registry_url=settings.sandbox_npm_registry_url,
+        git_hosts=tuple(settings.sandbox_egress_git_hosts),
+    )
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the titan-core FastAPI application."""
     active_settings = settings if settings is not None else get_settings()
@@ -69,8 +86,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.state.workspaces = tools_service.build_workspace_manager(
             active_settings.sandbox_workspace_root
         )
+        # Phase 23: when an egress network is configured, the sandbox reaches the
+        # internet ONLY through the audited forward proxy (deny-all otherwise).
+        egress_config = _egress_config(active_settings)
         application.state.sandbox_controller = tools_service.build_sandbox_controller(
-            active_settings.sandbox_image, docker_host=active_settings.sandbox_docker_host
+            active_settings.sandbox_image,
+            docker_host=active_settings.sandbox_docker_host,
+            egress=egress_config,
         )
         application.state.sandbox_manager = tools_service.build_sandbox_manager(
             application.state.sandbox_controller
@@ -92,6 +114,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.state.browser_manager = tools_service.build_browser_manager(
             application.state.browser_controller
         )
+        # web.* research tools: a client to the caching fetch-gateway (Phase 23).
+        # Absent a configured gateway URL, web.* fail closed (TOOL_UNAVAILABLE).
+        application.state.research_client = None
+        if active_settings.research_gateway_url:
+            application.state.research_client = tools_service.build_research_client(
+                clients.create_bare_http_client(),
+                gateway_url=active_settings.research_gateway_url,
+                token=active_settings.research_gateway_token,
+            )
         application.state.tool_bus = tools_service.build_bus(
             application.state.engine,
             registry=application.state.tool_registry,
@@ -99,6 +130,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             sandbox_manager=application.state.sandbox_manager,
             dind_manager=application.state.dind_manager,
             browser_manager=application.state.browser_manager,
+            research_client=application.state.research_client,
             redis=application.state.redis,
         )
         application.state.readyz_budget_seconds = active_settings.readyz_budget_seconds
@@ -112,6 +144,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # Sweep any sidecar/browser containers orphaned by a crashed create.
             await application.state.dind_controller.destroy_all()
             await application.state.browser_controller.destroy_all()
+            if application.state.research_client is not None:
+                await application.state.research_client.aclose()
             await application.state.llm_gateway.aclose()
             await application.state.http.aclose()
             await application.state.redis.aclose()

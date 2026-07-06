@@ -40,6 +40,7 @@ _MATRIX: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
             "git.*",
             "code.*",
             "docker.*",
+            "web.*",
             "test.*",
             *_TASK_READ,
             "task.transition",
@@ -47,14 +48,15 @@ _MATRIX: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
         ),
         ("plugin.*", *_ALWAYS_DENY),
     ),
-    # QA: sandbox shell, test run, repo read, browser E2E, bug report. Denied:
-    # git write outside test dirs (param constraint on git tools), deploy.
+    # QA: sandbox shell, test run, repo read, browser E2E, web research, bug
+    # report. Denied: git write outside test dirs (param constraint), deploy.
     "qa": (
         (
             "terminal.*",
             "code.*",
             "test.*",
             "browser.*",
+            "web.*",
             *_READ_REPO,
             "git.commit",
             *_TASK_READ,

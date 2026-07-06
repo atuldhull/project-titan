@@ -13,6 +13,7 @@ from titan.tools.builtin import git as git_tools
 from titan.tools.builtin import messaging as messaging_tools
 from titan.tools.builtin import tasks as task_tools
 from titan.tools.builtin import terminal as terminal_tools
+from titan.tools.builtin import web as web_tools
 from titan.tools.registry import ToolRegistry
 
 
@@ -26,6 +27,7 @@ def register_builtin(registry: ToolRegistry) -> None:
         *code_tools.SPECS,
         *docker_tools.SPECS,
         *browser_tools.SPECS,
+        *web_tools.SPECS,
     ):
         registry.register(spec)
 

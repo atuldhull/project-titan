@@ -13,6 +13,7 @@ phases register their tools (fs.*, git.*, …) through :class:`ToolSpec` +
 import uuid
 from pathlib import Path
 
+import httpx
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
@@ -39,6 +40,13 @@ from titan.tools.bus import (
 from titan.tools.constraints import argv_only, url_allowlist, workspace_path
 from titan.tools.dind.controller import APP_PORTS, DindController, DindSidecar
 from titan.tools.dind.session import DindSession, DindSessionManager
+from titan.tools.egress.hosts import (
+    EgressHost,
+    add_approved_host,
+    is_host_approved,
+    list_approved_hosts,
+    remove_approved_host,
+)
 from titan.tools.envelopes import Artifact, ToolCallEnvelope, ToolResultEnvelope, new_call
 from titan.tools.errors import TOOL_ERROR_CODES, ToolError, ToolErrorCode
 from titan.tools.redaction import Redactor, default_redactor
@@ -52,10 +60,11 @@ from titan.tools.registry import (
     ToolSpec,
 )
 from titan.tools.sandbox.controller import ExecResult, Sandbox, SandboxController
-from titan.tools.sandbox.policy import ResourceLimits, SandboxPolicy
+from titan.tools.sandbox.policy import EgressConfig, ResourceLimits, SandboxPolicy
 from titan.tools.sandbox.session import SandboxSession, SandboxSessionManager
 from titan.tools.sandbox.workspace import Workspace, WorkspaceManager
 from titan.tools.streaming import ToolOutputStream, channel_for
+from titan.tools.web.session import ResearchClient, ResearchSession
 
 
 def build_registry() -> ToolRegistry:
@@ -77,6 +86,7 @@ def build_bus(
     sandbox_manager: SandboxSessionManager | None = None,
     dind_manager: DindSessionManager | None = None,
     browser_manager: BrowserSessionManager | None = None,
+    research_client: ResearchClient | None = None,
     redis: Redis | None = None,
 ) -> ToolBus:
     """The production bus. The admin-risk gate defaults to the DB-backed
@@ -85,7 +95,8 @@ def build_bus(
     fs.* tools their jailed /workspace (Phase 20); ``sandbox_manager`` + ``redis``
     give terminal/git/code tools their per-task sandbox + live output stream
     (Phase 21); ``dind_manager`` / ``browser_manager`` give docker.* / browser.*
-    their per-task DinD sidecar and headless page (Phase 22)."""
+    their per-task DinD sidecar and headless page (Phase 22); ``research_client``
+    gives web.* their caching research gateway (Phase 23)."""
     gate = approval_gate if approval_gate is not None else DbApprovalGate(engine, redactor=redactor)
     return ToolBus(
         registry if registry is not None else build_registry(),
@@ -97,8 +108,16 @@ def build_bus(
         sandbox_manager=sandbox_manager,
         dind_manager=dind_manager,
         browser_manager=browser_manager,
+        research_client=research_client,
         redis=redis,
     )
+
+
+def build_research_client(
+    http: httpx.AsyncClient, *, gateway_url: str, token: str
+) -> ResearchClient:
+    """The web.* tools' client to the caching research fetch-gateway (Phase 23)."""
+    return ResearchClient(http, gateway_url=gateway_url, token=token)
 
 
 def build_workspace_manager(root: str) -> WorkspaceManager:
@@ -107,11 +126,14 @@ def build_workspace_manager(root: str) -> WorkspaceManager:
     return WorkspaceManager(Path(root))
 
 
-def build_sandbox_controller(image: str, *, docker_host: str = "") -> SandboxController:
+def build_sandbox_controller(
+    image: str, *, docker_host: str = "", egress: EgressConfig | None = None
+) -> SandboxController:
     """The Sandbox Controller for hardened per-task code execution (Vol 8 §5).
     Reachable only when a Docker daemon is available; :meth:`SandboxController.ping`
-    tells callers to degrade gracefully when it is not."""
-    return SandboxController(SandboxPolicy(image=image), docker_host=docker_host)
+    tells callers to degrade gracefully when it is not. ``egress`` (Phase 23) puts
+    the sandbox on the audited egress network instead of deny-all ``none``."""
+    return SandboxController(SandboxPolicy(image=image), docker_host=docker_host, egress=egress)
 
 
 def build_sandbox_manager(controller: SandboxController) -> SandboxSessionManager:
@@ -156,6 +178,10 @@ __all__ = [
     "ApprovalGate",
     "ApprovalStatus",
     "Artifact",
+    "add_approved_host",
+    "is_host_approved",
+    "list_approved_hosts",
+    "remove_approved_host",
     "BrowserController",
     "BrowserServer",
     "BrowserSession",
@@ -165,12 +191,16 @@ __all__ = [
     "DindSession",
     "DindSessionManager",
     "DindSidecar",
+    "EgressConfig",
+    "EgressHost",
     "ExecResult",
     "ExecutionOutcome",
     "ParamConstraint",
     "ProjectToolPolicy",
     "RateLimiter",
     "Redactor",
+    "ResearchClient",
+    "ResearchSession",
     "ResourceLimits",
     "Sandbox",
     "SandboxController",
@@ -199,6 +229,7 @@ __all__ = [
     "build_dind_controller",
     "build_dind_manager",
     "build_registry",
+    "build_research_client",
     "build_sandbox_controller",
     "build_sandbox_manager",
     "build_workspace_manager",

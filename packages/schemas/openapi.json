@@ -791,6 +791,46 @@
         "title": "DependencyOut",
         "type": "object"
       },
+      "EgressHostIn": {
+        "additionalProperties": false,
+        "properties": {
+          "host": {
+            "title": "Host",
+            "type": "string"
+          }
+        },
+        "required": [
+          "host"
+        ],
+        "title": "EgressHostIn",
+        "type": "object"
+      },
+      "EgressHostOut": {
+        "properties": {
+          "approved_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved By"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          }
+        },
+        "required": [
+          "host",
+          "approved_by"
+        ],
+        "title": "EgressHostOut",
+        "type": "object"
+      },
       "EmbeddingVector": {
         "additionalProperties": false,
         "properties": {
@@ -4246,6 +4286,149 @@
         "summary": "Create Decision",
         "tags": [
           "messaging"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/egress-hosts": {
+      "get": {
+        "operationId": "list_egress_hosts_api_v1_projects__project_id__egress_hosts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EgressHostOut"
+                  },
+                  "title": "Response List Egress Hosts Api V1 Projects  Project Id  Egress Hosts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Egress Hosts",
+        "tags": [
+          "tool-approvals"
+        ]
+      },
+      "post": {
+        "operationId": "add_egress_host_api_v1_projects__project_id__egress_hosts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EgressHostIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EgressHostOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Egress Host",
+        "tags": [
+          "tool-approvals"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/egress-hosts/{host}": {
+      "delete": {
+        "operationId": "remove_egress_host_api_v1_projects__project_id__egress_hosts__host__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "host",
+            "required": true,
+            "schema": {
+              "title": "Host",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Egress Host",
+        "tags": [
+          "tool-approvals"
         ]
       }
     },

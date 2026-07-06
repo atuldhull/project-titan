@@ -94,5 +94,48 @@ async def deny_tool_call(
         )
 
 
+# --- Admin egress opt-in (Phase 23; SEC-033/043) -----------------------------
+
+
+class EgressHostIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    host: str
+
+
+class EgressHostOut(BaseModel):
+    host: str
+    approved_by: uuid.UUID | None
+
+
+@router.get("/projects/{project_id}/egress-hosts", response_model=list[EgressHostOut])
+async def list_egress_hosts(
+    request: Request, project_id: uuid.UUID, principal: _ReadApprovals
+) -> list[EgressHostOut]:
+    async with request.app.state.engine.connect() as conn:
+        await projects.get_project(conn, project_id)
+        hosts = await service.list_approved_hosts(conn, project_id)
+    return [EgressHostOut(host=h.host, approved_by=h.approved_by) for h in hosts]
+
+
+@router.post("/projects/{project_id}/egress-hosts", response_model=EgressHostOut, status_code=201)
+async def add_egress_host(
+    request: Request, project_id: uuid.UUID, body: EgressHostIn, principal: _WriteApprovals
+) -> EgressHostOut:
+    async with request.app.state.engine.begin() as conn:
+        await projects.get_project(conn, project_id)
+        await service.add_approved_host(conn, project_id, body.host, approved_by=principal.sub)
+    return EgressHostOut(host=body.host.strip().lower(), approved_by=principal.sub)
+
+
+@router.delete("/projects/{project_id}/egress-hosts/{host}", status_code=204)
+async def remove_egress_host(
+    request: Request, project_id: uuid.UUID, host: str, principal: _WriteApprovals
+) -> None:
+    async with request.app.state.engine.begin() as conn:
+        await projects.get_project(conn, project_id)
+        await service.remove_approved_host(conn, project_id, host)
+
+
 def mount(app: FastAPI) -> None:
     app.include_router(router)
