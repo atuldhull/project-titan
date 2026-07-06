@@ -33,6 +33,18 @@ def _row_hash(fields: dict[str, Any], prev_hash: str) -> str:
     return canonical_hash({**fields, "prev_hash": prev_hash})
 
 
+def _pg_safe(value: Any) -> Any:
+    """Replace NUL characters (which PostgreSQL jsonb rejects) with the Unicode
+    replacement character, recursively, in both keys and values."""
+    if isinstance(value, str):
+        return value.replace(chr(0), chr(0xFFFD))
+    if isinstance(value, dict):
+        return {_pg_safe(key): _pg_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_pg_safe(item) for item in value]
+    return value
+
+
 def _hashed_fields(
     *,
     tool_call_id: str,
@@ -106,7 +118,9 @@ async def append_audit(
     prev_hash = prev.scalar_one_or_none() or GENESIS_HASH
     # Canonicalize ONCE through a JSON round-trip so the value that gets hashed
     # is byte-identical to what verify_chain later reads back from JSONB.
-    stored_args: dict[str, Any] = json.loads(json.dumps(args_redacted, default=str))
+    # NUL sanitization: PostgreSQL jsonb rejects , and hostile fuzz args
+    # must still be auditable — the ledger write may never fail on input shape.
+    stored_args: dict[str, Any] = _pg_safe(json.loads(json.dumps(args_redacted, default=str)))
     fields = _hashed_fields(
         tool_call_id=tool_call_id,
         trace_id=trace_id,

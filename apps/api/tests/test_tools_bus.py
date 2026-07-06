@@ -25,7 +25,7 @@ from titan.agents.service import AgentCreate, create_agent
 from titan.db import uuid7
 from titan.orchestrator.service import TaskCreate, create_task
 from titan.tools import repository as audit_repo
-from titan.tools.bus import ToolBus, ToolCaller
+from titan.tools.bus import ApprovalDecision, ToolBus, ToolCaller, deny_all_approvals
 from titan.tools.envelopes import ToolCallEnvelope, new_call
 from titan.tools.errors import ToolError
 from titan.tools.registry import (
@@ -411,7 +411,7 @@ def test_admin_risk_blocks_without_approval_and_runs_with_it(
         granted_scopes=_SCOPES,
     )
     denied = _invoke(
-        ToolBus(registry, migrated_engine),
+        ToolBus(registry, migrated_engine, approval_gate=deny_all_approvals),
         new_call(
             "test.wipe", {"text": "x"}, project_id=caller.project_id, agent_id=caller.agent_id
         ),
@@ -419,8 +419,8 @@ def test_admin_risk_blocks_without_approval_and_runs_with_it(
     )
     assert denied.code == "PERMISSION_DENIED" and "approval" in (denied.message or "")
 
-    async def approve_all(_call: ToolCallEnvelope, _spec: ToolSpec) -> bool:
-        return True
+    async def approve_all(_call: ToolCallEnvelope, _spec: ToolSpec) -> ApprovalDecision:
+        return ApprovalDecision(True)
 
     approved = _invoke(
         ToolBus(registry, migrated_engine, approval_gate=approve_all),

@@ -460,6 +460,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/tool-approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tool Approvals */
+        get: operations["list_tool_approvals_api_v1_projects__project_id__tool_approvals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/tool-approvals/{approval_id}:approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Tool Call */
+        post: operations["approve_tool_call_api_v1_projects__project_id__tool_approvals__approval_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/tool-approvals/{approval_id}:deny": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Deny Tool Call */
+        post: operations["deny_tool_call_api_v1_projects__project_id__tool_approvals__approval_id__deny_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}:archive": {
         parameters: {
             query?: never;
@@ -767,6 +818,8 @@ export interface components {
              */
             id: string;
         };
+        /** ApprovalResolution */
+        ApprovalResolution: Record<string, never>;
         /** ArtifactOut */
         ArtifactOut: {
             /**
@@ -1320,6 +1373,13 @@ export interface components {
             /** Next Cursor */
             next_cursor?: string | null;
         };
+        /** Page[ToolApprovalOut] */
+        Page_ToolApprovalOut_: {
+            /** Items */
+            items: components["schemas"]["ToolApprovalOut"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+        };
         /** PasswordGrant */
         PasswordGrant: {
             /** Email */
@@ -1675,6 +1735,44 @@ export interface components {
              * @default Bearer
              */
             token_type: string;
+        };
+        /** ToolApprovalOut */
+        ToolApprovalOut: {
+            /** Agent Id */
+            agent_id: string;
+            /** Args Hash */
+            args_hash: string;
+            /** Args Redacted */
+            args_redacted: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Resolved At */
+            resolved_at: string | null;
+            /** Resolved By */
+            resolved_by: string | null;
+            /** Status */
+            status: string;
+            /** Task Id */
+            task_id: string | null;
+            /** Tool */
+            tool: string;
+            /** Version */
+            version: number;
         };
         /**
          * ToolCall
@@ -2971,6 +3069,113 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_tool_approvals_api_v1_projects__project_id__tool_approvals_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_ToolApprovalOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    approve_tool_call_api_v1_projects__project_id__tool_approvals__approval_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                approval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovalResolution"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolApprovalOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deny_tool_call_api_v1_projects__project_id__tool_approvals__approval_id__deny_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                approval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovalResolution"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolApprovalOut"];
                 };
             };
             /** @description Validation Error */

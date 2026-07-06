@@ -38,6 +38,8 @@ ORG_ROUTES = {
     "run:create": {"owner", "admin", "operator"},  # maintainer bundle lacks it
     # Vol 8 §4.2: audit read is Owner + Admin ONLY — *:read must NOT reach it.
     "audit:read": {"owner", "admin"},
+    # Vol 7 §4.4: admin-risk tool approvals resolved by Owner/Admin/Maintainer.
+    "tool_approval:write": {"owner", "admin", "maintainer"},
 }
 
 

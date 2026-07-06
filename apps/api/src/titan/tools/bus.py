@@ -23,9 +23,10 @@ fails loudly rather than returning an unaudited result (TITAN-INT-023).
 import asyncio
 import time
 import uuid
+from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 import structlog
 from jsonschema import FormatChecker
@@ -54,14 +55,62 @@ tracer = trace.get_tracer("titan.tools")
 _MAX_SCHEMA_ERRORS = 5
 _STDERR_TAIL_CHARS = 4000
 
-# Phase-19 seam: the risk gate consults this before dispatching an admin-risk
-# call. Until the approval-record flow lands, the default denies everything —
-# TITAN-INT-022 fail-closed.
-ApprovalGate = Callable[[ToolCallEnvelope, ToolSpec], Awaitable[bool]]
+
+@dataclass(frozen=True)
+class ApprovalDecision:
+    """The risk gate's verdict on an admin-risk call (TITAN-INT-022). The
+    detail is surfaced in the PERMISSION_DENIED message so the agent (and the
+    dashboard) can reference the approval record."""
+
+    allowed: bool
+    detail: str | None = None
 
 
-async def deny_all_approvals(_call: ToolCallEnvelope, _spec: ToolSpec) -> bool:
-    return False
+# The §4.4 risk gate consulted before dispatching an admin-risk call. The
+# production implementation is titan.tools.approvals.DbApprovalGate (wired by
+# build_bus); this default denies everything — fail closed.
+ApprovalGate = Callable[[ToolCallEnvelope, ToolSpec], Awaitable[ApprovalDecision]]
+
+
+async def deny_all_approvals(_call: ToolCallEnvelope, _spec: ToolSpec) -> ApprovalDecision:
+    return ApprovalDecision(False, "admin-risk tools are not approvable on this bus")
+
+
+class RateLimiter(Protocol):
+    """Per-key rolling rate limit (§4.1 registry rate limits, §4.4 'write
+    auto-approved …; rate-limited')."""
+
+    async def allow(self, key: str, limit_per_min: int) -> bool: ...
+
+
+class SlidingWindowRateLimiter:
+    """In-process sliding 60s window. Per-process by design for Phase 19 —
+    each Tool Host worker enforces its own budget; a shared Redis limiter can
+    replace this behind the same protocol when workers scale out."""
+
+    def __init__(self, now: Callable[[], float] = time.monotonic) -> None:
+        self._now = now
+        # A plain dict (not defaultdict) so a checked-but-empty key is reclaimed
+        # rather than accreting forever — one tool+project key per active pair.
+        self._hits: dict[str, deque[float]] = {}
+
+    async def allow(self, key: str, limit_per_min: int) -> bool:
+        now = self._now()
+        cutoff = now - 60.0
+        window = self._hits.get(key)
+        if window is not None:
+            while window and window[0] <= cutoff:
+                window.popleft()
+            if not window:
+                del self._hits[key]  # fully drained → drop the key
+                window = None
+        count = len(window) if window is not None else 0
+        if count >= limit_per_min:
+            return False
+        if window is None:
+            window = self._hits[key] = deque()
+        window.append(now)
+        return True
 
 
 @dataclass(frozen=True)
@@ -102,11 +151,15 @@ class ToolBus:
         *,
         redactor: Redactor = default_redactor,
         approval_gate: ApprovalGate = deny_all_approvals,
+        rate_limiter: RateLimiter | None = None,
     ) -> None:
         self._registry = registry
         self._engine = engine
         self._redact = redactor
         self._approval_gate = approval_gate
+        self._rate_limiter: RateLimiter = (
+            rate_limiter if rate_limiter is not None else SlidingWindowRateLimiter()
+        )
 
     async def invoke(
         self,
@@ -216,12 +269,28 @@ class ToolBus:
         for scope in spec.required_scopes:
             if not permission_granted(scope, set(caller.granted_scopes)):
                 raise ToolError("PERMISSION_DENIED", f"missing required scope: {scope}")
-        # Risk gate (§4.4): admin blocks on an approval record (TITAN-INT-022);
-        # the record flow lands in Phase 19 — until then the gate fails closed.
-        if spec.risk == "admin" and not await self._approval_gate(call, spec):
-            raise ToolError(
-                "PERMISSION_DENIED", f"tool {spec.name} is admin-risk and requires approval"
-            )
+        # §4.1/§4.4 registry rate limits (checked BEFORE the approval gate so a
+        # looping agent burns its rate budget, not the approvals dashboard).
+        if spec.rate_limit_per_min is not None:
+            key = f"{spec.name}:{call.project_id}"
+            if not await self._rate_limiter.allow(key, spec.rate_limit_per_min):
+                raise ToolError(
+                    "TOOL_UNAVAILABLE",
+                    f"tool {spec.name} rate limit exceeded "
+                    f"({spec.rate_limit_per_min}/min in this project); retry later",
+                )
+        # Risk gate (§4.4): read/write are auto-approved (within the project
+        # scope enforced above); admin blocks on an approval record
+        # (TITAN-INT-022) — the gate's detail names the record for the
+        # dashboard and the agent's retry.
+        if spec.risk == "admin":
+            decision = await self._approval_gate(call, spec)
+            if not decision.allowed:
+                suffix = f": {decision.detail}" if decision.detail else ""
+                raise ToolError(
+                    "PERMISSION_DENIED",
+                    f"tool {spec.name} is admin-risk and requires approval{suffix}",
+                )
         # TITAN-SEC-031 per-parameter rules (e.g. git writes only to
         # titan/task-* branches).
         for constraint in spec.constraints:
@@ -363,4 +432,12 @@ class ToolBus:
             span.set_attribute("titan.tool.risk", spec.risk)
 
 
-__all__ = ["ApprovalGate", "ToolBus", "ToolCaller", "deny_all_approvals"]
+__all__ = [
+    "ApprovalDecision",
+    "ApprovalGate",
+    "RateLimiter",
+    "SlidingWindowRateLimiter",
+    "ToolBus",
+    "ToolCaller",
+    "deny_all_approvals",
+]

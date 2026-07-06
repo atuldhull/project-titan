@@ -40,6 +40,7 @@ from titan.orchestrator import router as tasks_router
 from titan.projects import router as projects_router
 from titan.runs import router as runs_router
 from titan.settings import Settings, get_settings
+from titan.tools import router as tools_router
 from titan.tools import service as tools_service
 
 
@@ -134,6 +135,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     messaging_router.mount(app)  # /messages, /decisions, /notifications
     runs_router.mount(app)  # /runs, /tasks/{id}/runs, artifacts
     llm_router.mount(app)  # /llm/chat, /llm/embeddings — the provider gateway
+    tools_router.mount(app)  # /projects/{id}/tool-approvals — admin-risk gate
     otel.instrument_app(active_settings, app)
 
     def custom_openapi() -> dict[str, Any]:

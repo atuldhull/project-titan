@@ -6,6 +6,7 @@ The sender is ALWAYS the bus-authenticated agent (``ctx.agent_uuid``), never
 tool arguments — attribution cannot be spoofed by the model.
 """
 
+import json
 import uuid
 from typing import Any
 
@@ -26,6 +27,20 @@ _POST_INPUT: dict[str, Any] = {
     "required": ["kind", "body"],
     "additionalProperties": False,
 }
+
+_MAX_BODY_BYTES = 64 * 1024
+
+
+def _body_size_rule(args: dict[str, Any]) -> "tuple[Any, str] | None":
+    # TITAN-SEC-070 length bounds: the body is free-form JSON, so the cap is a
+    # parameter constraint (JSON Schema can't bound serialized size). Measure
+    # true UTF-8 bytes (what jsonb stores), not ASCII-escaped chars, so Unicode
+    # bodies under the cap aren't wrongly rejected.
+    serialized = json.dumps(args.get("body", {}), default=str, ensure_ascii=False)
+    if len(serialized.encode("utf-8")) > _MAX_BODY_BYTES:
+        return ("SCHEMA_INVALID", f"at '/body': serialized body exceeds {_MAX_BODY_BYTES} bytes")
+    return None
+
 
 _POST_OUTPUT: dict[str, Any] = {
     "type": "object",
@@ -79,6 +94,7 @@ SPECS = (
         executor=_post_message,
         timeout_s=10.0,
         rate_limit_per_min=30,
+        constraints=(_body_size_rule,),
     ),
 )
 

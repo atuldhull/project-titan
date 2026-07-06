@@ -35,6 +35,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # audit:read is explicit: *:read no longer reaches the audit log
         # (Vol 8 §4.2 grants audit read to Owner + Admin only).
         "audit:read",
+        # Resolve admin-risk tool approvals (Vol 7 §4.4, TITAN-INT-022).
+        "tool_approval:write",
         "*:read",
     ],
     "maintainer": [
@@ -46,6 +48,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "task:cancel",
         "decision:write",
         "message:write",
+        # Vol 8 §4.2: Maintainer resolves approval-workflow ("A") actions.
+        "tool_approval:write",
         "*:read",
     ],
     "operator": ["task:transition", "run:create", "message:write", "*:read"],

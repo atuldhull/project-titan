@@ -15,8 +15,23 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from titan.tools import repository as _repo
+from titan.tools.approvals import (
+    ApprovalStatus,
+    DbApprovalGate,
+    ToolApprovalOut,
+    list_approvals,
+    resolve_approval,
+)
 from titan.tools.builtin import register_builtin
-from titan.tools.bus import ApprovalGate, ToolBus, ToolCaller, deny_all_approvals
+from titan.tools.bus import (
+    ApprovalDecision,
+    ApprovalGate,
+    RateLimiter,
+    ToolBus,
+    ToolCaller,
+    deny_all_approvals,
+)
+from titan.tools.constraints import argv_only, url_allowlist, workspace_path
 from titan.tools.envelopes import Artifact, ToolCallEnvelope, ToolResultEnvelope, new_call
 from titan.tools.errors import TOOL_ERROR_CODES, ToolError, ToolErrorCode
 from titan.tools.redaction import Redactor, default_redactor
@@ -44,13 +59,19 @@ def build_bus(
     *,
     registry: ToolRegistry | None = None,
     redactor: Redactor = default_redactor,
-    approval_gate: ApprovalGate = deny_all_approvals,
+    approval_gate: ApprovalGate | None = None,
+    rate_limiter: RateLimiter | None = None,
 ) -> ToolBus:
+    """The production bus. The admin-risk gate defaults to the DB-backed
+    approval-record flow (TITAN-INT-022); pass ``approval_gate`` to override
+    (e.g. ``deny_all_approvals`` in a closed test)."""
+    gate = approval_gate if approval_gate is not None else DbApprovalGate(engine, redactor=redactor)
     return ToolBus(
         registry if registry is not None else build_registry(),
         engine,
         redactor=redactor,
-        approval_gate=approval_gate,
+        approval_gate=gate,
+        rate_limiter=rate_limiter,
     )
 
 
@@ -62,12 +83,17 @@ async def verify_audit_chain(conn: AsyncConnection, project_id: uuid.UUID) -> in
 
 __all__ = [
     "TOOL_ERROR_CODES",
+    "ApprovalDecision",
     "ApprovalGate",
+    "ApprovalStatus",
     "Artifact",
+    "DbApprovalGate",
     "ExecutionOutcome",
     "ParamConstraint",
     "ProjectToolPolicy",
+    "RateLimiter",
     "Redactor",
+    "ToolApprovalOut",
     "ToolBus",
     "ToolCallEnvelope",
     "ToolCaller",
@@ -78,10 +104,15 @@ __all__ = [
     "ToolRegistry",
     "ToolResultEnvelope",
     "ToolSpec",
+    "argv_only",
     "build_bus",
     "build_registry",
     "default_redactor",
     "deny_all_approvals",
+    "list_approvals",
     "new_call",
+    "resolve_approval",
+    "url_allowlist",
     "verify_audit_chain",
+    "workspace_path",
 ]

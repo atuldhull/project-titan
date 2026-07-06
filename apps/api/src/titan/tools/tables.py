@@ -1,18 +1,24 @@
-"""The immutable ``tool_audit`` ledger (TITAN-INT-023/024; owned per §3).
+"""Tool Bus tables: the immutable ``tool_audit`` ledger (TITAN-INT-023/024)
+and the ``tool_approvals`` records for admin-risk calls (TITAN-INT-022).
 
-INSERT-only: a database trigger (migration 0008) rejects UPDATE and DELETE, and
-rows are hash-chained per project (``prev_hash`` → ``row_hash``) so tampering
-that bypasses the trigger is still evident to the verification job. Each tool
-call appends a ``started`` row before dispatch and a terminal ``ok``/``error``
-row after; pre-execution rejections append a single ``error`` row (every
-rejection is audited, TITAN-SEC-031).
+``tool_audit`` is INSERT-only: a database trigger (migration 0008) rejects
+UPDATE and DELETE, and rows are hash-chained per project (``prev_hash`` →
+``row_hash``) so tampering that bypasses the trigger is still evident to the
+verification job. Each tool call appends a ``started`` row before dispatch and
+a terminal ``ok``/``error`` row after; pre-execution rejections append a
+single ``error`` row (every rejection is audited, TITAN-SEC-031).
+
+``tool_approvals`` (migration 0009) is the §4.4 approval gate's ledger:
+``pending`` → ``approved``/``denied`` via the human endpoints, ``approved`` →
+``consumed`` by the single matching call it releases.
 """
 
 import uuid
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Identity, Index, Integer, Text, text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import BigInteger, ForeignKey, Identity, Index, Integer, Text, text
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from titan.db import Base, ConventionsMixin, uuid7
@@ -49,3 +55,24 @@ class ToolAudit(ConventionsMixin, Base):
     )
     prev_hash: Mapped[str] = mapped_column(Text, nullable=False)
     row_hash: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class ToolApproval(ConventionsMixin, Base):
+    __tablename__ = "tool_approvals"
+    __table_args__ = (
+        Index("idx_tool_approvals_project_status", "project_id", "status"),
+        # The partial-unique pending dedupe index lives in migration 0009
+        # (index predicates are hand-written SQL, like the other partials).
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    task_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    agent_id: Mapped[str] = mapped_column(Text, nullable=False)
+    tool: Mapped[str] = mapped_column(Text, nullable=False)
+    args_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    args_redacted: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    # pending | approved | denied | consumed
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'pending'"))
+    resolved_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
