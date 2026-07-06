@@ -72,16 +72,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.state.sandbox_controller = tools_service.build_sandbox_controller(
             active_settings.sandbox_image, docker_host=active_settings.sandbox_docker_host
         )
+        application.state.sandbox_manager = tools_service.build_sandbox_manager(
+            application.state.sandbox_controller
+        )
         application.state.tool_bus = tools_service.build_bus(
             application.state.engine,
             registry=application.state.tool_registry,
             workspace_provider=application.state.workspaces,
+            sandbox_manager=application.state.sandbox_manager,
+            redis=application.state.redis,
         )
         application.state.readyz_budget_seconds = active_settings.readyz_budget_seconds
         otel.instrument_engine(active_settings, application.state.engine)
         try:
             yield
         finally:
+            await application.state.sandbox_manager.aclose()  # destroy live sandboxes
             await application.state.llm_gateway.aclose()
             await application.state.http.aclose()
             await application.state.redis.aclose()

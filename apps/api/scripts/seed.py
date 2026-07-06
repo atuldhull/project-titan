@@ -52,7 +52,17 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "tool_approval:write",
         "*:read",
     ],
-    "operator": ["task:transition", "run:create", "message:write", "*:read"],
+    # The machine/agent bundle (TITAN-BCK-021): task flow + the sandbox
+    # side-effect scopes the fs/terminal/git/code tools require (Phases 20-21).
+    "operator": [
+        "task:transition",
+        "run:create",
+        "message:write",
+        "workspace:read",
+        "workspace:write",
+        "terminal:run",
+        "*:read",
+    ],
     "viewer": ["*:read"],
 }
 

@@ -127,13 +127,14 @@ def _mutations(schema: dict[str, Any]) -> list[dict[str, Any]]:
     # 3) an extra, undeclared property (additionalProperties: false tools)
     if schema.get("additionalProperties") is False:
         out.append({**base, "definitely_not_a_field": "x"})
-    # 4) oversized string in each string field — sized to exceed that field's
-    #    OWN maxLength so it is a genuine schema violation (a field with a large
-    #    bound, e.g. fs.patch's 10 MiB, is only 'oversized' past its own cap).
+    # 4) oversized string in each BOUNDED string field — sized to exceed that
+    #    field's OWN maxLength so it is a genuine schema violation. An unbounded
+    #    string field (e.g. git.commit's message: only minLength) has no size to
+    #    violate, so an over-long value is VALID there — skip it (else the fuzz
+    #    would 'reach' the executor with well-formed input).
     for name, sch in props.items():
-        if sch.get("type") == "string":
-            over = int(sch.get("maxLength", 4096)) + 1
-            out.append({**base, name: "A" * over})
+        if sch.get("type") == "string" and "maxLength" in sch:
+            out.append({**base, name: "A" * (int(sch["maxLength"]) + 1)})
     return out
 
 

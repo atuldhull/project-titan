@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from titan.llm.service import ToolDef
 from titan.tools.allowlists import allowed_for_role
 from titan.tools.errors import ToolErrorCode
+from titan.tools.sandbox.session import SandboxSession
 from titan.tools.sandbox.workspace import Workspace
 
 # Namespaced tool names: fs.read, git.commit, mcp.github.search_issues.
@@ -50,6 +51,9 @@ class ToolExecutionContext:
     agent_id: str  # audit label, e.g. "agent.backend_engineer.2"
     agent_uuid: uuid.UUID | None  # DB identity when known (FK attribution)
     workspace: Workspace | None = None
+    # The task's running sandbox + live output stream (Phase 21). None when no
+    # Docker daemon is reachable — terminal/git/code tools then fail closed.
+    sandbox: SandboxSession | None = None
 
 
 @dataclass

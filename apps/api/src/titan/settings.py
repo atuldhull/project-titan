@@ -47,9 +47,11 @@ class Settings(BaseSettings):
     # Host root under which per-task workspace directories are created. Each
     # task gets its own subdir (bind-mounted rw at /workspace in its sandbox).
     sandbox_workspace_root: str = "/var/lib/titan/workspaces"
-    # Minimal base image for per-task sandboxes (hardened runc locally). Must
-    # exist locally / be pullable; alpine gives a shell + coreutils, nothing more.
-    sandbox_image: str = "alpine:3.20"
+    # Base image for per-task sandboxes (hardened runc locally). The tooled
+    # image (infra/docker/titan-sandbox.Dockerfile) carries git/python/node for
+    # the core git/terminal/code tools; build it with
+    # `docker build -f infra/docker/titan-sandbox.Dockerfile -t titan-sandbox:local .`
+    sandbox_image: str = "titan-sandbox:local"
     # Empty = the docker SDK's default endpoint (unix socket / Windows npipe);
     # set to bind a specific daemon (e.g. tcp://... in CI).
     sandbox_docker_host: str = ""

@@ -33,6 +33,7 @@ from jsonschema import FormatChecker
 from jsonschema.validators import Draft202012Validator
 from opentelemetry import trace
 from opentelemetry.trace import Span, StatusCode
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from titan.gateway.rbac import permission_granted
@@ -48,7 +49,9 @@ from titan.tools.registry import (
     ToolRegistry,
     ToolSpec,
 )
+from titan.tools.sandbox.session import SandboxSession, SandboxSessionManager
 from titan.tools.sandbox.workspace import Workspace
+from titan.tools.streaming import ToolOutputStream
 
 logger = structlog.get_logger("titan.tools.bus")
 tracer = trace.get_tracer("titan.tools")
@@ -161,6 +164,8 @@ class ToolBus:
         approval_gate: ApprovalGate = deny_all_approvals,
         rate_limiter: RateLimiter | None = None,
         workspace_provider: WorkspaceProvider | None = None,
+        sandbox_manager: SandboxSessionManager | None = None,
+        redis: "Redis | None" = None,
     ) -> None:
         self._registry = registry
         self._engine = engine
@@ -170,6 +175,8 @@ class ToolBus:
             rate_limiter if rate_limiter is not None else SlidingWindowRateLimiter()
         )
         self._workspace_provider = workspace_provider
+        self._sandbox_manager = sandbox_manager
+        self._redis = redis
 
     async def invoke(
         self,
@@ -317,6 +324,25 @@ class ToolBus:
             if self._workspace_provider is not None
             else None
         )
+        # A lightweight per-call session handle (the container is created lazily
+        # only if a terminal/git/code tool actually calls `await ctx.sandbox.get()`).
+        sandbox: SandboxSession | None = None
+        if self._sandbox_manager is not None and workspace is not None:
+            stream = ToolOutputStream(
+                self._redis,
+                project_id=call.project_id,
+                task_id=call.task_id,
+                agent_id=call.agent_id,
+                tool=call.tool,
+                tool_call_id=call.tool_call_id,
+            )
+            sandbox = SandboxSession(
+                self._sandbox_manager,
+                project_id=call.project_id,
+                task_id=call.task_id,
+                workspace=workspace,
+                stream=stream,
+            )
         context = ToolExecutionContext(
             engine=self._engine,
             project_id=call.project_id,
@@ -324,6 +350,7 @@ class ToolBus:
             agent_id=call.agent_id,
             agent_uuid=caller.agent_uuid,
             workspace=workspace,
+            sandbox=sandbox,
         )
         started = time.monotonic()
         try:

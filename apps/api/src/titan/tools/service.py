@@ -13,6 +13,7 @@ phases register their tools (fs.*, git.*, …) through :class:`ToolSpec` +
 import uuid
 from pathlib import Path
 
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from titan.tools import repository as _repo
@@ -48,7 +49,9 @@ from titan.tools.registry import (
 )
 from titan.tools.sandbox.controller import ExecResult, Sandbox, SandboxController
 from titan.tools.sandbox.policy import ResourceLimits, SandboxPolicy
+from titan.tools.sandbox.session import SandboxSession, SandboxSessionManager
 from titan.tools.sandbox.workspace import Workspace, WorkspaceManager
+from titan.tools.streaming import ToolOutputStream, channel_for
 
 
 def build_registry() -> ToolRegistry:
@@ -67,11 +70,15 @@ def build_bus(
     approval_gate: ApprovalGate | None = None,
     rate_limiter: RateLimiter | None = None,
     workspace_provider: WorkspaceProvider | None = None,
+    sandbox_manager: SandboxSessionManager | None = None,
+    redis: Redis | None = None,
 ) -> ToolBus:
     """The production bus. The admin-risk gate defaults to the DB-backed
     approval-record flow (TITAN-INT-022); pass ``approval_gate`` to override
     (e.g. ``deny_all_approvals`` in a closed test). ``workspace_provider`` gives
-    fs.* tools their jailed /workspace (Phase 20)."""
+    fs.* tools their jailed /workspace (Phase 20); ``sandbox_manager`` + ``redis``
+    give terminal/git/code tools their per-task sandbox + live output stream
+    (Phase 21)."""
     gate = approval_gate if approval_gate is not None else DbApprovalGate(engine, redactor=redactor)
     return ToolBus(
         registry if registry is not None else build_registry(),
@@ -80,6 +87,8 @@ def build_bus(
         approval_gate=gate,
         rate_limiter=rate_limiter,
         workspace_provider=workspace_provider,
+        sandbox_manager=sandbox_manager,
+        redis=redis,
     )
 
 
@@ -94,6 +103,11 @@ def build_sandbox_controller(image: str, *, docker_host: str = "") -> SandboxCon
     Reachable only when a Docker daemon is available; :meth:`SandboxController.ping`
     tells callers to degrade gracefully when it is not."""
     return SandboxController(SandboxPolicy(image=image), docker_host=docker_host)
+
+
+def build_sandbox_manager(controller: SandboxController) -> SandboxSessionManager:
+    """The per-task sandbox-session pool the terminal/git/code tools run inside."""
+    return SandboxSessionManager(controller)
 
 
 async def verify_audit_chain(conn: AsyncConnection, project_id: uuid.UUID) -> int | None:
@@ -119,7 +133,10 @@ __all__ = [
     "Sandbox",
     "SandboxController",
     "SandboxPolicy",
+    "SandboxSession",
+    "SandboxSessionManager",
     "ToolApprovalOut",
+    "ToolOutputStream",
     "ToolBus",
     "ToolCallEnvelope",
     "ToolCaller",
@@ -137,7 +154,9 @@ __all__ = [
     "build_bus",
     "build_registry",
     "build_sandbox_controller",
+    "build_sandbox_manager",
     "build_workspace_manager",
+    "channel_for",
     "default_redactor",
     "deny_all_approvals",
     "list_approvals",

@@ -13,8 +13,10 @@ the async Tool Bus is never blocked (TITAN-BCK-002 / ruff ASYNC).
 """
 
 import asyncio
+import codecs
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,6 +34,12 @@ logger = structlog.get_logger("titan.tools.sandbox")
 # of the SDK; -s KILL guarantees a runaway can't outlive its budget.
 _KILL_AFTER_S = 5
 
+_TRUNCATION_MARKER = "\n…[output truncated at cap]\n"
+
+# An async sink for incremental output: (stream_name, chunk_text). Used to
+# stream tool.output over Redis pub/sub (TITAN-INT-031).
+ChunkSink = Callable[[str, str], Awaitable[None]]
+
 
 @dataclass(frozen=True)
 class ExecResult:
@@ -42,6 +50,8 @@ class ExecResult:
     stderr: str
     timed_out: bool
     oom_killed: bool = False
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
 
     @property
     def ok(self) -> bool:
@@ -118,6 +128,132 @@ class Sandbox:
             (stdout_b or b"").decode("utf-8", "replace"),
             (stderr_b or b"").decode("utf-8", "replace"),
         )
+
+    async def exec_streamed(
+        self,
+        argv: list[str],
+        on_chunk: ChunkSink,
+        *,
+        limits: ResourceLimits | None = None,
+        workdir: str = MOUNT_POINT,
+        env: dict[str, str] | None = None,
+    ) -> ExecResult:
+        """Like :meth:`exec` but streams each output chunk to ``on_chunk`` as it
+        arrives (TITAN-INT-031). Output is still captured + capped per stream at
+        the policy's ``max_output_bytes`` with truncation flagged; once a stream
+        is truncated no further chunks are published (a runaway can't flood the
+        dashboard) but draining continues so the process can be killed on time."""
+        budget = (limits or ResourceLimits()).clamped(self._policy)
+        window = max(1, int(budget.timeout_s))
+        wrapped = ["timeout", "-s", "KILL", "-k", str(_KILL_AFTER_S), str(window), *argv]
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
+        started = time.monotonic()
+
+        def worker() -> None:
+            try:
+                api = self._client.api
+                exec_id = api.exec_create(
+                    self._id,
+                    cmd=wrapped,
+                    workdir=workdir,
+                    user=self._policy.user,
+                    environment=env or {},
+                    tty=False,
+                )["Id"]
+                for stdout_b, stderr_b in api.exec_start(exec_id, stream=True, demux=True):
+                    if stdout_b:
+                        loop.call_soon_threadsafe(queue.put_nowait, ("stdout", stdout_b))
+                    if stderr_b:
+                        loop.call_soon_threadsafe(queue.put_nowait, ("stderr", stderr_b))
+                code = api.exec_inspect(exec_id).get("ExitCode")
+                loop.call_soon_threadsafe(queue.put_nowait, ("__done__", code))
+            except Exception as exc:  # noqa: BLE001 — surfaced to the awaiter
+                loop.call_soon_threadsafe(queue.put_nowait, ("__error__", exc))
+
+        pump = asyncio.create_task(asyncio.to_thread(worker))
+        cap = self._policy.max_output_bytes
+        bufs = {"stdout": bytearray(), "stderr": bytearray()}
+        truncated = {"stdout": False, "stderr": False}
+        # Per-stream incremental UTF-8 decoders so a multibyte char split across
+        # docker frames isn't force-replaced with U+FFFD mid-character.
+        decoders = {
+            "stdout": codecs.getincrementaldecoder("utf-8")("replace"),
+            "stderr": codecs.getincrementaldecoder("utf-8")("replace"),
+        }
+        exit_code, error = -1, None
+        try:
+            while True:
+                kind, payload = await queue.get()
+                if kind == "__done__":
+                    exit_code = int(payload) if isinstance(payload, int) else -1
+                    break
+                if kind == "__error__":
+                    error = payload
+                    break
+                chunk = payload if isinstance(payload, bytes | bytearray) else b""
+                buf = bufs[kind]
+                if len(buf) < cap:
+                    # Capture AND publish the SAME clipped slice, so the live
+                    # stream honors the per-stream cap just like the capture.
+                    allowed = bytes(chunk[: cap - len(buf)])
+                    buf.extend(allowed)
+                    if not truncated[kind]:
+                        await on_chunk(kind, decoders[kind].decode(allowed))
+                    if len(buf) >= cap:  # just crossed the cap
+                        truncated[kind] = True
+                        await on_chunk(kind, _TRUNCATION_MARKER)
+        finally:
+            await pump
+        if isinstance(error, BaseException):
+            if isinstance(error, NotFound):
+                raise ToolError("SANDBOX_VIOLATION", "sandbox is no longer running") from error
+            raise ToolError("UPSTREAM_ERROR", f"sandbox exec failed: {error}") from error
+        elapsed = time.monotonic() - started
+        killed = exit_code in (124, 137, 143)
+        timed_out = exit_code == 124 or (killed and elapsed >= window - 0.5)
+        return ExecResult(
+            exit_code=exit_code,
+            stdout=bufs["stdout"].decode("utf-8", "replace"),
+            stderr=bufs["stderr"].decode("utf-8", "replace"),
+            timed_out=timed_out,
+            oom_killed=killed and not timed_out,
+            stdout_truncated=truncated["stdout"],
+            stderr_truncated=truncated["stderr"],
+        )
+
+    async def start_background(
+        self,
+        argv: list[str],
+        *,
+        handle: str,
+        workdir: str = MOUNT_POINT,
+        env: dict[str, str] | None = None,
+    ) -> int:
+        """Launch ``argv`` detached, its output redirected to files under the
+        workspace's ``.titan/bg/<handle>/`` dir; returns the container-namespace
+        PID (which :meth:`signal` targets). The user command is passed as
+        positional args to a FIXED launcher, so no shell interpolation of
+        model-controlled input occurs (TITAN-INT-031)."""
+        bg_dir = f"{MOUNT_POINT}/.titan/bg/{handle}"
+        launcher = f'mkdir -p "{bg_dir}"; nohup "$@" >"{bg_dir}/out" 2>"{bg_dir}/err" & echo $!'
+        result = await self.exec(
+            ["sh", "-c", launcher, "titan-bg", *argv],
+            workdir=workdir,
+            env=env,
+            limits=ResourceLimits(timeout_s=15),
+        )
+        pid_text = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
+        if not pid_text.isdigit():
+            raise ToolError(
+                "UPSTREAM_ERROR", f"could not launch background process: {result.stderr}"
+            )
+        return int(pid_text)
+
+    async def signal(self, pid: int, sig: str = "TERM") -> bool:
+        """Send ``sig`` to a background PID; True if the process was there."""
+        result = await self.exec(["kill", f"-{sig}", str(pid)], limits=ResourceLimits(timeout_s=10))
+        return result.exit_code == 0
 
     async def destroy(self) -> None:
         try:
@@ -218,4 +354,4 @@ def _cap(text: str, limit: int) -> str:
     return truncated + "\n…[output truncated]"
 
 
-__all__ = ["ExecResult", "Sandbox", "SandboxController"]
+__all__ = ["ChunkSink", "ExecResult", "Sandbox", "SandboxController"]

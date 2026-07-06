@@ -34,13 +34,22 @@ _MATRIX: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     # branch, test run. Denied: protected-branch push (param constraint),
     # deploy, plugins.
     "backend": (
-        ("terminal.*", "fs.*", "git.*", "test.*", *_TASK_READ, "task.transition", "message.*"),
+        (
+            "terminal.*",
+            "fs.*",
+            "git.*",
+            "code.*",
+            "test.*",
+            *_TASK_READ,
+            "task.transition",
+            "message.*",
+        ),
         ("plugin.*", *_ALWAYS_DENY),
     ),
     # QA: sandbox shell, test run, repo read, bug report. Denied: git write
     # outside test dirs (param constraint on git tools), deploy.
     "qa": (
-        ("terminal.*", "test.*", *_READ_REPO, "git.commit", *_TASK_READ, "message.*"),
+        ("terminal.*", "code.*", "test.*", *_READ_REPO, "git.commit", *_TASK_READ, "message.*"),
         ("git.push", *_ALWAYS_DENY),
     ),
     # Security: scanners, repo read, report write. Denied: deploy, secret read.
@@ -56,7 +65,16 @@ _MATRIX: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     # DevOps: IaC repo write, deploy tool (approval-gated by risk class).
     # Denied: secret plaintext read.
     "devops": (
-        ("terminal.*", "fs.*", "git.*", "docker.*", "deploy.*", *_TASK_READ, "message.*"),
+        (
+            "terminal.*",
+            "fs.*",
+            "git.*",
+            "code.*",
+            "docker.*",
+            "deploy.*",
+            *_TASK_READ,
+            "message.*",
+        ),
         ("secret.*",),
     ),
     # Memory / Documentation: memory & docs read/write in namespace. Denied:
