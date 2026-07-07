@@ -12,14 +12,30 @@ from titan.db import Base, ConventionsMixin, uuid7
 
 
 class Message(ConventionsMixin, Base):
+    # This IS the spec's ``agent_messages`` store (Vol 2 §6.3): the Phase-6 table
+    # is named ``messages`` and Phase 27 extends it with the full §6.1 envelope
+    # (schema_version/correlation_id/from_agent/to_agent/priority/requires_ack)
+    # below — one message table for both agent-bus traffic and human/REST posts.
     __tablename__ = "messages"
     __table_args__ = (
         CheckConstraint(
-            "sender_agent_id IS NOT NULL OR sender_user_id IS NOT NULL",
-            name="sender_present",
+            "sender_agent_id IS NOT NULL OR sender_user_id IS NOT NULL OR from_agent IS NOT NULL",
+            name="ck_messages_sender_present",
         ),
         Index("idx_messages_thread", "thread_id", "created_at"),
         Index("idx_messages_project_kind", "project_id", "kind", text("created_at DESC")),
+        Index(
+            "idx_messages_correlation",
+            "correlation_id",
+            postgresql_where=text("correlation_id IS NOT NULL"),
+        ),
+        Index(
+            "idx_messages_to_agent",
+            "project_id",
+            "to_agent",
+            "created_at",
+            postgresql_where=text("to_agent IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
@@ -38,6 +54,16 @@ class Message(ConventionsMixin, Base):
     # structured per-kind schema (Vol 2 §6 protocol)
     body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"), nullable=True)
+    # --- §6.1 AgentMessage envelope (Phase 27) ---
+    schema_version: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'1.0'"))
+    # request/response pairing across the bus (§6.2 gatekeeper replies reuse it)
+    correlation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # role ids (e.g. "pm_project"/"eng_backend"), not runtime agent-row uuids
+    from_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    to_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # critical|high|normal|low
+    priority: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'normal'"))
+    requires_ack: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
 
 
 class Decision(ConventionsMixin, Base):

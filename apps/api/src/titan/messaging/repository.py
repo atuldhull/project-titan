@@ -13,11 +13,20 @@ from titan.gateway.pagination import Keyset
 
 _MESSAGE_COLS = (
     "id, project_id, thread_id, kind, sender_agent_id, sender_user_id, "
-    "body, task_id, created_at, version"
+    "body, task_id, schema_version, correlation_id, from_agent, to_agent, "
+    "priority, requires_ack, created_at, version"
 )
 _DECISION_COLS = (
     "id, project_id, title, context, decision, alternatives, consequences, "
     "status, decided_by_agent_id, supersedes_id, created_at, version"
+)
+# Read path: a decision is 'superseded' iff a later decision points back at it
+# (derived, never stored — the table is append-only, TITAN-AGT-019).
+_DECISION_SELECT = (
+    "id, project_id, title, context, decision, alternatives, consequences, "
+    "CASE WHEN EXISTS (SELECT 1 FROM decisions s WHERE s.supersedes_id = decisions.id) "
+    "THEN 'superseded' ELSE status END AS status, "
+    "decided_by_agent_id, supersedes_id, created_at, version"
 )
 _NOTIFICATION_COLS = (
     "id, user_id, category, severity, title, body, link, read_at, created_at, version"
@@ -38,12 +47,20 @@ async def insert_message(
     sender_user_id: uuid.UUID | None,
     body: str,
     task_id: uuid.UUID | None,
+    schema_version: str = "1.0",
+    correlation_id: uuid.UUID | None = None,
+    from_agent: str | None = None,
+    to_agent: str | None = None,
+    priority: str = "normal",
+    requires_ack: bool = False,
 ) -> Row[Any]:
     result = await conn.execute(
         text(
             f"INSERT INTO messages (id, project_id, thread_id, kind, sender_agent_id, "
-            f"sender_user_id, body, task_id) VALUES (:id, :project_id, :thread_id, :kind, "
-            f":sender_agent_id, :sender_user_id, CAST(:body AS jsonb), :task_id) "
+            f"sender_user_id, body, task_id, schema_version, correlation_id, from_agent, "
+            f"to_agent, priority, requires_ack) VALUES (:id, :project_id, :thread_id, :kind, "
+            f":sender_agent_id, :sender_user_id, CAST(:body AS jsonb), :task_id, :schema_version, "
+            f":correlation_id, :from_agent, :to_agent, :priority, :requires_ack) "
             f"RETURNING {_MESSAGE_COLS}"
         ),
         {
@@ -55,9 +72,27 @@ async def insert_message(
             "sender_user_id": sender_user_id,
             "body": body,
             "task_id": task_id,
+            "schema_version": schema_version,
+            "correlation_id": correlation_id,
+            "from_agent": from_agent,
+            "to_agent": to_agent,
+            "priority": priority,
+            "requires_ack": requires_ack,
         },
     )
     return result.one()
+
+
+async def messages_for_project(conn: AsyncConnection, project_id: uuid.UUID) -> Sequence[Row[Any]]:
+    """Every persisted message in a project, oldest first — the durable record
+    the chaos-replay test reconciles against Redis (TITAN-AGT-016)."""
+    result = await conn.execute(
+        text(
+            f"SELECT {_MESSAGE_COLS} FROM messages WHERE project_id = :pid ORDER BY created_at, id"
+        ),
+        {"pid": project_id},
+    )
+    return result.all()
 
 
 async def list_messages(
@@ -132,19 +167,9 @@ async def insert_decision(
 
 async def get_decision(conn: AsyncConnection, decision_id: uuid.UUID) -> Row[Any] | None:
     result = await conn.execute(
-        text(f"SELECT {_DECISION_COLS} FROM decisions WHERE id = :id"), {"id": decision_id}
+        text(f"SELECT {_DECISION_SELECT} FROM decisions WHERE id = :id"), {"id": decision_id}
     )
     return result.one_or_none()
-
-
-async def mark_decision_superseded(conn: AsyncConnection, decision_id: uuid.UUID) -> None:
-    await conn.execute(
-        text(
-            "UPDATE decisions SET status = 'superseded', version = version + 1 "
-            "WHERE id = :id AND status <> 'superseded'"
-        ),
-        {"id": decision_id},
-    )
 
 
 async def list_decisions(
@@ -154,7 +179,7 @@ async def list_decisions(
     extra = f"AND {seek}" if seek else ""
     result = await conn.execute(
         text(
-            f"SELECT {_DECISION_COLS} FROM decisions WHERE project_id = :pid {extra} "
+            f"SELECT {_DECISION_SELECT} FROM decisions WHERE project_id = :pid {extra} "
             f"ORDER BY {keyset.order_by} LIMIT :limit"
         ),
         {"pid": project_id, "limit": keyset.fetch, **seek_params},

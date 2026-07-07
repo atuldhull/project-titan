@@ -28,13 +28,17 @@ async def write_event(
     *,
     actor: str,
     trace_id: str | None = None,
+    event_id: uuid.UUID | None = None,
 ) -> uuid.UUID:
     """Append an event to the outbox inside the caller's transaction.
 
     Returns the event_id (the outbox row id). Commits with the caller's
-    transaction — if the transaction rolls back, the event is never sent.
+    transaction — if the transaction rolls back, the event is never sent. Pass
+    ``event_id`` to make the outbox row id (hence the published event_id, hence
+    the consumer's dedup key) a caller-chosen id — the agent bus uses the
+    message_id so delivery is idempotent per message (TITAN-AGT-016).
     """
-    event_id = uuid7()
+    event_id = event_id or uuid7()
     await conn.execute(
         text(
             "INSERT INTO outbox (id, topic, payload) VALUES (:id, :topic, CAST(:payload AS jsonb))"

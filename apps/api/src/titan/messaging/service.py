@@ -25,6 +25,33 @@ from titan.gateway.dto import JsonbDict
 from titan.gateway.pagination import Keyset, Page
 from titan.gateway.problems import ProblemException, problem_type
 from titan.messaging import repository as repo
+from titan.messaging.bus import (
+    ACK_TIMEOUTS_MS,
+    RUNTIME_GROUP,
+    ack_inbox,
+    ack_timeout_ms,
+    clear_watchdogs,
+    consume_inbox,
+    ensure_inbox,
+    inbox_stream,
+    reclaim_unacked,
+    register_watchdog,
+)
+from titan.messaging.bus import send as send_agent_message
+from titan.messaging.protocol import (
+    AgentMessage,
+    ArchitectureDiscussionPayload,
+    BugReportPayload,
+    ConflictResolutionPayload,
+    DecisionLogPayload,
+    MeetingSummaryPayload,
+    MessageType,
+    ProgressReportPayload,
+    ReviewRequestPayload,
+    TaskAssignmentPayload,
+    Verdict,
+    parse_agent_message,
+)
 
 # --- messages: kinds + the per-kind body-schema hook -----------------------
 
@@ -108,6 +135,13 @@ class MessageOut(BaseModel):
     sender_user_id: uuid.UUID | None
     body: JsonbDict
     task_id: uuid.UUID | None
+    # §6.1 AgentMessage envelope (null on human/REST messages; set on the bus).
+    schema_version: str
+    correlation_id: uuid.UUID | None
+    from_agent: str | None
+    to_agent: str | None
+    priority: str
+    requires_ack: bool
     created_at: datetime
     version: int
 
@@ -232,19 +266,27 @@ async def list_messages(
     return Page(items=[MessageOut.model_validate(r) for r in page], next_cursor=cursor)
 
 
+async def messages_for_project(conn: AsyncConnection, project_id: uuid.UUID) -> list[MessageOut]:
+    """The complete durable message log for a project, oldest first — the
+    source of truth the chaos-replay reconciles Redis against (TITAN-AGT-016)."""
+    rows = await repo.messages_for_project(conn, project_id)
+    return [MessageOut.model_validate(r) for r in rows]
+
+
 # --- decisions -------------------------------------------------------------
 
 
 async def create_decision(
     conn: AsyncConnection, project_id: uuid.UUID, data: DecisionCreate, actor: str
 ) -> DecisionOut:
-    """Record an ADR. If it supersedes another, flip that one to `superseded`
-    in the same transaction (the supersede target must live in this project)."""
+    """Record an ADR. If it supersedes another, that prior decision's status is
+    DERIVED as ``superseded`` (this new row points back at it) — never mutated:
+    the decisions table is append-only at the DB layer (TITAN-AGT-019). The
+    supersede target must live in this project."""
     if data.supersedes_id is not None:
         prior = await repo.get_decision(conn, data.supersedes_id)
         if prior is None or prior.project_id != project_id:
             raise _validation_error("supersedes_id does not reference a decision in this project.")
-        await repo.mark_decision_superseded(conn, data.supersedes_id)
     try:
         row = await repo.insert_decision(
             conn,
@@ -351,21 +393,45 @@ async def mark_all_notifications_read(conn: AsyncConnection, user_id: uuid.UUID)
 
 
 __all__ = [
+    "ACK_TIMEOUTS_MS",
     "MESSAGE_KINDS",
+    "RUNTIME_GROUP",
+    "AgentMessage",
+    "ArchitectureDiscussionPayload",
+    "BugReportPayload",
+    "ConflictResolutionPayload",
     "DecisionCreate",
+    "DecisionLogPayload",
     "DecisionOut",
+    "MeetingSummaryPayload",
     "MessageCreate",
     "MessageKind",
     "MessageOut",
+    "MessageType",
     "NotificationOut",
+    "ProgressReportPayload",
+    "ReviewRequestPayload",
+    "TaskAssignmentPayload",
+    "Verdict",
+    "ack_inbox",
+    "ack_timeout_ms",
+    "clear_watchdogs",
+    "consume_inbox",
     "create_decision",
     "create_message",
     "create_notification",
+    "ensure_inbox",
+    "inbox_stream",
     "list_decisions",
     "list_messages",
     "list_notifications",
     "mark_all_notifications_read",
     "mark_notification_read",
+    "messages_for_project",
+    "parse_agent_message",
+    "reclaim_unacked",
     "register_body_schema",
+    "register_watchdog",
+    "send_agent_message",
     "validate_message_body",
 ]

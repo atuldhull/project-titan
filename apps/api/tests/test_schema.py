@@ -49,7 +49,12 @@ EXPECTED_INDEXES = {
     "tasks": {"idx_tasks_project_status_priority", "idx_tasks_assignee"},
     "runs": {"idx_runs_task", "idx_runs_status"},
     "artifacts": {"idx_artifacts_project_kind"},
-    "messages": {"idx_messages_thread", "idx_messages_project_kind"},
+    "messages": {
+        "idx_messages_thread",
+        "idx_messages_project_kind",
+        "idx_messages_correlation",
+        "idx_messages_to_agent",
+    },
     "decisions": {"idx_decisions_project"},
     "outbox": {"idx_outbox_unpublished"},
     "notifications": {"idx_notifications_unread"},
@@ -64,6 +69,8 @@ PARTIAL_INDEXES = {
     "idx_outbox_unpublished",
     "idx_notifications_unread",
     "uq_tool_approvals_pending",
+    "idx_messages_correlation",
+    "idx_messages_to_agent",
 }
 
 

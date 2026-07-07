@@ -1470,10 +1470,33 @@
             "title": "Body",
             "type": "object"
           },
+          "correlation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "from_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Agent"
           },
           "id": {
             "format": "uuid",
@@ -1484,9 +1507,21 @@
             "title": "Kind",
             "type": "string"
           },
+          "priority": {
+            "title": "Priority",
+            "type": "string"
+          },
           "project_id": {
             "format": "uuid",
             "title": "Project Id",
+            "type": "string"
+          },
+          "requires_ack": {
+            "title": "Requires Ack",
+            "type": "boolean"
+          },
+          "schema_version": {
+            "title": "Schema Version",
             "type": "string"
           },
           "sender_agent_id": {
@@ -1530,6 +1565,17 @@
             "title": "Thread Id",
             "type": "string"
           },
+          "to_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Agent"
+          },
           "version": {
             "title": "Version",
             "type": "integer"
@@ -1544,6 +1590,12 @@
           "sender_user_id",
           "body",
           "task_id",
+          "schema_version",
+          "correlation_id",
+          "from_agent",
+          "to_agent",
+          "priority",
+          "requires_ack",
           "created_at",
           "version"
         ],

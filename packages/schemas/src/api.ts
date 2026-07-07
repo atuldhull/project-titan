@@ -1389,11 +1389,15 @@ export interface components {
             body: {
                 [key: string]: unknown;
             };
+            /** Correlation Id */
+            correlation_id: string | null;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+            /** From Agent */
+            from_agent: string | null;
             /**
              * Id
              * Format: uuid
@@ -1401,11 +1405,17 @@ export interface components {
             id: string;
             /** Kind */
             kind: string;
+            /** Priority */
+            priority: string;
             /**
              * Project Id
              * Format: uuid
              */
             project_id: string;
+            /** Requires Ack */
+            requires_ack: boolean;
+            /** Schema Version */
+            schema_version: string;
             /** Sender Agent Id */
             sender_agent_id: string | null;
             /** Sender User Id */
@@ -1417,6 +1427,8 @@ export interface components {
              * Format: uuid
              */
             thread_id: string;
+            /** To Agent */
+            to_agent: string | null;
             /** Version */
             version: number;
         };
