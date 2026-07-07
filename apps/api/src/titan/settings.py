@@ -47,6 +47,15 @@ class Settings(BaseSettings):
     # a busy drainer never sleeps (it only pauses when the outbox is empty).
     outbox_drain_idle_seconds: float = 0.1
 
+    # --- CEO intake handler (Phase 25 walking skeleton) ---
+    # When a project brief is created, run the thin CEO intake turn (stream an LLM
+    # response, publish run.output.delta over the WS, persist user stories). Opt-in
+    # so ordinary project creation stays a pure CRUD write; the DoD run enables it.
+    ceo_intake_enabled: bool = False
+    # The model alias the CEO intake turn uses (a local Ollama alias by default so
+    # the slice runs at $0; TITAN-FND-054).
+    ceo_intake_model_alias: str = "local-default"
+
     # --- Sandbox + workspaces (Phase 20; Vol 7 §4.3, Vol 8 §5, ADR-SEC-02) ---
     # Host root under which per-task workspace directories are created. Each
     # task gets its own subdir (bind-mounted rw at /workspace in its sandbox).

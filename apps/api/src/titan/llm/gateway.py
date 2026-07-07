@@ -20,6 +20,8 @@ from decimal import Decimal
 from pathlib import Path
 
 import httpx
+import structlog
+from opentelemetry import trace
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -49,6 +51,8 @@ from titan.llm.resilience import CircuitBreaker, RetryPolicy
 from titan.llm.routing import ModelRouter, ResolvedModel
 
 _DEFAULT_PRICES = Path("config/prices.yaml")
+_TRACER = trace.get_tracer("titan.llm")
+logger = structlog.get_logger("titan.llm")
 
 
 def _uuid_or_none(value: str | None) -> uuid.UUID | None:
@@ -325,19 +329,110 @@ class LlmGateway:
             config.budgets, project_id, task_id, reserved, estimate, response.cost_usd
         )
 
-    # --- streaming (unmetered at MVP) + embeddings -------------------------
+    # --- streaming (metered) + embeddings ----------------------------------
 
-    async def stream(self, req: ChatRequest) -> AsyncIterator[StreamDelta]:
-        router = self._router()
+    async def stream(
+        self, req: ChatRequest, *, run_id: uuid.UUID | None = None
+    ) -> AsyncIterator[StreamDelta]:
+        """Stream deltas AND meter the call (Vol 7 §8.1: every call's usage is
+        recorded). Wraps an ``llm.call`` span (TITAN-BCK-025) carrying provider/
+        model/token/cost attributes — never prompt or completion text
+        (TITAN-OPS-016) — so the flow renders as one connected trace. The final
+        ``done`` delta carries the usage; it is written to ``llm_usage`` (with the
+        caller's ``run_id``) and settled against the budget when the stream ends
+        — including on early termination (recorded in the ``finally``).
+
+        Streaming uses the single resolved model (no fallback chain); the primary
+        route must serve it. ``run_id`` attributes the row to the caller's run.
+        """
+        config = self._loader.get()
+        router = ModelRouter(config)
         resolved = router.resolve_chat(model_alias=req.model_alias, agent_id=req.metadata.agent_id)
         adapter = self._chat_adapters.get(resolved.provider)
         if adapter is None:
             raise ProviderNotConfiguredError(f"no adapter for '{resolved.provider}'")
+        project_id = _uuid_or_none(req.metadata.project_id)
+        task_id = _uuid_or_none(req.metadata.task_id)
+        if self._engine is not None and self._budget.enabled:
+            async with self._engine.connect() as conn:
+                held = await self._budget.held_reason(conn, project_id, task_id)
+            if held is not None:
+                raise BudgetExceededError("hold", f"LLM calls are on budget hold: {held}")
+
         provider_cfg = router.provider_config(resolved.provider)
-        async for delta in adapter.stream(
-            self._client, req=req, resolved=resolved, provider=provider_cfg
-        ):
-            yield delta
+        usage = Usage()
+        start = time.perf_counter()
+        with _TRACER.start_as_current_span("llm.call") as span:
+            span.set_attribute("gen_ai.system", resolved.provider)
+            span.set_attribute("gen_ai.request.model", resolved.model_id)
+            span.set_attribute("llm.streaming", True)
+            try:
+                async for delta in adapter.stream(
+                    self._client, req=req, resolved=resolved, provider=provider_cfg
+                ):
+                    if delta.type == "done" and delta.usage is not None:
+                        usage = delta.usage
+                    yield delta
+            finally:
+                latency_ms = int((time.perf_counter() - start) * 1000)
+                cost = self._cost(resolved, usage)
+                span.set_attribute("gen_ai.usage.input_tokens", usage.input_tokens)
+                span.set_attribute("gen_ai.usage.output_tokens", usage.output_tokens)
+                span.set_attribute("gen_ai.usage.cost_usd", float(cost))
+                # Metering is best-effort: a transient usage-write failure must never
+                # abort a completion the model already streamed successfully.
+                try:
+                    await self._record_stream(
+                        config, req, resolved, usage, cost, latency_ms, project_id, task_id, run_id
+                    )
+                except Exception:
+                    logger.warning("llm.stream_metering_failed", exc_info=True)
+
+    async def _record_stream(
+        self,
+        config: GatewayConfig,
+        req: ChatRequest,
+        resolved: ResolvedModel,
+        usage: Usage,
+        cost: Decimal,
+        latency_ms: int,
+        project_id: uuid.UUID | None,
+        task_id: uuid.UUID | None,
+        run_id: uuid.UUID | None,
+    ) -> None:
+        metrics.observe_usage(
+            provider=resolved.provider,
+            model=resolved.model_id,
+            agent=_agent_label(req.metadata.agent_id),
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            cached_tokens=usage.cached_tokens,
+            cost_usd=float(cost),
+            latency_seconds=latency_ms / 1000.0,
+        )
+        if self._engine is not None:
+            async with self._engine.begin() as conn:
+                await repo.insert_usage(
+                    conn,
+                    project_id=project_id,
+                    task_id=task_id,
+                    run_id=run_id,
+                    agent_id=req.metadata.agent_id,
+                    requested_alias=resolved.alias,
+                    served_alias=resolved.alias,
+                    provider=resolved.provider,
+                    model=resolved.model_id,
+                    input_tokens=usage.input_tokens,
+                    output_tokens=usage.output_tokens,
+                    cached_tokens=usage.cached_tokens,
+                    cost_usd=cost,
+                    latency_ms=latency_ms,
+                    degraded_model=False,
+                    price_version=self._price_version(resolved),
+                )
+        # Streaming settles its actual cost post-call (no pre-reservation), like
+        # embeddings; for a local (zero-cost) model this is a no-op.
+        await self._budget.settle(config.budgets, project_id, task_id, [], Decimal(0), cost)
 
     async def embed(self, req: EmbeddingsRequest) -> EmbeddingsResponse:
         config = self._loader.get()

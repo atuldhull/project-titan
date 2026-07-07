@@ -8,6 +8,7 @@ cross-module channel, TITAN-BCK-004), so this module never touches the tasks
 tables directly.
 """
 
+import asyncio
 import uuid
 from typing import Annotated
 
@@ -17,6 +18,7 @@ from titan.gateway.concurrency import require_if_match, set_etag, version_confli
 from titan.gateway.pagination import Page, Pagination, keyset_from
 from titan.gateway.rbac import Requires
 from titan.identity.service import Principal
+from titan.intake import service as intake
 from titan.orchestrator import service as tasks
 from titan.projects import service
 from titan.projects.service import (
@@ -50,10 +52,33 @@ _ReadTasks = Annotated[Principal, Depends(Requires("task:read", project_param="p
 async def create_project(
     request: Request, body: ProjectCreate, response: Response, principal: _WriteOrg
 ) -> ProjectOut:
-    async with request.app.state.engine.begin() as conn:
+    app = request.app
+    async with app.state.engine.begin() as conn:
         project = await service.create_project(conn, body, principal.sub)
     set_etag(response, project.version)
+    _maybe_launch_intake(app, project, body.brief)
     return project
+
+
+def _maybe_launch_intake(app: FastAPI, project: ProjectOut, brief: str) -> None:
+    """Phase-25 walking skeleton: kick off the CEO intake turn in the background
+    (opt-in). Started here — inside the request's OTel context — so the gateway's
+    ``llm.call`` span shares the request's trace (TITAN-BCK-025). The task is
+    tracked so the lifespan can cancel it; ``run_intake`` never raises."""
+    if not getattr(app.state, "ceo_intake_enabled", False):
+        return
+    task = asyncio.create_task(
+        intake.run_intake(
+            engine=app.state.engine,
+            gateway=app.state.llm_gateway,
+            publisher=app.state.ws_publisher,
+            project_id=project.id,
+            brief=brief,
+            model_alias=app.state.ceo_intake_model_alias,
+        )
+    )
+    app.state.intake_tasks.add(task)
+    task.add_done_callback(app.state.intake_tasks.discard)
 
 
 @router.get("/projects", response_model=Page[ProjectOut])

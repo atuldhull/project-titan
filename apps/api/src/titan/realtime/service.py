@@ -16,6 +16,7 @@ from titan.realtime.fanout import (
     run_ws_fanout,
 )
 from titan.realtime.manager import Connection, ConnectionManager
+from titan.realtime.publisher import RealtimePublisher
 from titan.realtime.registry import ConnectionRegistry
 from titan.realtime.subscriber import WsSubscriber
 
@@ -23,6 +24,11 @@ from titan.realtime.subscriber import WsSubscriber
 def build_manager() -> ConnectionManager:
     """A fresh per-replica connection registry."""
     return ConnectionManager()
+
+
+def build_publisher(redis: Redis) -> RealtimePublisher:
+    """A direct publisher onto the WS project channels (ephemeral streaming)."""
+    return RealtimePublisher(redis)
 
 
 def build_fanout(redis: Redis, *, org: str) -> WsFanout:
@@ -41,10 +47,12 @@ __all__ = [
     "ConnectionManager",
     "ConnectionRegistry",
     "ProjectBuffer",
+    "RealtimePublisher",
     "WsFanout",
     "WsSubscriber",
     "build_fanout",
     "build_manager",
+    "build_publisher",
     "build_subscriber",
     "process_ws_fanout_batch",
     "run_ws_fanout",

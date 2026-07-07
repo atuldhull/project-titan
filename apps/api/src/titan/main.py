@@ -146,11 +146,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             application.state.redis, application.state.ws_manager
         )
         await application.state.ws_subscriber.start()
+        # Phase-25 CEO intake: a direct WS publisher (streaming deltas) + config +
+        # a set tracking in-flight intake background tasks so they are cancelled at
+        # shutdown rather than logged as orphaned.
+        application.state.ws_publisher = realtime_service.build_publisher(application.state.redis)
+        application.state.ceo_intake_enabled = active_settings.ceo_intake_enabled
+        application.state.ceo_intake_model_alias = active_settings.ceo_intake_model_alias
+        application.state.intake_tasks = set()
         application.state.readyz_budget_seconds = active_settings.readyz_budget_seconds
         otel.instrument_engine(active_settings, application.state.engine)
         try:
             yield
         finally:
+            for task in list(application.state.intake_tasks):  # cancel in-flight CEO turns
+                task.cancel()
             await application.state.ws_subscriber.stop()  # stop pub/sub subscriber first
             await application.state.sandbox_manager.aclose()  # destroy live sandboxes
             await application.state.dind_manager.aclose()  # destroy DinD sidecars
