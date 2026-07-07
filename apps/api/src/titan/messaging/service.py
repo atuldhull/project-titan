@@ -290,6 +290,13 @@ async def message_exists(conn: AsyncConnection, message_id: uuid.UUID) -> bool:
     return await repo.message_exists(conn, message_id)
 
 
+async def get_message(conn: AsyncConnection, message_id: uuid.UUID) -> MessageOut | None:
+    """One message by id, or None — the runtime reads a replayed turn's emitted
+    message to recover its true outcome (escalation vs. completion)."""
+    row = await repo.get_message(conn, message_id)
+    return MessageOut.model_validate(row) if row is not None else None
+
+
 # --- decisions -------------------------------------------------------------
 
 
@@ -439,6 +446,7 @@ __all__ = [
     "create_message",
     "create_notification",
     "ensure_inbox",
+    "get_message",
     "inbox_stream",
     "list_decisions",
     "list_messages",

@@ -37,6 +37,7 @@ not a gap. Once a turn has committed its messages, though, its whole effect —
 messages and tools — is never re-run.
 """
 
+import asyncio
 import json
 import time
 import uuid
@@ -54,6 +55,7 @@ from titan.agents.service import (
     compose_system_prompt,
 )
 from titan.llm.service import (
+    ChatRequest,
     ChatResponse,
     ContentPart,
     Message,
@@ -65,6 +67,7 @@ from titan.llm.service import (
 from titan.messaging.service import (
     AgentMessage,
     MessageOut,
+    get_message,
     message_exists,
     messages_in_thread,
     send_agent_message,
@@ -81,6 +84,17 @@ from titan.runtime.grants import (
 )
 from titan.runtime.memory import MemoryProvider, MemoryRequest
 from titan.runtime.output import AgentTurnOutput, TurnOutputError, parse_turn_output
+from titan.runtime.recovery import (
+    RUNG_ESCALATE,
+    RUNG_SELF_CRITIQUE,
+    RUNG_SUPERVISOR,
+    RUNG_TRANSIENT,
+    LadderConfig,
+    build_escalation,
+    is_blocked_escalation,
+    is_transient,
+    turn_operation_label,
+)
 from titan.tools.service import (
     ProjectToolPolicy,
     ToolBus,
@@ -100,16 +114,21 @@ RUNTIME_MSG_NAMESPACE = uuid.UUID("6f9c1e2a-4d3b-5a1c-9e7f-2b8a0c1d4e6f")
 
 TurnOutcome = Literal[
     "completed",  # a valid output was produced and its messages emitted
-    "invalid_output",  # output failed validation after the self-critique retries
-    "tool_budget_exhausted",  # the model kept calling tools past the cap
+    "escalated",  # rungs 1–2 exhausted → a blocked report went to the supervisor/human
+    "failed_open",  # a fail-open agent (docs/critic) failed — logged, never escalated
     "unknown_agent",  # no such role in the roster (undeliverable)
     "error",  # an infrastructure error — transient, safe to reprocess
 ]
 
+# Why a turn could not complete (recorded even when the ladder then escalates).
+FailureReason = Literal["invalid_output", "tool_budget_exhausted", "transient_error"]
+
 # Bounds on one turn's LLM round-trips (§8 step 4/5). The tool-use loop lets the
-# model act then react; the self-critique loop re-invokes on invalid output.
+# model act then react; the self-critique + transient-retry rungs re-invoke.
 DEFAULT_MAX_TOOL_ITERATIONS = 4
 DEFAULT_MAX_SELF_CRITIQUE = 2
+DEFAULT_MAX_TRANSIENT_RETRIES = 2
+DEFAULT_BACKOFF_BASE_S = 0.5
 
 
 @dataclass
@@ -138,6 +157,11 @@ class TurnResult:
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
     security_events: list[SecurityEvent] = field(default_factory=list)
     output_retries: int = 0
+    transient_retries: int = 0
+    # The rungs (rung1..rung4) the recovery ladder fired this turn, in order.
+    recovery_rungs: list[str] = field(default_factory=list)
+    failure_reason: FailureReason | None = None
+    escalation_target: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
     latency_ms: int = 0
@@ -150,8 +174,8 @@ class TurnResult:
     def should_ack(self) -> bool:
         """Ack every terminal outcome — only a raw infrastructure ``error`` is
         left pending for the reaper to reclaim and retry (at-least-once). A
-        handled-but-failed turn (invalid output, tool budget, unknown agent) is
-        acked so it does not poison-loop; the Phase-30 ladder escalates it."""
+        handled-but-failed turn (escalated, failed-open, unknown agent) is acked
+        so it does not poison-loop; the ladder has already escalated/logged it."""
         return self.outcome != "error"
 
 
@@ -169,6 +193,9 @@ class AgentRuntime:
     memory: MemoryProvider
     max_tool_iterations: int = DEFAULT_MAX_TOOL_ITERATIONS
     max_self_critique: int = DEFAULT_MAX_SELF_CRITIQUE
+    max_transient_retries: int = DEFAULT_MAX_TRANSIENT_RETRIES
+    # Exponential-backoff base for rung-1 transient retries; tests set 0 for speed.
+    backoff_base_s: float = DEFAULT_BACKOFF_BASE_S
 
 
 # --- hydration helpers -----------------------------------------------------
@@ -247,7 +274,14 @@ def _finish_span(span: trace.Span, result: TurnResult, started: float) -> None:
     span.set_attribute("titan.turn.tool_calls", len(result.tool_calls))
     span.set_attribute("titan.turn.security_events", len(result.security_events))
     span.set_attribute("titan.turn.output_retries", result.output_retries)
+    span.set_attribute("titan.turn.transient_retries", result.transient_retries)
     span.set_attribute("titan.turn.messages_emitted", len(result.emitted_message_ids))
+    if result.recovery_rungs:
+        span.set_attribute("titan.recovery.rungs", ",".join(result.recovery_rungs))
+    if result.escalation_target is not None:
+        span.set_attribute("titan.recovery.escalation_target", result.escalation_target)
+    if result.failure_reason is not None:
+        span.set_attribute("titan.recovery.failure_reason", result.failure_reason)
     if result.packet_id is not None:
         span.set_attribute("titan.memory.packet_id", str(result.packet_id))
     if result.model_alias is not None:
@@ -266,6 +300,24 @@ def _emit_kpis(result: TurnResult) -> None:
         output_retries=result.output_retries,
         messages_emitted=len(result.emitted_message_ids),
     )
+
+
+def _record_rung(
+    result: TurnResult, agent_id: str, rung: str, *, attempt: int | None = None
+) -> None:
+    """Emit one OTel span for a fired recovery-ladder rung + its KPI metric, and
+    record it on the result. Metadata only — no prompt/message content."""
+    span = _TRACER.start_span(f"recovery.{rung}")
+    span.set_attribute("titan.recovery.rung", rung)
+    span.set_attribute("titan.agent_id", agent_id)
+    if attempt is not None:
+        span.set_attribute("titan.recovery.attempt", attempt)
+    span.end()
+    # Every rung is LOGGED and traced (§2.2) — a uniform structured line so an
+    # operator can grep any rung (rungs 1/3 add their own detail line too).
+    logger.info("recovery.rung", agent_id=agent_id, rung=rung, attempt=attempt)
+    result.recovery_rungs.append(rung)
+    metrics.observe_rung(f"agent.{agent_id}", rung)
 
 
 async def _execute(
@@ -287,9 +339,27 @@ async def _execute(
     # tool side effect of an already-completed turn) is ever duplicated.
     already = await _already_emitted(runtime, trigger)
     if already is not None:
-        result.outcome = "completed"
         result.emitted_message_ids = already
+        # Recover the prior attempt's REAL outcome from what it emitted: a lone
+        # blocked ProgressReport was a rung-3 escalation, not a plain completion —
+        # otherwise the replay would count a failure as a success (KPI corruption).
+        result.outcome, result.escalation_target = await _replayed_outcome(runtime, already)
         return result
+
+    # Rung 4: this agent is a supervisor handling a subordinate's blocked report;
+    # its normal output (reassign / decompose / escalate-to-human) IS the action.
+    if is_blocked_escalation(trigger):
+        _record_rung(result, agent_id, RUNG_SUPERVISOR)
+
+    ladder = LadderConfig.from_definition(
+        definition,
+        max_transient_retries=runtime.max_transient_retries,
+        max_self_critique=runtime.max_self_critique,
+        backoff_base_s=runtime.backoff_base_s,
+    )
+    # The Database Engineer's destructive migrations skip rungs 1–2 (§4.8): a
+    # failure escalates immediately rather than retrying an irreversible op.
+    skip = ladder.skips_retries(turn_operation_label(trigger))
 
     # Step 3 — hydrate.
     thread_id = trigger.thread_id or trigger.correlation_id
@@ -331,19 +401,71 @@ async def _execute(
         )
     ]
 
-    # Steps 4–5 — the bounded tool-use + self-critique loop.
-    output = await _agent_loop(
-        runtime, agent_id, project_id, trigger, definition, system, convo, tool_defs, caller, result
-    )
-    if output is None:
-        return result  # outcome already set by the loop (invalid_output / tool_budget_exhausted)
+    # Steps 4–5 — the tool-use loop with rung-1 transient retry + rung-2 self-critique.
+    try:
+        output = await _agent_loop(
+            runtime,
+            agent_id,
+            project_id,
+            trigger,
+            definition,
+            ladder,
+            skip,
+            system,
+            convo,
+            tool_defs,
+            caller,
+            result,
+        )
+    except Exception as exc:  # noqa: BLE001
+        if not is_transient(exc):
+            raise  # terminal/infra error → run_turn marks "error" (reclaim + retry)
+        # Rung 1 budget spent and the error is still transient → escalate (blocked).
+        result.failure_reason = "transient_error"
+        logger.warning("runtime.transient_exhausted", agent_id=agent_id, error=type(exc).__name__)
+        output = None
 
-    # Step 6 — emit the turn's messages idempotently.
-    result.emitted_message_ids = await _emit_messages(
-        runtime, project_id, agent_id, trigger, output
-    )
-    result.outcome = "completed"
-    return result
+    if output is not None:
+        # Step 6 — emit the turn's messages idempotently.
+        result.emitted_message_ids = await _emit_messages(
+            runtime, project_id, agent_id, trigger, output
+        )
+        result.outcome = "completed"
+        return result
+
+    # Rungs 1–2 exhausted → rung 3 escalation (or a fail-open log).
+    return await _escalate(runtime, project_id, agent_id, trigger, ladder, result)
+
+
+async def _llm_call(
+    runtime: AgentRuntime,
+    agent_id: str,
+    ladder: LadderConfig,
+    skip: bool,
+    request: ChatRequest,
+    result: TurnResult,
+) -> ChatResponse:
+    """Rung 1 of the ladder: call the gateway, retrying a TRANSIENT failure with
+    the same context (exponential backoff, bounded). A non-transient error (bad
+    request, config, budget) is not retried — it propagates to escalate/reclaim."""
+    max_transient = 0 if skip else ladder.max_transient_retries
+    attempt = 0
+    while True:
+        try:
+            return await runtime.llm.chat(request)
+        except Exception as exc:  # noqa: BLE001
+            if not is_transient(exc) or attempt >= max_transient:
+                raise
+            attempt += 1
+            result.transient_retries += 1
+            _record_rung(result, agent_id, RUNG_TRANSIENT, attempt=attempt)
+            logger.warning(
+                "recovery.rung1_transient_retry",
+                agent_id=agent_id,
+                attempt=attempt,
+                error=type(exc).__name__,
+            )
+            await asyncio.sleep(ladder.backoff_delay(attempt - 1))
 
 
 async def _agent_loop(
@@ -352,6 +474,8 @@ async def _agent_loop(
     project_id: uuid.UUID,
     trigger: AgentMessage,
     definition: AgentDefinition,
+    ladder: LadderConfig,
+    skip: bool,
     system: str,
     convo: list[Message],
     tool_defs: list[ToolDef],
@@ -359,11 +483,12 @@ async def _agent_loop(
     result: TurnResult,
 ) -> AgentTurnOutput | None:
     """Drive the LLM: execute granted tool calls and react (bounded), and validate
-    the final structured output with self-critique retries. Returns the validated
-    output, or None having set ``result.outcome`` to the failure reason."""
+    the final structured output with rung-1 transient retry + rung-2 self-critique.
+    Returns the validated output, or None with ``result.failure_reason`` set."""
     # Every iteration either RETURNS or advances a bounded counter (tool_iters up
     # to max_tool_iterations, critiques up to max_self_critique), so the loop
     # terminates — no arbitrary call cap, no unreachable terminal.
+    max_critique = 0 if skip else ladder.max_self_critique
     tool_iters = 0
     critiques = 0
     while True:
@@ -376,7 +501,7 @@ async def _agent_loop(
             project_id=str(project_id),
             task_id=str(trigger.task_id) if trigger.task_id else None,
         )
-        response = await runtime.llm.chat(request)  # Step 4 — through the gateway
+        response = await _llm_call(runtime, agent_id, ladder, skip, request, result)  # rungs 4→1
         result.model_alias = response.served_alias or response.requested_alias or response.model_id
         result.provider = response.provider
         result.input_tokens += response.usage.input_tokens
@@ -385,9 +510,9 @@ async def _agent_loop(
         if response.tool_calls:
             if tool_iters >= runtime.max_tool_iterations:
                 # The model keeps requesting tools past its budget — a distinct,
-                # observable failure (not invalid output). Phase-30 ladder escalates.
+                # observable failure (not invalid output). The ladder escalates.
                 logger.warning("runtime.tool_budget_exhausted", agent_id=agent_id)
-                result.outcome = "tool_budget_exhausted"
+                result.failure_reason = "tool_budget_exhausted"
                 return None
             tool_iters += 1
             await _run_tool_calls(
@@ -407,18 +532,20 @@ async def _agent_loop(
         try:
             return parse_turn_output(response.text)
         except TurnOutputError as exc:
-            if critiques >= runtime.max_self_critique:
+            if critiques >= max_critique:
                 # Never silently accepted (TITAN-AGT-023): the self-critique budget
-                # is spent (``critiques`` retries were issued and all failed). Give
-                # up this turn and let the Phase-30 ladder escalate.
+                # is spent (``critiques`` retries were issued and all failed, or the
+                # op skips retries). Give up this turn — the ladder escalates.
                 result.output_retries = critiques
                 logger.warning(
                     "runtime.output_invalid_exhausted", agent_id=agent_id, retries=critiques
                 )
-                result.outcome = "invalid_output"
+                result.failure_reason = "invalid_output"
                 return None
-            critiques += 1  # issue one more self-critique retry
+            # Rung 2: re-invoke with the validation failure appended.
+            critiques += 1
             result.output_retries = critiques
+            _record_rung(result, agent_id, RUNG_SELF_CRITIQUE, attempt=critiques)
             convo.append(Message(role="assistant", content=response.text or ""))
             convo.append(
                 Message(
@@ -429,6 +556,48 @@ async def _agent_loop(
                     ),
                 )
             )
+
+
+async def _escalate(
+    runtime: AgentRuntime,
+    project_id: uuid.UUID,
+    agent_id: str,
+    trigger: AgentMessage,
+    ladder: LadderConfig,
+    result: TurnResult,
+) -> TurnResult:
+    """Rung 3: rungs 1–2 exhausted. A fail-open agent (docs/critic) logs and lets
+    the pipeline proceed; everyone else escalates a ``ProgressReport(blocked)`` to
+    its supervisor — or, for the CEO, a structured options memo to the human."""
+    reason = result.failure_reason or "invalid_output"
+    if ladder.fail_open:
+        logger.warning("recovery.fail_open", agent_id=agent_id, reason=reason)
+        result.outcome = "failed_open"
+        return result
+
+    target = ladder.escalation_target()
+    summary = f"{agent_id} could not complete its turn ({reason}) after the recovery ladder."
+    options = (
+        "Provide client guidance, reassign, or descope."
+        if ladder.escalates_to_human
+        else "Reassign, decompose the task, or escalate to the human client."
+    )
+    escalation = build_escalation(target, reason=summary, options=options)
+    result.emitted_message_ids = await _emit_messages(
+        runtime, project_id, agent_id, trigger, AgentTurnOutput(messages=(escalation,))
+    )
+    _record_rung(result, agent_id, RUNG_ESCALATE)
+    result.escalation_target = target
+    result.outcome = "escalated"
+    metrics.observe_escalation(f"agent.{agent_id}", target)
+    logger.warning(
+        "recovery.escalated",
+        agent_id=agent_id,
+        target=target,
+        reason=reason,
+        fail_closed=ladder.fail_closed,
+    )
+    return result
 
 
 async def _run_tool_calls(
@@ -493,6 +662,26 @@ def _emitted_id(trigger: AgentMessage, index: int) -> uuid.UUID:
     return uuid.uuid5(RUNTIME_MSG_NAMESPACE, f"{trigger.message_id}:{index}")
 
 
+async def _replayed_outcome(
+    runtime: AgentRuntime, emitted: list[uuid.UUID]
+) -> tuple[TurnOutcome, str | None]:
+    """Recover a replayed turn's outcome from its already-committed emission. A
+    single blocked ``ProgressReport`` was a rung-3 escalation (report ``escalated``
+    + its target); anything else was a normal completion. The escalation COUNTER is
+    not re-incremented on replay, so a fresh-process replay records the turn once
+    with the correct label instead of a spurious success."""
+    async with runtime.engine.connect() as conn:
+        first = await get_message(conn, emitted[0])
+    if (
+        len(emitted) == 1
+        and first is not None
+        and first.kind == "progress_report"
+        and first.body.get("status") == "blocked"
+    ):
+        return "escalated", first.to_agent
+    return "completed", None
+
+
 async def _already_emitted(runtime: AgentRuntime, trigger: AgentMessage) -> list[uuid.UUID] | None:
     """The ids a prior attempt of this turn already committed, or None if it has
     not emitted yet. Because emission is atomic (one transaction), a present
@@ -552,10 +741,13 @@ async def _emit_messages(
 
 
 __all__ = [
+    "DEFAULT_BACKOFF_BASE_S",
     "DEFAULT_MAX_SELF_CRITIQUE",
     "DEFAULT_MAX_TOOL_ITERATIONS",
+    "DEFAULT_MAX_TRANSIENT_RETRIES",
     "RUNTIME_MSG_NAMESPACE",
     "AgentRuntime",
+    "FailureReason",
     "ToolCallRecord",
     "TurnOutcome",
     "TurnResult",

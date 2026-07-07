@@ -10,7 +10,7 @@ import uuid
 import pytest
 
 from tests.conftest import run_async
-from titan.agents.service import ModelPolicyConfig, load_model_policy
+from titan.agents.service import ModelPolicyConfig, load_model_policy, load_roster
 from titan.runtime.binding import GatewayBinding, ModelBindingError
 from titan.runtime.grants import granted_scopes, granted_tool_defs, is_granted
 from titan.runtime.memory import (
@@ -20,6 +20,7 @@ from titan.runtime.memory import (
     NullMemoryProvider,
 )
 from titan.runtime.output import AgentTurnOutput, TurnOutputError, parse_turn_output
+from titan.runtime.recovery import LadderConfig, build_escalation
 from titan.settings import Settings
 from titan.tools.service import ExecutionOutcome, ToolExecutionContext, ToolRegistry, ToolSpec
 
@@ -227,3 +228,51 @@ def test_is_granted_and_scopes() -> None:
     registry = ToolRegistry()
     registry.register(_echo_spec())
     assert granted_scopes(registry, ("code.echo",)) == frozenset()
+
+
+# --- recovery ladder config (§2.2/§4.x, TITAN-AGT-005) ---------------------
+
+
+def _ladder(agent_id: str) -> LadderConfig:
+    definition = load_roster(Settings()).get(agent_id)
+    assert definition is not None
+    return LadderConfig.from_definition(definition)
+
+
+def test_ladder_reads_failure_policy_from_yaml() -> None:
+    # CEO: no supervisor agent → escalate to human.
+    ceo = _ladder("ceo")
+    assert ceo.escalates_to_human and ceo.escalation_target() == "human"
+    # Security/Reviewer are fail-closed; Docs/Critic are fail-open.
+    assert _ladder("security").fail_closed and _ladder("reviewer").fail_closed
+    assert _ladder("docs").fail_open and _ladder("critic").fail_open
+    # A default agent escalates to its supervisor.
+    backend = _ladder("eng_backend")
+    assert not backend.escalates_to_human and backend.escalation_target() == "pm_project"
+
+
+def test_ladder_skip_retries_matches_operation_label() -> None:
+    db = _ladder("eng_database")
+    assert db.skip_retries_on  # from YAML: "Destructive migrations"
+    assert db.skips_retries("Destructive migration: drop users")  # whole-word, plural-tolerant
+    assert not db.skips_retries("Add an index to orders")
+    # A negated phrase must NOT match (no substring false-positive on "destructive").
+    assert not db.skips_retries("Non-destructive migration: add nullable column")
+    assert not db.skips_retries("Nondestructive migration: add column")
+    assert not db.skips_retries("Reindex the destructive_log table")  # "migration" absent
+    # An agent without skip_retries_on never skips.
+    assert not _ladder("eng_backend").skips_retries("anything")
+
+
+def test_ladder_backoff_is_exponential_and_capped() -> None:
+    ladder = LadderConfig(backoff_base_s=0.5)
+    assert ladder.backoff_delay(0) == 0.5
+    assert ladder.backoff_delay(1) == 1.0
+    assert ladder.backoff_delay(2) == 2.0
+    assert ladder.backoff_delay(100) == 30.0  # capped at MAX_BACKOFF_S
+
+
+def test_build_escalation_is_a_blocked_progress_report() -> None:
+    msg = build_escalation("pm_project", reason="stuck", options="reassign")
+    assert msg.type == "ProgressReport" and msg.to_agent == "pm_project" and msg.requires_ack
+    assert msg.payload["status"] == "blocked" and msg.payload["summary"] == "stuck"

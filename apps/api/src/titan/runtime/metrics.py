@@ -6,12 +6,16 @@ Labels stay low-cardinality: ``agent`` is bounded by the 16-role roster, and
 outcome/status are small enum sets — never a per-instance id, task id, or any
 message/prompt content (TITAN-OPS-016).
 
-The §2.2 universal KPIs (task success rate, first-pass acceptance, mean tokens
-per task, latency, escalation rate) roll up from these turn-level series in
-Grafana; per-turn token/cost is already metered by the LLM gateway.
+The §2.2 universal KPIs roll up from these turn-level series in Grafana:
+- task success rate  = turns{outcome=completed} / turns;
+- escalation rate    = escalations / turns;
+- first-pass acceptance = first_pass{first_pass=true} / first_pass (a dedicated
+  series, because a *sum* of retries cannot recover the count of zero-retry turns);
+- mean tokens per task = the LLM gateway's per-agent token counter / completed turns;
+- mean latency per task = titan_agent_turn_latency_seconds.
 """
 
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 AGENT_TURNS_TOTAL = Counter(
     "titan_agent_turns_total",
@@ -49,6 +53,57 @@ AGENT_MESSAGES_EMITTED_TOTAL = Counter(
     ["agent"],
 )
 
+AGENT_FIRST_PASS_TOTAL = Counter(
+    "titan_agent_first_pass_total",
+    "Completed turns by whether they were first-pass (zero self-critique retries) "
+    "— the §2.2 first-pass-acceptance-rate KPI (rate = first_pass=true / total)",
+    ["agent", "first_pass"],
+)
+
+# --- recovery ladder (§2.2, TITAN-AGT-005) + universal KPIs (§2.2) ---------
+
+AGENT_RECOVERY_RUNGS_TOTAL = Counter(
+    "titan_agent_recovery_rungs_total",
+    "Recovery-ladder rungs fired, by agent role and rung (rung1..rung4)",
+    ["agent", "rung"],
+)
+
+AGENT_ESCALATIONS_TOTAL = Counter(
+    "titan_agent_escalations_total",
+    "Rung-3 escalations, by agent role and target (a supervisor or 'human') — the "
+    "numerator of the §2.2 escalation-rate KPI",
+    ["agent", "target"],
+)
+
+# The §2.2 universal KPIs are DERIVED in Grafana from the low-cardinality series
+# above: task success rate = turns{outcome=completed}/turns; escalation rate =
+# escalations/turns; mean tokens per completed task and mean latency roll up from
+# the LLM gateway's token counter and titan_agent_turn_latency_seconds. This gauge
+# makes each agent's OWN declared kpis (its YAML `kpis` list) visible in Prometheus
+# so dashboards can bind to them before the domain phases populate values.
+AGENT_KPI_DECLARED = Gauge(
+    "titan_agent_kpi_declared",
+    "1 for each KPI an agent declares in its AgentDefinition (labelled by agent/kpi)",
+    ["agent", "kpi"],
+)
+
+
+def observe_rung(agent: str, rung: str) -> None:
+    """Record one recovery-ladder rung firing (one per OTel rung span)."""
+    AGENT_RECOVERY_RUNGS_TOTAL.labels(agent, rung).inc()
+
+
+def observe_escalation(agent: str, target: str) -> None:
+    """Record a rung-3 escalation to ``target`` (a supervisor or 'human')."""
+    AGENT_ESCALATIONS_TOTAL.labels(agent, target).inc()
+
+
+def declare_kpis(agent: str, kpis: tuple[str, ...]) -> None:
+    """Publish an agent's declared KPI names to Prometheus (value 1) so the series
+    exist during a run; the domain phases replace the placeholder with real values."""
+    for kpi in kpis:
+        AGENT_KPI_DECLARED.labels(agent, kpi).set(1)
+
 
 def observe_turn(
     *,
@@ -63,6 +118,10 @@ def observe_turn(
     """Record one completed (or failed) agent turn across the KPI collectors."""
     AGENT_TURNS_TOTAL.labels(agent, outcome).inc()
     AGENT_TURN_LATENCY_SECONDS.labels(agent).observe(latency_seconds)
+    if outcome == "completed":
+        # First-pass acceptance = the agent produced valid output with no
+        # self-critique retry. A dedicated series (not derivable from a retry sum).
+        AGENT_FIRST_PASS_TOTAL.labels(agent, "true" if output_retries == 0 else "false").inc()
     if granted_tool_calls:
         AGENT_TOOL_CALLS_TOTAL.labels(agent, "granted").inc(granted_tool_calls)
     if denied_tool_calls:
@@ -75,11 +134,18 @@ def observe_turn(
 
 
 __all__ = [
+    "AGENT_ESCALATIONS_TOTAL",
+    "AGENT_FIRST_PASS_TOTAL",
+    "AGENT_KPI_DECLARED",
     "AGENT_MESSAGES_EMITTED_TOTAL",
     "AGENT_OUTPUT_RETRIES_TOTAL",
+    "AGENT_RECOVERY_RUNGS_TOTAL",
     "AGENT_TOOL_CALLS_TOTAL",
     "AGENT_TOOL_GRANT_DENIALS_TOTAL",
     "AGENT_TURNS_TOTAL",
     "AGENT_TURN_LATENCY_SECONDS",
+    "declare_kpis",
+    "observe_escalation",
+    "observe_rung",
     "observe_turn",
 ]

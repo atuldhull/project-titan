@@ -46,14 +46,23 @@ from titan.runtime.memory import (
     MemoryRequest,
     NullMemoryProvider,
 )
+from titan.runtime.metrics import declare_kpis
 from titan.runtime.output import (
     AgentTurnOutput,
     OutboundMessage,
     TurnOutputError,
     parse_turn_output,
 )
+from titan.runtime.recovery import (
+    LadderConfig,
+    build_escalation,
+    is_blocked_escalation,
+    is_transient,
+    turn_operation_label,
+)
 from titan.runtime.turn import (
     AgentRuntime,
+    FailureReason,
     ToolCallRecord,
     TurnOutcome,
     TurnResult,
@@ -83,6 +92,10 @@ def build_runtime(
     builds it, close it with ``runtime.llm.aclose()`` on shutdown.
     """
     registry = load_roster(settings)
+    # Publish each agent's declared KPIs to Prometheus so the series exist for
+    # dashboards from boot (§2.2; domain phases fill in real values).
+    for definition in registry.all():
+        declare_kpis(f"agent.{definition.agent_id}", definition.kpis)
     composer = build_prompt_composer(settings)
     policy = load_model_policy(settings)
     binding = GatewayBinding(policy, settings.model_policy_profile)
@@ -124,7 +137,9 @@ __all__ = [
     "AgentRuntime",
     "AgentTurnOutput",
     "Citation",
+    "FailureReason",
     "GatewayBinding",
+    "LadderConfig",
     "LlmClient",
     "ModelBindingError",
     "MemoryPacket",
@@ -139,11 +154,15 @@ __all__ = [
     "TurnOutcome",
     "TurnOutputError",
     "TurnResult",
+    "build_escalation",
     "build_runtime",
     "build_worker",
     "granted_scopes",
     "granted_tool_defs",
+    "is_blocked_escalation",
     "is_granted",
+    "is_transient",
     "parse_turn_output",
     "run_turn",
+    "turn_operation_label",
 ]

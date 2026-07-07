@@ -106,6 +106,16 @@ async def message_exists(conn: AsyncConnection, message_id: uuid.UUID) -> bool:
     return result.first() is not None
 
 
+async def get_message(conn: AsyncConnection, message_id: uuid.UUID) -> Row[Any] | None:
+    """One message by id, or None. The runtime reads a prior attempt's emitted
+    message on replay to recover the turn's real outcome (escalation vs. plain
+    completion) rather than mislabelling it."""
+    result = await conn.execute(
+        text(f"SELECT {_MESSAGE_COLS} FROM messages WHERE id = :id"), {"id": message_id}
+    )
+    return result.one_or_none()
+
+
 async def messages_for_project(conn: AsyncConnection, project_id: uuid.UUID) -> Sequence[Row[Any]]:
     """Every persisted message in a project, oldest first — the durable record
     the chaos-replay test reconciles against Redis (TITAN-AGT-016)."""

@@ -10,6 +10,7 @@ executes and is audited; and the self-critique retry on invalid output.
 Needs the disposable test DB (`migrated_engine`) + fakeredis."""
 
 import uuid
+from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from typing import Any
 
@@ -36,10 +37,14 @@ pytestmark = pytest.mark.schema
 
 class ScriptedLlm:
     """Returns a queued ChatResponse per agent (by ``metadata.agent_id``), FIFO,
-    and records every request so tests can assert what tools were exposed."""
+    and records every request so tests can assert what tools were exposed. A
+    queued ``BaseException`` is RAISED instead of returned — used to inject a
+    transient gateway failure for the rung-1 retry."""
 
-    def __init__(self, script: dict[str, list[ChatResponse]]) -> None:
-        self._script: dict[str, list[ChatResponse]] = {k: list(v) for k, v in script.items()}
+    def __init__(self, script: "Mapping[str, Sequence[ChatResponse | BaseException]]") -> None:
+        self._script: dict[str, list[ChatResponse | BaseException]] = {
+            k: list(v) for k, v in script.items()
+        }
         self.requests: list[Any] = []
 
     async def chat(self, req: Any) -> ChatResponse:
@@ -48,9 +53,12 @@ class ScriptedLlm:
         queue = self._script.get(agent)
         if not queue:
             raise AssertionError(f"no scripted response for {agent}")
-        return queue.pop(0)
+        item = queue.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return item
 
-    def remaining(self, agent: str) -> list[ChatResponse]:
+    def remaining(self, agent: str) -> list[ChatResponse | BaseException]:
         """Responses not yet consumed for ``agent`` — lets a test prove a code
         path did (or did NOT) call the model."""
         return self._script.get(agent, [])
@@ -432,10 +440,10 @@ def test_invalid_output_triggers_self_critique_then_succeeds(migrated_engine: An
     run_async(scenario)
 
 
-def test_invalid_output_never_silently_accepted(migrated_engine: Any) -> None:
-    """After the self-critique budget is exhausted the turn fails loudly — the
-    output is never silently accepted, no message is emitted, and output_retries
-    equals the number of retries actually issued (not the failed final attempt)."""
+def test_invalid_output_never_silently_accepted_then_escalates(migrated_engine: Any) -> None:
+    """After the self-critique budget is exhausted the turn is never silently
+    accepted — the recovery ladder escalates (rung 3) a blocked ProgressReport to
+    the agent's supervisor (TITAN-AGT-023 + §2.2)."""
 
     async def scenario() -> None:
         bus = _bus()
@@ -444,10 +452,19 @@ def test_invalid_output_never_silently_accepted(migrated_engine: Any) -> None:
         runtime = build_runtime(
             Settings(), migrated_engine, redis=bus._redis, llm=ScriptedLlm(script)
         )
+        runtime.backoff_base_s = 0.0
         result = await run_turn(runtime, pid, "eng_backend", _seed(pid))
-        assert result.outcome == "invalid_output"
-        assert result.emitted_message_ids == []
+        assert result.outcome == "escalated"  # NOT silently accepted
+        assert result.failure_reason == "invalid_output"
         assert result.output_retries == runtime.max_self_critique == 2  # 2 retries issued
+        assert result.escalation_target == "pm_project"  # eng_backend's supervisor
+        assert "rung3" in result.recovery_rungs and "rung2" in result.recovery_rungs
+        # The escalation is a persisted blocked ProgressReport to the supervisor.
+        assert len(result.emitted_message_ids) == 1
+        async with migrated_engine.connect() as conn:
+            rows = await messaging.messages_for_project(conn, pid)
+        blocked = [m for m in rows if m.kind == "progress_report" and m.to_agent == "pm_project"]
+        assert len(blocked) == 1 and blocked[0].body["status"] == "blocked"
 
     run_async(scenario)
 
@@ -506,8 +523,9 @@ def test_tool_spam_past_budget_is_tool_budget_exhausted(migrated_engine: Any) ->
         _register_echo(runtime)
         _grant_tool(runtime, "eng_backend", "code.echo")
         result = await run_turn(runtime, pid, "eng_backend", _seed(pid))
-        assert result.outcome == "tool_budget_exhausted"
-        assert result.emitted_message_ids == []
+        # A tool-budget failure is a distinct reason that then escalates (rung 3).
+        assert result.outcome == "escalated"
+        assert result.failure_reason == "tool_budget_exhausted"
         # Exactly max_tool_iterations tools ran, then the budget tripped.
         granted = [t for t in result.tool_calls if t.disposition == "granted"]
         assert len(granted) == runtime.max_tool_iterations == 4
