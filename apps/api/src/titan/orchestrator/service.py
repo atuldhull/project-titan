@@ -375,6 +375,15 @@ async def apply_transition(
         if task.assignee_agent_id is not None and actor_agent_id == task.assignee_agent_id:
             raise _conflict("The reviewer must be different from the assignee.")
         columns["reviewer_agent_id"] = actor_agent_id
+    if action == "approve":
+        # §7.4 / TITAN-AGT-018: approve is the merge into `done`. A Security veto
+        # blocks it regardless of this (or any) approval — the gate consults ONLY
+        # the veto table, so no approval path, not even a CEO release, bypasses it.
+        # Lazy import: messaging.service (which conflict.service uses) imports this
+        # module, so a top-level import here would close a cycle.
+        from titan.conflict import service as conflict
+
+        await conflict.assert_merge_allowed(conn, task.project_id, task_id=task.id)
 
     row = await repo.transition_status(
         conn,

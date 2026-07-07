@@ -22,6 +22,7 @@ from titan.agents.service import (
     load_model_policy,
     load_roster,
 )
+from titan.conflict.service import vetoing_roles as _vetoing_roles
 from titan.events.service import QueueBus
 from titan.llm.service import build_gateway
 from titan.runtime.binding import (
@@ -115,6 +116,9 @@ def build_runtime(
         llm=gateway,
         binding=binding,
         memory=memory if memory is not None else NullMemoryProvider(),
+        # Data-driven from the roster: exactly the roles whose AgentDefinition holds
+        # a blocking veto (Security by default, §7.4) — never a hard-coded id.
+        vetoing_roles=_vetoing_roles(registry),
     )
 
 

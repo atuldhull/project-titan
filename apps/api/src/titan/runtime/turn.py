@@ -54,6 +54,7 @@ from titan.agents.service import (
     PromptComposer,
     compose_system_prompt,
 )
+from titan.conflict.service import capture_veto_verdict
 from titan.llm.service import (
     ChatRequest,
     ChatResponse,
@@ -191,6 +192,9 @@ class AgentRuntime:
     llm: LlmClient
     binding: GatewayBinding
     memory: MemoryProvider
+    # Roles holding a §7.4 blocking veto (``{"security"}`` by default) — when one of
+    # them emits a veto verdict, the runtime records the pipeline veto (TITAN-AGT-018).
+    vetoing_roles: frozenset[str] = frozenset()
     max_tool_iterations: int = DEFAULT_MAX_TOOL_ITERATIONS
     max_self_critique: int = DEFAULT_MAX_SELF_CRITIQUE
     max_transient_retries: int = DEFAULT_MAX_TRANSIENT_RETRIES
@@ -736,6 +740,18 @@ async def _emit_messages(
                 payload=om.payload,
             )
             await send_agent_message(conn, message, actor=agent_id)
+            # §7.4 veto capture (TITAN-AGT-018): a Security veto verdict emitted
+            # through the normal outbox becomes a pipeline-level merge block, in the
+            # SAME transaction as the message so the two commit atomically. A no-op
+            # for every non-veto message; idempotent (keyed on the artifact_ref).
+            if runtime.vetoing_roles:
+                await capture_veto_verdict(
+                    conn,
+                    project_id,
+                    message,
+                    vetoing_roles=runtime.vetoing_roles,
+                    trigger=trigger,
+                )
             emitted.append(mid)
     return emitted
 

@@ -18,7 +18,7 @@ _MESSAGE_COLS = (
 )
 _DECISION_COLS = (
     "id, project_id, title, context, decision, alternatives, consequences, "
-    "status, decided_by_agent_id, supersedes_id, created_at, version"
+    "status, authority, decided_by_agent_id, supersedes_id, created_at, version"
 )
 # Read path: a decision is 'superseded' iff a later decision points back at it
 # (derived, never stored — the table is append-only, TITAN-AGT-019).
@@ -26,7 +26,7 @@ _DECISION_SELECT = (
     "id, project_id, title, context, decision, alternatives, consequences, "
     "CASE WHEN EXISTS (SELECT 1 FROM decisions s WHERE s.supersedes_id = decisions.id) "
     "THEN 'superseded' ELSE status END AS status, "
-    "decided_by_agent_id, supersedes_id, created_at, version"
+    "authority, decided_by_agent_id, supersedes_id, created_at, version"
 )
 _NOTIFICATION_COLS = (
     "id, user_id, category, severity, title, body, link, read_at, created_at, version"
@@ -174,13 +174,14 @@ async def insert_decision(
     status: str,
     decided_by_agent_id: uuid.UUID | None,
     supersedes_id: uuid.UUID | None,
+    authority: str | None = None,
 ) -> Row[Any]:
     result = await conn.execute(
         text(
             f"INSERT INTO decisions (id, project_id, title, context, decision, alternatives, "
-            f"consequences, status, decided_by_agent_id, supersedes_id) VALUES (:id, :project_id, "
-            f":title, :context, :decision, :alternatives, :consequences, :status, "
-            f":decided_by_agent_id, :supersedes_id) RETURNING {_DECISION_COLS}"
+            f"consequences, status, authority, decided_by_agent_id, supersedes_id) VALUES "
+            f"(:id, :project_id, :title, :context, :decision, :alternatives, :consequences, "
+            f":status, :authority, :decided_by_agent_id, :supersedes_id) RETURNING {_DECISION_COLS}"
         ),
         {
             "id": decision_id,
@@ -191,6 +192,7 @@ async def insert_decision(
             "alternatives": alternatives,
             "consequences": consequences,
             "status": status,
+            "authority": authority,
             "decided_by_agent_id": decided_by_agent_id,
             "supersedes_id": supersedes_id,
         },

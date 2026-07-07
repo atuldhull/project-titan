@@ -41,7 +41,12 @@ LLM_TABLES = {"llm_usage", "budget_holds"}
 # the tool_approvals records added in Phase 19 (migration 0009), and the
 # admin-approved egress hosts added in Phase 23 (migration 0010).
 TOOLS_TABLES = {"tool_audit", "tool_approvals", "project_egress_hosts"}
-EXPECTED_TABLES = CORE_TABLES | IDENTITY_TABLES | EVENTS_TABLES | LLM_TABLES | TOOLS_TABLES
+# …plus the conflict-resolution state machine + veto gate + deadlock config added
+# in Phase 31 (migration 0012).
+CONFLICT_TABLES = {"conflicts", "conflict_transitions", "merge_vetoes", "conflict_thresholds"}
+EXPECTED_TABLES = (
+    CORE_TABLES | IDENTITY_TABLES | EVENTS_TABLES | LLM_TABLES | TOOLS_TABLES | CONFLICT_TABLES
+)
 
 EXPECTED_INDEXES = {
     "projects": {"idx_projects_status"},
@@ -61,6 +66,10 @@ EXPECTED_INDEXES = {
     "tool_audit": {"idx_tool_audit_project_seq", "idx_tool_audit_call", "idx_tool_audit_task"},
     "tool_approvals": {"idx_tool_approvals_project_status", "uq_tool_approvals_pending"},
     "project_egress_hosts": {"uq_project_egress_hosts"},
+    "conflicts": {"uq_conflicts_project_cid"},
+    "conflict_transitions": {"idx_conflict_transitions_conflict"},
+    "merge_vetoes": {"uq_merge_vetoes_active", "idx_merge_vetoes_task"},
+    "conflict_thresholds": {"uq_conflict_thresholds_scope"},
 }
 
 PARTIAL_INDEXES = {
@@ -71,6 +80,8 @@ PARTIAL_INDEXES = {
     "uq_tool_approvals_pending",
     "idx_messages_correlation",
     "idx_messages_to_agent",
+    "uq_merge_vetoes_active",
+    "idx_merge_vetoes_task",
 }
 
 
@@ -137,6 +148,8 @@ def test_index_predicates_and_ordering_exact(migrated_engine: AsyncEngine) -> No
         "idx_runs_task": ["attempt DESC"],
         "idx_messages_project_kind": ["created_at DESC"],
         "idx_decisions_project": ["created_at DESC"],
+        "uq_merge_vetoes_active": ["WHERE", "status = 'active'"],
+        "idx_merge_vetoes_task": ["WHERE", "task_id IS NOT NULL", "status = 'active'"],
     }
 
     async def defs() -> dict[str, str]:

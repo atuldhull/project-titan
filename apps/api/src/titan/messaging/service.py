@@ -160,6 +160,9 @@ class DecisionCreate(BaseModel):
     alternatives: str = Field(min_length=1)
     consequences: str = Field(min_length=1)
     status: DecisionStatus = "accepted"
+    # The authority that made the decision (§7): decides_alone | arbitration |
+    # executive | human_override. Null for a plain ADR that predates the classification.
+    authority: str | None = None
     decided_by_agent_id: uuid.UUID | None = None
     supersedes_id: uuid.UUID | None = None
 
@@ -175,6 +178,7 @@ class DecisionOut(BaseModel):
     alternatives: str
     consequences: str
     status: str
+    authority: str | None
     decided_by_agent_id: uuid.UUID | None
     supersedes_id: uuid.UUID | None
     created_at: datetime
@@ -322,6 +326,7 @@ async def create_decision(
             alternatives=data.alternatives,
             consequences=data.consequences,
             status=data.status,
+            authority=data.authority,
             decided_by_agent_id=data.decided_by_agent_id,
             supersedes_id=data.supersedes_id,
         )
