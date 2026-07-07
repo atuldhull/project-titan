@@ -141,6 +141,7 @@ modules = [
     "titan.tools",
     "titan.realtime",
     "titan.intake",
+    "titan.runtime",
 ]
 ignore_imports = ["titan.** -> titan.*.service"]
 unmatched_ignore_imports_alerting = "none"
@@ -165,6 +166,7 @@ source_modules = [
     "titan.tools",
     "titan.realtime",
     "titan.intake",
+    "titan.runtime",
     "titan.events",
     "titan.observability",
 ]
@@ -185,4 +187,5 @@ forbidden_modules = [
     "titan.plugins",
     "titan.llm",
     "titan.tools",
+    "titan.runtime",
 ]

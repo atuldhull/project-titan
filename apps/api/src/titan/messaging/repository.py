@@ -83,6 +83,29 @@ async def insert_message(
     return result.one()
 
 
+async def messages_in_thread(
+    conn: AsyncConnection, project_id: uuid.UUID, thread_id: uuid.UUID
+) -> Sequence[Row[Any]]:
+    """Every persisted message in one conversation thread, oldest first — the
+    hydration source the agent runtime splices into a turn's prompt context."""
+    result = await conn.execute(
+        text(
+            f"SELECT {_MESSAGE_COLS} FROM messages "
+            f"WHERE project_id = :pid AND thread_id = :tid ORDER BY created_at, id"
+        ),
+        {"pid": project_id, "tid": thread_id},
+    )
+    return result.all()
+
+
+async def message_exists(conn: AsyncConnection, message_id: uuid.UUID) -> bool:
+    """Whether a message with this id is already persisted — the runtime's
+    idempotent-replay guard for deterministically-keyed outbound messages
+    (TITAN-AGT-002/016)."""
+    result = await conn.execute(text("SELECT 1 FROM messages WHERE id = :id"), {"id": message_id})
+    return result.first() is not None
+
+
 async def messages_for_project(conn: AsyncConnection, project_id: uuid.UUID) -> Sequence[Row[Any]]:
     """Every persisted message in a project, oldest first — the durable record
     the chaos-replay test reconciles against Redis (TITAN-AGT-016)."""

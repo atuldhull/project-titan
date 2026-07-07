@@ -481,7 +481,10 @@ class ToolBus:
         span.set_attribute("titan.tool.duration_ms", envelope.duration_ms)
         if envelope.code is not None:
             span.set_attribute("titan.tool.error_code", envelope.code)
-            span.set_status(StatusCode.ERROR, envelope.message or envelope.code)
+            # Status description is the taxonomy CODE only — never envelope.message,
+            # which (e.g. a SCHEMA_INVALID error quoting the offending argument) can
+            # carry model-controlled content into the trace (TITAN-OPS-016).
+            span.set_status(StatusCode.ERROR, envelope.code)
         logger.info(
             "tool.invoked",
             tool=call.tool,

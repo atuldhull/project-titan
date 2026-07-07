@@ -46,11 +46,13 @@ from titan.messaging.protocol import (
     DecisionLogPayload,
     MeetingSummaryPayload,
     MessageType,
+    Priority,
     ProgressReportPayload,
     ReviewRequestPayload,
     TaskAssignmentPayload,
     Verdict,
     parse_agent_message,
+    validate_payload,
 )
 
 # --- messages: kinds + the per-kind body-schema hook -----------------------
@@ -273,6 +275,21 @@ async def messages_for_project(conn: AsyncConnection, project_id: uuid.UUID) -> 
     return [MessageOut.model_validate(r) for r in rows]
 
 
+async def messages_in_thread(
+    conn: AsyncConnection, project_id: uuid.UUID, thread_id: uuid.UUID
+) -> list[MessageOut]:
+    """One conversation thread's messages, oldest first — the agent runtime's
+    turn-hydration source (Vol 2 §8 step 3)."""
+    rows = await repo.messages_in_thread(conn, project_id, thread_id)
+    return [MessageOut.model_validate(r) for r in rows]
+
+
+async def message_exists(conn: AsyncConnection, message_id: uuid.UUID) -> bool:
+    """Whether a message id is already persisted — the runtime's idempotent
+    replay guard so a reprocessed turn re-emits nothing (TITAN-AGT-002/016)."""
+    return await repo.message_exists(conn, message_id)
+
+
 # --- decisions -------------------------------------------------------------
 
 
@@ -409,6 +426,7 @@ __all__ = [
     "MessageOut",
     "MessageType",
     "NotificationOut",
+    "Priority",
     "ProgressReportPayload",
     "ReviewRequestPayload",
     "TaskAssignmentPayload",
@@ -427,11 +445,14 @@ __all__ = [
     "list_notifications",
     "mark_all_notifications_read",
     "mark_notification_read",
+    "message_exists",
     "messages_for_project",
+    "messages_in_thread",
     "parse_agent_message",
     "reclaim_unacked",
     "register_body_schema",
     "register_watchdog",
     "send_agent_message",
     "validate_message_body",
+    "validate_payload",
 ]

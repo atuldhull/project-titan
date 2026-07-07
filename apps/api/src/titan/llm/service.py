@@ -19,6 +19,7 @@ from titan.llm.gateway import LlmGateway, compute_cost
 from titan.llm.models import (
     ChatRequest,
     ChatResponse,
+    ContentPart,
     EmbeddingsRequest,
     EmbeddingsResponse,
     EmbeddingVector,
@@ -62,6 +63,7 @@ __all__ = [
     "ChatRequest",
     "ChatResponse",
     "ConfigLoader",
+    "ContentPart",
     "EmbeddingVector",
     "EmbeddingsRequest",
     "EmbeddingsResponse",
