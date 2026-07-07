@@ -132,6 +132,13 @@ class Settings(BaseSettings):
     # Versioned price table for cost metering + budgets (Phase 17; §8.4).
     prices_config_path: str = "config/prices.yaml"
 
+    # --- Agent roster (Phase 26; Vol 2 §2.1, TITAN-AGT-001/008) ---
+    # Directory of declarative <agent_id>.yaml role contracts, loaded + validated
+    # at startup — a malformed or incomplete roster refuses to boot. Relative
+    # paths are resolved by walking up from the CWD (loader.resolve_config_dir);
+    # the container mounts the repo config/ and sets an absolute path.
+    agents_config_dir: str = "config/agents"
+
     # OTLP trace export (TITAN-BCK-025). Empty = tracing disabled (no
     # collector running); Compose obs profile sets http://otel-collector:4317.
     otel_exporter_otlp_endpoint: str = ""

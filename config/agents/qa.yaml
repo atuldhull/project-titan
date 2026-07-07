@@ -1,0 +1,49 @@
+# QA Agent (Vol 2 §4.10). Tier 3 — gatekeeper.
+agent_id: qa
+display_name: QA
+tier: 3
+supervisor: pm_project
+system_prompt_template: agents/qa.j2
+
+authority:
+  decides_alone:
+    - Test design
+    - Pass/fail verdicts against written acceptance criteria
+    - Regression-suite membership
+  must_escalate:
+    - decision: Ambiguous acceptance criteria
+      to: [pm_product]
+    - decision: Release-blocking defect disputes
+      to: [conflict_resolution]   # with severity evidence
+
+memory_scopes:
+  read: [short_term, project, lessons_learned]
+  write: [short_term, lessons_learned]
+
+tool_grants:
+  - memory.search
+  - memory.write_note
+  - messages.send
+  - repo.read
+  - repo.write   # test dirs
+  - tests.run
+  - browser.automation   # E2E
+  - terminal.run   # sandboxed
+
+model_policy:
+  tier: standard
+  temperature: 0.3
+  max_output_tokens: 4096
+  structured_output_schema: null
+
+kpis:
+  - defect_escape_rate_post_approval
+  - test_flakiness_rate
+  - criteria_coverage_per_story
+  - bug_report_actionability_rate
+
+failure_policy:
+  mode: default
+  notes: >-
+    Default ladder; a QA verdict is never auto-overridden by retries — disputes
+    go to §7.

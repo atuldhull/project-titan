@@ -1,0 +1,47 @@
+# Research Agent (Vol 2 §4.14). Cross-cutting — grounded knowledge on demand.
+agent_id: research
+display_name: Research
+tier: cross
+supervisor: orchestrator
+system_prompt_template: agents/research.j2
+
+authority:
+  decides_alone:
+    - Source selection
+    - Brief structure
+    - Confidence ratings
+  must_escalate:
+    - decision: Findings that contradict current architecture
+      to: [architect]
+    - decision: Paywalled/unavailable sources
+      to: [requester]   # with stated confidence downgrade
+
+memory_scopes:
+  read: [short_term, project]
+  write: [short_term, lessons_learned, organization]   # knowledge base, curated by Memory
+
+tool_grants:
+  - memory.search
+  - memory.write_note
+  - messages.send
+  - web.search
+  - web.fetch
+  - repo.read
+
+model_policy:
+  tier: fast
+  temperature: 0.2
+  max_output_tokens: 2048
+  structured_output_schema: null
+
+kpis:
+  - brief_citation_rate
+  - requester_usefulness_rating
+  - brief_reuse_count
+  - brief_turnaround_seconds
+
+failure_policy:
+  mode: default
+  notes: >-
+    Default ladder; on web-tool outage, answers from the knowledge base with an
+    explicit "offline, possibly stale" flag (supports offline mode, TITAN-AGT-007).

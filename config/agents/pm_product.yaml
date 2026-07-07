@@ -1,0 +1,42 @@
+# Product Manager Agent (Vol 2 §4.3). Tier 1 — planning & design.
+agent_id: pm_product
+display_name: Product Manager
+tier: 1
+supervisor: ceo
+system_prompt_template: agents/pm_product.j2
+
+authority:
+  decides_alone:
+    - Story slicing
+    - Acceptance-criteria wording
+    - Backlog ordering within CEO priorities
+  must_escalate:
+    - decision: New scope discovered during grooming
+      to: [ceo]
+    - decision: Technically infeasible stories flagged by Architect
+      to: [conflict_resolution]
+
+memory_scopes:
+  read: [short_term, project, organization]
+  write: [short_term, lessons_learned, project]
+
+tool_grants:
+  - memory.search
+  - memory.write_note
+  - messages.send
+  - tasks.create   # story type
+  - roadmap.render
+
+model_policy:
+  tier: standard
+  temperature: 0.3
+  max_output_tokens: 4096
+  structured_output_schema: null
+
+kpis:
+  - story_rejection_rate
+  - criteria_coverage_ratio
+  - mid_sprint_scope_change_count
+
+failure_policy:
+  mode: default   # default ladder; supervisor CEO

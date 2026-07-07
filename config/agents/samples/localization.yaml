@@ -1,0 +1,54 @@
+# SAMPLE — Localization Agent (TITAN-AGT-006 extensibility proof).
+#
+# This agent is NOT part of the default 16-agent roster (TITAN-AGT-008). It lives
+# in agents/samples/ so the default loader (which scans agents/*.yaml
+# non-recursively) never picks it up by accident. It exists to prove that adding
+# a brand-new role is a pure configuration change: this YAML plus its
+# prompt-template stub (config/prompts/agents/localization.j2), with ZERO edits
+# to the schema, loader, registry, orchestrator, or any other core code.
+#
+# To enable it, a deployment copies this file into its agents config dir.
+agent_id: localization
+display_name: Localization Engineer
+tier: 3
+supervisor: pm_project
+system_prompt_template: agents/localization.j2
+
+authority:
+  decides_alone:
+    - Translation-key structure
+    - Locale bundle organization
+    - Pluralization and date/number formatting rules per locale
+  must_escalate:
+    - decision: Source-string changes that break existing translations
+      to: [eng_frontend]
+    - decision: New locale requiring product scope
+      to: [pm_product]
+
+memory_scopes:
+  read: [short_term, project, code_patterns, architecture]
+  write: [short_term, lessons_learned, code_patterns]
+
+tool_grants:
+  - memory.search
+  - memory.write_note
+  - messages.send
+  - repo.read
+  - repo.write
+  - repo.branch
+  - tests.run
+
+model_policy:
+  tier: fast
+  temperature: 0.2
+  max_output_tokens: 2048
+  structured_output_schema: null
+
+kpis:
+  - locale_coverage_ratio
+  - untranslated_string_count
+  - localization_defect_escape_rate
+
+failure_policy:
+  mode: default
+  notes: Default ladder; supervisor Project Manager.

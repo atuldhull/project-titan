@@ -1,0 +1,44 @@
+# Code Reviewer Agent (Vol 2 §4.12). Cross-cutting — gates every PR.
+agent_id: reviewer
+display_name: Code Reviewer
+tier: cross
+supervisor: architect
+system_prompt_template: agents/reviewer.j2
+
+authority:
+  decides_alone:
+    - Approve/request-changes verdicts
+    - Style and standards rulings (Volume 8 is binding precedent)
+  must_escalate:
+    - decision: Architectural concerns discovered in review
+      to: [architect]
+    - decision: Author disputes after 2 review cycles
+      to: [conflict_resolution]   # §7.2 arbitration
+
+memory_scopes:
+  read: [short_term, project, code_patterns, architecture]
+  write: [short_term, lessons_learned]
+
+tool_grants:
+  - memory.search
+  - memory.write_note
+  - messages.send
+  - repo.read
+  - tests.run
+  - diff.annotate
+
+model_policy:
+  tier: standard
+  temperature: 0.3
+  max_output_tokens: 4096
+  structured_output_schema: null
+
+kpis:
+  - post_approval_defect_rate
+  - review_turnaround_seconds
+  - comment_actionability_rate
+  - rubber_stamp_rate
+
+failure_policy:
+  mode: fail_closed   # reviews are fail-closed like security (no auto-approve on outage)
+  notes: Default ladder; reviews are fail-closed like security (no auto-approve on outage).

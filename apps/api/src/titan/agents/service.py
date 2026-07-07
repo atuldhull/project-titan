@@ -18,12 +18,23 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from titan.agents import repository as repo
+from titan.agents.definition import (
+    AgentDefinition,
+    Authority,
+    Escalation,
+    FailurePolicy,
+    MemoryScopes,
+    ModelPolicy,
+)
+from titan.agents.loader import RosterError, load_roster_cached
+from titan.agents.registry import AgentRegistry
 from titan.db import uuid7
 from titan.events.service import STREAM_EVENTS_DOMAIN, write_event
 from titan.gateway.dto import JsonbDict, RejectNullFields
 from titan.gateway.pagination import Keyset, Page
 from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import not_found
+from titan.settings import Settings
 
 # The 14-role roster (Vol 2; §6 stores role as free text, the API constrains it).
 AgentRole = Literal[
@@ -194,17 +205,60 @@ async def resume_agent(conn: AsyncConnection, agent_id: uuid.UUID, actor: str) -
     return agent
 
 
+# ---------------------------------------------------------------------------
+# Declarative agent roster (Phase 26; Vol 2 §2.1, TITAN-AGT-001/006/008).
+#
+# The `Agent` rows above are the *runtime instances* (per-project, with live
+# status); the `AgentDefinition` roster below is the *role contract* loaded from
+# YAML. Both are owned by this module and cross the boundary only through this
+# service — the loader/registry stay private, as do the ORM models.
+# ---------------------------------------------------------------------------
+
+
+def load_roster(settings: Settings) -> AgentRegistry:
+    """Load + validate the declarative roster from the configured YAML dir.
+
+    Raises :class:`RosterError` on a malformed or incomplete roster — the
+    lifespan lets that propagate so a bad roster refuses to boot (TITAN-AGT-001).
+    """
+    return load_roster_cached(settings.agents_config_dir)
+
+
+def list_definitions(registry: AgentRegistry) -> list[AgentDefinition]:
+    """Every role contract, tier-then-id ordered (the dashboard roster view)."""
+    return list(registry.all())
+
+
+def get_definition(registry: AgentRegistry, agent_id: str) -> AgentDefinition:
+    """One role contract by agent_id; 404 if the roster has no such role."""
+    definition = registry.get(agent_id)
+    if definition is None:
+        raise not_found("agent definition")
+    return definition
+
+
 __all__ = [
     "AgentCreate",
+    "AgentDefinition",
     "AgentOut",
     "AgentPatch",
+    "AgentRegistry",
     "AgentRole",
     "AgentStatus",
+    "Authority",
+    "Escalation",
+    "FailurePolicy",
+    "MemoryScopes",
+    "ModelPolicy",
+    "RosterError",
     "agent_exists",
     "agent_in_project",
     "create_agent",
     "get_agent",
+    "get_definition",
     "list_agents",
+    "list_definitions",
+    "load_roster",
     "pause_agent",
     "resume_agent",
     "update_agent",

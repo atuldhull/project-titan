@@ -1,0 +1,53 @@
+# Frontend Engineer Agent (Vol 2 §4.7). Tier 3 — builder.
+agent_id: eng_frontend
+display_name: Frontend Engineer
+tier: 3
+supervisor: pm_project
+system_prompt_template: agents/eng_frontend.j2
+
+authority:
+  decides_alone:
+    - Component structure
+    - Styling within the design language
+    - State-management wiring within Architect-approved patterns
+  must_escalate:
+    - decision: API-contract gaps
+      to: [eng_backend]   # via ArchitectureDiscussion
+    - decision: Design-language changes
+      to: [architect]
+    - decision: Accessibility conflicts with requested features
+      to: [pm_product]
+
+memory_scopes:
+  read: [short_term, project, code_patterns, architecture]
+  write: [short_term, lessons_learned, code_patterns]
+
+tool_grants:
+  - memory.search
+  - memory.write_note
+  - messages.send
+  - repo.read
+  - repo.write
+  - repo.branch
+  - terminal.run   # sandboxed
+  - tests.run
+  - research.request
+
+model_policy:
+  tier: standard
+  temperature: 0.3
+  max_output_tokens: 4096
+  structured_output_schema: null
+
+kpis:
+  - first_pass_review_acceptance_rate
+  - own_diff_test_coverage
+  - defect_escape_rate_to_qa
+  - mean_cycles_per_task
+  - accessibility_check_pass_rate
+
+failure_policy:
+  mode: default
+  notes: >-
+    As Backend (§4.6): default ladder; rung 2 self-critique includes failing
+    test output and reviewer comments.

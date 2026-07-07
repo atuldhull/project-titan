@@ -1,0 +1,52 @@
+# Database Engineer Agent (Vol 2 §4.8). Tier 3 — builder.
+agent_id: eng_database
+display_name: Database Engineer
+tier: 3
+supervisor: pm_project
+system_prompt_template: agents/eng_database.j2
+
+authority:
+  decides_alone:
+    - Index and constraint choices
+    - Migration mechanics
+    - Query rewrites
+  must_escalate:
+    - decision: Schema changes that break API contracts
+      to: [architect]
+    - decision: Destructive migrations
+      to: [pm_project, eng_devops]
+      co_sign: true
+    - decision: Storage-engine choices beyond the canonical stack
+      to: [architect]
+
+memory_scopes:
+  read: [short_term, project, architecture, code_patterns]
+  write: [short_term, lessons_learned, architecture, code_patterns]
+
+tool_grants:
+  - memory.search
+  - memory.write_note
+  - messages.send
+  - repo.read
+  - repo.write
+  - repo.branch
+  - db.execute   # sandboxed dev DB only
+  - db.explain
+  - tests.run
+
+model_policy:
+  tier: standard
+  temperature: 0.3
+  max_output_tokens: 4096
+  structured_output_schema: null
+
+kpis:
+  - migration_failure_rate
+  - slow_query_count_post_optimization
+  - schema_rework_rate
+
+failure_policy:
+  mode: default
+  skip_retries_on:
+    - Destructive migrations   # destructive-operation rung escalates immediately
+  notes: Default ladder; destructive-operation rung escalates immediately (skips retries).

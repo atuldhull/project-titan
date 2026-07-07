@@ -1,0 +1,50 @@
+# Project Manager Agent (Vol 2 §4.5). Tier 2 — day-to-day coordination.
+agent_id: pm_project
+display_name: Project Manager
+tier: 2
+supervisor: orchestrator
+system_prompt_template: agents/pm_project.j2
+
+authority:
+  decides_alone:
+    - Task assignment and reassignment
+    - Estimates
+    - Task reopening
+    - Intra-sprint reordering
+  must_escalate:
+    - decision: Sprint-goal risk
+      to: [orchestrator]
+    - decision: Repeated failure by one agent on one task (>= 3 cycles, rule §7.5)
+      to: [orchestrator]
+    - decision: Inter-agent conflicts it cannot settle in one round
+      to: [conflict_resolution]
+
+memory_scopes:
+  read: [short_term, project]
+  write: [short_term, lessons_learned, project]
+
+tool_grants:
+  - memory.search
+  - memory.write_note
+  - messages.send
+  - tasks.create
+  - tasks.read
+  - tasks.update
+  - tasks.delete
+  - kanban.update
+  - metrics.read
+
+model_policy:
+  tier: fast
+  temperature: 0.2
+  max_output_tokens: 2048
+  structured_output_schema: null
+
+kpis:
+  - on_time_task_completion_rate
+  - blocker_mttd_seconds
+  - task_reopen_rate
+  - agent_utilization_balance
+
+failure_policy:
+  mode: default   # default ladder; supervisor Orchestrator

@@ -61,6 +61,84 @@
         "title": "AgentCreate",
         "type": "object"
       },
+      "AgentDefinition": {
+        "additionalProperties": false,
+        "description": "The complete, validated contract for one agent role (\u00a72.1).\n\nAll eight \u00a72.1 field-groups are required \u2014 ``extra=\"forbid\"`` plus the lack\nof top-level defaults means a missing or misspelled field fails validation,\nsatisfying TITAN-AGT-001's \"a missing field fails CI\".",
+        "properties": {
+          "agent_id": {
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "authority": {
+            "$ref": "#/components/schemas/Authority"
+          },
+          "display_name": {
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "failure_policy": {
+            "$ref": "#/components/schemas/FailurePolicy"
+          },
+          "kpis": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Kpis",
+            "type": "array"
+          },
+          "memory_scopes": {
+            "$ref": "#/components/schemas/MemoryScopes"
+          },
+          "model_policy": {
+            "$ref": "#/components/schemas/ModelPolicy"
+          },
+          "supervisor": {
+            "minLength": 1,
+            "title": "Supervisor",
+            "type": "string"
+          },
+          "system_prompt_template": {
+            "minLength": 1,
+            "title": "System Prompt Template",
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              "cross"
+            ],
+            "title": "Tier"
+          },
+          "tool_grants": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tool Grants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "agent_id",
+          "display_name",
+          "tier",
+          "supervisor",
+          "system_prompt_template",
+          "authority",
+          "memory_scopes",
+          "tool_grants",
+          "model_policy",
+          "kpis",
+          "failure_policy"
+        ],
+        "title": "AgentDefinition",
+        "type": "object"
+      },
       "AgentOut": {
         "properties": {
           "config": {
@@ -322,6 +400,37 @@
           "version"
         ],
         "title": "ArtifactOut",
+        "type": "object"
+      },
+      "Authority": {
+        "additionalProperties": false,
+        "description": "What the agent decides alone vs. must escalate (\u00a72.1.3).\n\n``veto`` marks a hard blocking power: only the Security agent (\u00a74.11 / \u00a77.4)\nholds it in the default roster, and the runtime enforces it (TITAN-AGT-011).",
+        "properties": {
+          "decides_alone": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Decides Alone",
+            "type": "array"
+          },
+          "must_escalate": {
+            "items": {
+              "$ref": "#/components/schemas/Escalation"
+            },
+            "title": "Must Escalate",
+            "type": "array"
+          },
+          "veto": {
+            "default": false,
+            "title": "Veto",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "decides_alone",
+          "must_escalate"
+        ],
+        "title": "Authority",
         "type": "object"
       },
       "Board": {
@@ -933,6 +1042,83 @@
         "title": "EmbeddingsResponse",
         "type": "object"
       },
+      "Escalation": {
+        "additionalProperties": false,
+        "description": "One ``must_escalate`` decision class and where it escalates to (\u00a72.1.3).\n\n``to`` is one or more targets: agent_ids, or one of\n:data:`SPECIAL_ESCALATION_TARGETS`. ``co_sign=True`` marks a decision that\nrequires *both* named parties to approve (e.g. Backend's \"new dependencies \u2192\nArchitect + Security\"), which the runtime enforces per TITAN-AGT-011.",
+        "properties": {
+          "co_sign": {
+            "default": false,
+            "title": "Co Sign",
+            "type": "boolean"
+          },
+          "decision": {
+            "minLength": 1,
+            "title": "Decision",
+            "type": "string"
+          },
+          "to": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "To",
+            "type": "array"
+          }
+        },
+        "required": [
+          "decision",
+          "to"
+        ],
+        "title": "Escalation",
+        "type": "object"
+      },
+      "FailurePolicy": {
+        "additionalProperties": false,
+        "description": "Overrides to the default \u00a72.2 recovery ladder (\u00a72.1.8).\n\n``mode`` captures the fail-open/closed posture the runtime enforces;\n``escalates_to_human`` (CEO \u00a74.1: no supervisor agent) and\n``watchdog_restart`` (Orchestrator \u00a74.2 / TITAN-AGT-009: non-LLM watchdog)\nare the other mechanically-checkable deltas. ``skip_retries_on`` lists\ndecision classes that bypass the retry rungs and escalate immediately (DB\n\u00a74.8: destructive migrations). ``notes`` records the remaining prose delta\nverbatim for prompt rendering and audit.",
+        "properties": {
+          "escalates_to_human": {
+            "default": false,
+            "title": "Escalates To Human",
+            "type": "boolean"
+          },
+          "mode": {
+            "default": "default",
+            "enum": [
+              "default",
+              "fail_open",
+              "fail_closed"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "skip_retries_on": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Skip Retries On",
+            "type": "array"
+          },
+          "watchdog_restart": {
+            "default": false,
+            "title": "Watchdog Restart",
+            "type": "boolean"
+          }
+        },
+        "title": "FailurePolicy",
+        "type": "object"
+      },
       "Graph": {
         "properties": {
           "edges": {
@@ -1120,6 +1306,48 @@
           "scope"
         ],
         "title": "MeResponse",
+        "type": "object"
+      },
+      "MemoryScopes": {
+        "additionalProperties": false,
+        "description": "Read/write grants over the Volume 5 memory scopes (\u00a72.1.4).",
+        "properties": {
+          "read": {
+            "items": {
+              "enum": [
+                "short_term",
+                "project",
+                "organization",
+                "code_patterns",
+                "architecture",
+                "lessons_learned"
+              ],
+              "type": "string"
+            },
+            "title": "Read",
+            "type": "array"
+          },
+          "write": {
+            "items": {
+              "enum": [
+                "short_term",
+                "project",
+                "organization",
+                "code_patterns",
+                "architecture",
+                "lessons_learned"
+              ],
+              "type": "string"
+            },
+            "title": "Write",
+            "type": "array"
+          }
+        },
+        "required": [
+          "read",
+          "write"
+        ],
+        "title": "MemoryScopes",
         "type": "object"
       },
       "Message": {
@@ -1458,6 +1686,50 @@
           }
         },
         "title": "MilestonePatch",
+        "type": "object"
+      },
+      "ModelPolicy": {
+        "additionalProperties": false,
+        "description": "Which model tier, sampling, and output bounds the agent's turns use\n(\u00a72.1.6). ``structured_output_schema`` is a schema *reference* (a name);\nthe actual schema is composed at call time in Phase 28.",
+        "properties": {
+          "max_output_tokens": {
+            "exclusiveMinimum": 0.0,
+            "title": "Max Output Tokens",
+            "type": "integer"
+          },
+          "structured_output_schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structured Output Schema"
+          },
+          "temperature": {
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Temperature",
+            "type": "number"
+          },
+          "tier": {
+            "enum": [
+              "reasoning",
+              "standard",
+              "fast"
+            ],
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tier",
+          "temperature",
+          "max_output_tokens"
+        ],
+        "title": "ModelPolicy",
         "type": "object"
       },
       "NotificationOut": {
@@ -3189,6 +3461,73 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/agent-definitions": {
+      "get": {
+        "operationId": "list_agent_definitions_api_v1_agent_definitions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentDefinition"
+                  },
+                  "title": "Response List Agent Definitions Api V1 Agent Definitions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Agent Definitions",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/v1/agent-definitions/{agent_id}": {
+      "get": {
+        "operationId": "get_agent_definition_api_v1_agent_definitions__agent_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDefinition"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Agent Definition",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
     "/api/v1/agents": {
       "get": {
         "operationId": "list_agents_api_v1_agents_get",

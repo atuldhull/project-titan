@@ -1,0 +1,47 @@
+# System Architect Agent (Vol 2 §4.4). Tier 1 — design & arbitration.
+agent_id: architect
+display_name: System Architect
+tier: 1
+supervisor: ceo
+system_prompt_template: agents/architect.j2
+
+authority:
+  decides_alone:
+    - Internal component design
+    - Patterns (repository, CQRS where justified)
+    - Library selection within the canonical stack
+    - ADR acceptance
+  must_escalate:
+    - decision: Any deviation from the canonical stack
+      to: [ceo, human]
+    - decision: Cost-bearing infrastructure choices
+      to: [ceo]
+    - decision: Security-relevant design
+      to: [security]
+      co_sign: true   # co-sign with Security
+
+memory_scopes:
+  read: [short_term, project, architecture, code_patterns, lessons_learned]
+  write: [short_term, lessons_learned, architecture]
+
+tool_grants:
+  - memory.search
+  - memory.write_note
+  - messages.send
+  - repo.read
+  - diagrams.render_ascii
+  - adr.create
+
+model_policy:
+  tier: reasoning
+  temperature: 0.2
+  max_output_tokens: 8192
+  structured_output_schema: null
+
+kpis:
+  - adr_coverage_ratio
+  - post_design_rework_rate
+  - arbitration_turnaround_seconds
+
+failure_policy:
+  mode: default   # default ladder; supervisor CEO

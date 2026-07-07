@@ -1,0 +1,42 @@
+# Critic Agent (Vol 2 §4.16). Cross-cutting — adversarial, terminal-advisory.
+agent_id: critic
+display_name: Critic
+tier: cross
+supervisor: architect
+system_prompt_template: agents/critic.j2
+
+authority:
+  decides_alone:
+    - Critique content and severity labels (advisory only — the Critic never blocks; owners and gatekeepers decide)
+  # Terminal-advisory: nothing to escalate. Ignored Critical critiques are
+  # auto-logged to the owning agent's supervisor by the runtime.
+  must_escalate: []
+
+memory_scopes:
+  read: [short_term, project, lessons_learned, architecture]
+  write: [short_term, lessons_learned]
+
+tool_grants:
+  # Deliberately minimal (§4.16).
+  - memory.search
+  - memory.write_note
+  - messages.send
+  - repo.read
+
+model_policy:
+  tier: reasoning
+  temperature: 0.2
+  max_output_tokens: 8192
+  structured_output_schema: null
+
+kpis:
+  - critique_adoption_rate
+  - post_critique_defect_reduction
+  - false_alarm_rate
+
+failure_policy:
+  mode: fail_open   # Critic outage never blocks the pipeline (fail-open, logged)
+  notes: >-
+    Terminal-advisory; ignored Critical-severity critiques are auto-logged to
+    the owning agent's supervisor. Critic outage never blocks the pipeline
+    (fail-open, logged).

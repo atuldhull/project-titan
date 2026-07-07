@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+    "/api/v1/agent-definitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Agent Definitions */
+        get: operations["list_agent_definitions_api_v1_agent_definitions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-definitions/{agent_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Agent Definition */
+        get: operations["get_agent_definition_api_v1_agent_definitions__agent_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents": {
         parameters: {
             query?: never;
@@ -780,6 +814,37 @@ export interface components {
              */
             role: "ceo" | "pm" | "project_manager" | "architect" | "backend" | "frontend" | "db" | "devops" | "qa" | "security" | "reviewer" | "docs" | "research" | "memory";
         };
+        /**
+         * AgentDefinition
+         * @description The complete, validated contract for one agent role (§2.1).
+         *
+         *     All eight §2.1 field-groups are required — ``extra="forbid"`` plus the lack
+         *     of top-level defaults means a missing or misspelled field fails validation,
+         *     satisfying TITAN-AGT-001's "a missing field fails CI".
+         */
+        AgentDefinition: {
+            /** Agent Id */
+            agent_id: string;
+            authority: components["schemas"]["Authority"];
+            /** Display Name */
+            display_name: string;
+            failure_policy: components["schemas"]["FailurePolicy"];
+            /** Kpis */
+            kpis: string[];
+            memory_scopes: components["schemas"]["MemoryScopes"];
+            model_policy: components["schemas"]["ModelPolicy"];
+            /** Supervisor */
+            supervisor: string;
+            /** System Prompt Template */
+            system_prompt_template: string;
+            /**
+             * Tier
+             * @enum {unknown}
+             */
+            tier: 0 | 1 | 2 | 3 | "cross";
+            /** Tool Grants */
+            tool_grants: string[];
+        };
         /** AgentOut */
         AgentOut: {
             /** Config */
@@ -889,6 +954,24 @@ export interface components {
             storage_ref: string;
             /** Version */
             version: number;
+        };
+        /**
+         * Authority
+         * @description What the agent decides alone vs. must escalate (§2.1.3).
+         *
+         *     ``veto`` marks a hard blocking power: only the Security agent (§4.11 / §7.4)
+         *     holds it in the default roster, and the runtime enforces it (TITAN-AGT-011).
+         */
+        Authority: {
+            /** Decides Alone */
+            decides_alone: string[];
+            /** Must Escalate */
+            must_escalate: components["schemas"]["Escalation"][];
+            /**
+             * Veto
+             * @default false
+             */
+            veto: boolean;
         };
         /** Board */
         Board: {
@@ -1112,6 +1195,63 @@ export interface components {
             provider: string;
             usage: components["schemas"]["Usage"];
         };
+        /**
+         * Escalation
+         * @description One ``must_escalate`` decision class and where it escalates to (§2.1.3).
+         *
+         *     ``to`` is one or more targets: agent_ids, or one of
+         *     :data:`SPECIAL_ESCALATION_TARGETS`. ``co_sign=True`` marks a decision that
+         *     requires *both* named parties to approve (e.g. Backend's "new dependencies →
+         *     Architect + Security"), which the runtime enforces per TITAN-AGT-011.
+         */
+        Escalation: {
+            /**
+             * Co Sign
+             * @default false
+             */
+            co_sign: boolean;
+            /** Decision */
+            decision: string;
+            /** To */
+            to: string[];
+        };
+        /**
+         * FailurePolicy
+         * @description Overrides to the default §2.2 recovery ladder (§2.1.8).
+         *
+         *     ``mode`` captures the fail-open/closed posture the runtime enforces;
+         *     ``escalates_to_human`` (CEO §4.1: no supervisor agent) and
+         *     ``watchdog_restart`` (Orchestrator §4.2 / TITAN-AGT-009: non-LLM watchdog)
+         *     are the other mechanically-checkable deltas. ``skip_retries_on`` lists
+         *     decision classes that bypass the retry rungs and escalate immediately (DB
+         *     §4.8: destructive migrations). ``notes`` records the remaining prose delta
+         *     verbatim for prompt rendering and audit.
+         */
+        FailurePolicy: {
+            /**
+             * Escalates To Human
+             * @default false
+             */
+            escalates_to_human: boolean;
+            /**
+             * Mode
+             * @default default
+             * @enum {string}
+             */
+            mode: "default" | "fail_open" | "fail_closed";
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Skip Retries On
+             * @default []
+             */
+            skip_retries_on: string[];
+            /**
+             * Watchdog Restart
+             * @default false
+             */
+            watchdog_restart: boolean;
+        };
         /** Graph */
         Graph: {
             /** Edges */
@@ -1202,6 +1342,16 @@ export interface components {
              * Format: uuid
              */
             sub: string;
+        };
+        /**
+         * MemoryScopes
+         * @description Read/write grants over the Volume 5 memory scopes (§2.1.4).
+         */
+        MemoryScopes: {
+            /** Read */
+            read: ("short_term" | "project" | "organization" | "code_patterns" | "architecture" | "lessons_learned")[];
+            /** Write */
+            write: ("short_term" | "project" | "organization" | "code_patterns" | "architecture" | "lessons_learned")[];
         };
         /**
          * Message
@@ -1317,6 +1467,25 @@ export interface components {
             status?: ("open" | "closed") | null;
             /** Title */
             title?: string | null;
+        };
+        /**
+         * ModelPolicy
+         * @description Which model tier, sampling, and output bounds the agent's turns use
+         *     (§2.1.6). ``structured_output_schema`` is a schema *reference* (a name);
+         *     the actual schema is composed at call time in Phase 28.
+         */
+        ModelPolicy: {
+            /** Max Output Tokens */
+            max_output_tokens: number;
+            /** Structured Output Schema */
+            structured_output_schema?: string | null;
+            /** Temperature */
+            temperature: number;
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "reasoning" | "standard" | "fast";
         };
         /** NotificationOut */
         NotificationOut: {
@@ -1948,6 +2117,57 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_agent_definitions_api_v1_agent_definitions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDefinition"][];
+                };
+            };
+        };
+    };
+    get_agent_definition_api_v1_agent_definitions__agent_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDefinition"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     list_agents_api_v1_agents_get: {
         parameters: {
             query?: {

@@ -56,6 +56,9 @@ services:
       #                docker compose --profile local-llm up
       TITAN_MODELS_CONFIG_PATH: ${TITAN_MODELS_CONFIG_PATH:-/app/config/models.yaml}
       TITAN_PRICES_CONFIG_PATH: ${TITAN_PRICES_CONFIG_PATH:-/app/config/prices.yaml}
+      # Agent roster (Phase 26): the read-only config mount below also carries
+      # config/agents/*.yaml; a malformed/incomplete roster refuses to boot.
+      TITAN_AGENTS_CONFIG_DIR: ${TITAN_AGENTS_CONFIG_DIR:-/app/config/agents}
       TITAN_OLLAMA_BASE_URL: ${TITAN_OLLAMA_BASE_URL:-http://ollama:11434}
       # Per-task workspace jail root (Phase 20). On the writable tmpfs like
       # artifacts; the rootfs stays read-only. Sandbox code-exec containers are
@@ -123,6 +126,9 @@ services:
       # LLM gateway config (consumed once the run executor calls it, Phase 17).
       TITAN_MODELS_CONFIG_PATH: ${TITAN_MODELS_CONFIG_PATH:-/app/config/models.yaml}
       TITAN_PRICES_CONFIG_PATH: ${TITAN_PRICES_CONFIG_PATH:-/app/config/prices.yaml}
+      # Agent roster (Phase 26): the read-only config mount below also carries
+      # config/agents/*.yaml; a malformed/incomplete roster refuses to boot.
+      TITAN_AGENTS_CONFIG_DIR: ${TITAN_AGENTS_CONFIG_DIR:-/app/config/agents}
       TITAN_OLLAMA_BASE_URL: ${TITAN_OLLAMA_BASE_URL:-http://ollama:11434}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

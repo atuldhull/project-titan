@@ -16,6 +16,7 @@ from fastapi.openapi.utils import get_openapi
 
 from titan import clients
 from titan.agents import router as agents_router
+from titan.agents import service as agents_service
 from titan.gateway.idempotency import IdempotencyMiddleware
 from titan.gateway.middleware import RequestContextMiddleware
 from titan.gateway.openapi import problemify_openapi
@@ -72,6 +73,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+        # Phase 26: load + validate the declarative agent roster FIRST — a
+        # malformed or incomplete roster (TITAN-AGT-001/008) raises here, so the
+        # process refuses to boot rather than starting with broken authority.
+        application.state.agent_registry = agents_service.load_roster(active_settings)
         application.state.engine = clients.create_engine(active_settings)
         application.state.redis = clients.create_redis(active_settings)
         application.state.http = clients.create_http_client(active_settings)

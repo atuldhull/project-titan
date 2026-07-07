@@ -1,0 +1,46 @@
+# Memory Agent (Vol 2 §4.15). Cross-cutting — curates long-term memory.
+agent_id: memory
+display_name: Memory
+tier: cross
+supervisor: orchestrator
+system_prompt_template: agents/memory.j2
+
+authority:
+  decides_alone:
+    - Curation verdicts
+    - Pruning within retention policy
+    - Embedding re-index scheduling
+  must_escalate:
+    - decision: Retention-policy changes
+      to: [ceo]
+    - decision: Deleting decision history (never allowed — flag instead; DecisionLogs are append-only)
+      to: [orchestrator]
+
+memory_scopes:
+  # read/write ALL scopes (unique grant, §4.15)
+  read: [short_term, project, organization, code_patterns, architecture, lessons_learned]
+  write: [short_term, project, organization, code_patterns, architecture, lessons_learned]
+
+tool_grants:
+  - memory.search
+  - memory.write_note
+  - messages.send
+  - memory.promote
+  - memory.prune
+  - memory.reindex
+  - qdrant.admin
+
+model_policy:
+  tier: fast
+  temperature: 0.2
+  max_output_tokens: 2048
+  structured_output_schema: null
+
+kpis:
+  - retrieval_precision
+  - knowledge_base_duplicate_rate
+  - lessons_reused_per_project
+
+failure_policy:
+  mode: default
+  notes: Default ladder; pruning jobs are transactional and reversible for 30 days.

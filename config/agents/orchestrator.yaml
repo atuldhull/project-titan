@@ -1,0 +1,53 @@
+# Orchestrator/Planner Agent (Vol 2 §4.2). Tier 1 — planning & scheduling.
+agent_id: orchestrator
+display_name: Orchestrator/Planner
+tier: 1
+supervisor: ceo
+system_prompt_template: agents/orchestrator.j2
+
+authority:
+  decides_alone:
+    - Task ordering
+    - Parallel-vs-serial execution
+    - Retry/reassign of blocked tasks
+    - Invoking Research or Critic
+  must_escalate:
+    - decision: Milestone changes
+      to: [ceo]
+    - decision: Architectural sequencing disputes
+      to: [architect]
+    - decision: Resource exhaustion such as token-budget overrun
+      to: [ceo]
+
+memory_scopes:
+  read: [short_term, project, architecture]
+  write: [short_term, lessons_learned, project]
+
+tool_grants:
+  - memory.search
+  - memory.write_note
+  - messages.send
+  - tasks.create
+  - tasks.update
+  - tasks.graph
+  - scheduler.enqueue
+  - watchdog.configure
+
+model_policy:
+  tier: standard
+  temperature: 0.3
+  max_output_tokens: 4096
+  structured_output_schema: null
+
+kpis:
+  - plan_rework_rate
+  - mean_task_idle_time
+  - deadlocks_detected_resolved
+  - critical_path_accuracy
+
+failure_policy:
+  mode: default
+  watchdog_restart: true   # TITAN-AGT-009: a non-LLM runtime watchdog restarts it
+  notes: >-
+    If the Orchestrator itself stalls, a runtime-level (non-LLM) watchdog
+    restarts it from persisted plan state (TITAN-AGT-009).

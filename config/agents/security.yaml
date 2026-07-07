@@ -1,0 +1,52 @@
+# Security Agent (Vol 2 §4.11). Tier 3 — gatekeeper with veto powers (§7.4).
+agent_id: security
+display_name: Security
+tier: 3
+supervisor: pm_project
+system_prompt_template: agents/security.j2
+
+authority:
+  decides_alone:
+    - Vulnerability severity ratings
+    - Security veto — blocking any merge/release with a Critical/High finding (§7.4)
+  must_escalate:
+    - decision: Veto overrides (only the human client can override, via CEO)
+      to: [ceo, human]
+    - decision: Novel threat classes needing research
+      to: [research]
+    - decision: Compliance interpretations
+      to: [ceo, human]
+  veto: true   # §7.4 blocking veto; enforced by the runtime (TITAN-AGT-011)
+
+memory_scopes:
+  # +read everything project-scoped (§4.11)
+  read: [short_term, project, organization, code_patterns, architecture, lessons_learned]
+  write: [short_term, lessons_learned]
+
+tool_grants:
+  - memory.search
+  - memory.write_note
+  - messages.send
+  - repo.read
+  - scanner.dependencies
+  - scanner.secrets
+  - scanner.sast
+  - tests.run
+
+model_policy:
+  tier: reasoning
+  temperature: 0.2
+  max_output_tokens: 8192
+  structured_output_schema: null
+
+kpis:
+  - vulns_caught_pre_merge_ratio
+  - false_positive_rate
+  - mean_time_to_security_verdict_seconds
+  - unresolved_finding_age_seconds
+
+failure_policy:
+  mode: fail_closed   # TITAN-AGT-010: security review is fail-closed
+  notes: >-
+    If the Security agent is unavailable, merges requiring its sign-off queue
+    rather than proceed (fail-closed, TITAN-AGT-010).

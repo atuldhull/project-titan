@@ -1,0 +1,53 @@
+# Backend Engineer Agent (Vol 2 §4.6). Tier 3 — builder.
+agent_id: eng_backend
+display_name: Backend Engineer
+tier: 3
+supervisor: pm_project
+system_prompt_template: agents/eng_backend.j2
+
+authority:
+  decides_alone:
+    - Implementation details within the API contract
+    - Internal refactors
+    - Library helpers already approved in code_patterns
+  must_escalate:
+    - decision: Contract changes
+      to: [architect]   # via ArchitectureDiscussion
+    - decision: New dependencies
+      to: [architect, security]
+      co_sign: true
+    - decision: Performance targets unmet after 2 attempts
+      to: [pm_project]
+
+memory_scopes:
+  read: [short_term, project, code_patterns, architecture]
+  write: [short_term, lessons_learned, code_patterns]
+
+tool_grants:
+  - memory.search
+  - memory.write_note
+  - messages.send
+  - repo.read
+  - repo.write
+  - repo.branch
+  - terminal.run   # sandboxed
+  - tests.run
+  - research.request
+
+model_policy:
+  tier: standard
+  temperature: 0.3
+  max_output_tokens: 4096
+  structured_output_schema: null
+
+kpis:
+  - first_pass_review_acceptance_rate
+  - own_diff_test_coverage
+  - defect_escape_rate_to_qa
+  - mean_cycles_per_task
+
+failure_policy:
+  mode: default
+  notes: >-
+    Default ladder; rung 2 self-critique explicitly includes failing test
+    output and reviewer comments.

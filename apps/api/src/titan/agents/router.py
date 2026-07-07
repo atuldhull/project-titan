@@ -13,7 +13,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
 
 from titan.agents import service
-from titan.agents.service import AgentCreate, AgentOut, AgentPatch
+from titan.agents.service import AgentCreate, AgentDefinition, AgentOut, AgentPatch
 from titan.gateway.concurrency import require_if_match, set_etag, version_conflict
 from titan.gateway.pagination import Page, Pagination, keyset_from
 from titan.gateway.rbac import Requires
@@ -94,6 +94,25 @@ async def resume_agent(
         agent = await service.resume_agent(conn, agent_id, str(principal.sub))
     set_etag(response, agent.version)
     return agent
+
+
+# --- Declarative roster (Phase 26; Vol 2 §2.1, TITAN-AGT-008) ---------------
+# The *definitions* (role contracts loaded from YAML) alongside the runtime
+# *instances* above, on the same agents router — one agents API, not two. Read
+# from the in-memory registry built + validated at startup; any `agent:read`
+# principal may browse the roster (Agent Status view, TITAN-AGT-008).
+
+
+@router.get("/agent-definitions", response_model=list[AgentDefinition])
+async def list_agent_definitions(request: Request, principal: _Read) -> list[AgentDefinition]:
+    return service.list_definitions(request.app.state.agent_registry)
+
+
+@router.get("/agent-definitions/{agent_id}", response_model=AgentDefinition)
+async def get_agent_definition(
+    request: Request, agent_id: str, principal: _Read
+) -> AgentDefinition:
+    return service.get_definition(request.app.state.agent_registry, agent_id)
 
 
 def mount(app: FastAPI) -> None:

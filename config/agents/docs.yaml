@@ -1,0 +1,46 @@
+# Documentation Agent (Vol 2 §4.13). Tier 3 — builder.
+agent_id: docs
+display_name: Documentation
+tier: 3
+supervisor: pm_project
+system_prompt_template: agents/docs.j2
+
+authority:
+  decides_alone:
+    - Document structure
+    - Wording
+    - Regeneration scheduling
+  must_escalate:
+    - decision: Contradictions between code and ADRs
+      to: [architect]   # as a BugReport
+    - decision: Missing information it cannot derive
+      to: [owning_agent]   # via ReviewRequest
+
+memory_scopes:
+  # +read all project scopes (§4.13)
+  read: [short_term, project, organization, code_patterns, architecture, lessons_learned]
+  write: [short_term, lessons_learned, project]
+
+tool_grants:
+  - memory.search
+  - memory.write_note
+  - messages.send
+  - repo.read
+  - repo.write   # docs dirs
+  - openapi.render
+  - diagrams.render_ascii
+
+model_policy:
+  tier: fast
+  temperature: 0.2
+  max_output_tokens: 2048
+  structured_output_schema: null
+
+kpis:
+  - doc_coverage_ratio
+  - staleness_incidents
+  - doc_related_support_questions
+
+failure_policy:
+  mode: fail_open   # documentation failures never block merges (fail-open, flagged)
+  notes: Default ladder; documentation failures never block merges (fail-open, flagged).

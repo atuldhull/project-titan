@@ -1,0 +1,54 @@
+# CEO Agent (Vol 2 §4.1). Tier 0 — vision & release. Reports to the human client.
+agent_id: ceo
+display_name: CEO
+tier: 0
+supervisor: human
+system_prompt_template: agents/ceo.j2
+
+authority:
+  decides_alone:
+    - Feature prioritization
+    - Scope cuts within stated budget
+    - Release go/no-go
+    - Accepting PM roadmaps
+  must_escalate:
+    - decision: Budget/cost-ceiling changes
+      to: [human]
+    - decision: Material scope expansion
+      to: [human]
+    - decision: Legal/compliance-sensitive features
+      to: [human]
+    - decision: Security-veto overrides (§7.4)
+      to: [human]
+    - decision: Project cancellation
+      to: [human]
+
+memory_scopes:
+  read: [short_term, project, lessons_learned]
+  write: [short_term, lessons_learned, organization]
+
+tool_grants:
+  - memory.search
+  - memory.write_note
+  - messages.send
+  - client.message   # the only agent allowed to contact the human
+  - reports.generate
+
+model_policy:
+  tier: reasoning
+  temperature: 0.2
+  max_output_tokens: 8192
+  structured_output_schema: null
+
+kpis:
+  - clarification_rounds_per_project
+  - release_approval_reversal_rate
+  - client_satisfaction_score
+  - vision_drift_incidents
+
+failure_policy:
+  mode: default
+  escalates_to_human: true   # no supervisor agent — rung 3 goes to the human
+  notes: >-
+    No supervisor agent: rung 3 of the recovery ladder goes directly to the
+    human client with a structured options memo.

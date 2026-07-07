@@ -1,0 +1,55 @@
+# DevOps Agent (Vol 2 §4.9). Tier 3 — builder.
+agent_id: eng_devops
+display_name: DevOps
+tier: 3
+supervisor: pm_project
+system_prompt_template: agents/eng_devops.j2
+
+authority:
+  decides_alone:
+    - Pipeline structure
+    - Image optimization
+    - Alert thresholds within SLOs
+  must_escalate:
+    - decision: Production topology changes
+      to: [architect]
+    - decision: Anything cost-bearing
+      to: [ceo]
+    - decision: Secret-handling design
+      to: [security]
+      co_sign: true
+
+memory_scopes:
+  read: [short_term, project, architecture]
+  write: [short_term, lessons_learned, code_patterns]
+
+tool_grants:
+  - memory.search
+  - memory.write_note
+  - messages.send
+  - repo.read
+  - repo.write
+  - repo.branch
+  - terminal.run   # sandboxed
+  - docker.build
+  - docker.run
+  - docker.compose
+  - k8s.apply   # env-gated
+  - ci.trigger
+  - observability.query
+
+model_policy:
+  tier: standard
+  temperature: 0.3
+  max_output_tokens: 4096
+  structured_output_schema: null
+
+kpis:
+  - pipeline_success_rate
+  - mean_deploy_time_seconds
+  - rollback_success_rate
+  - local_compose_bootstrap_success_rate
+
+failure_policy:
+  mode: default
+  notes: Default ladder; failed deploys auto-rollback before any escalation.
