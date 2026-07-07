@@ -27,6 +27,13 @@ from titan.agents.definition import (
     ModelPolicy,
 )
 from titan.agents.loader import RosterError, load_roster_cached
+from titan.agents.model_policy import (
+    ModelPolicyConfig,
+    ModelPolicyError,
+    ModelSelection,
+    load_model_policy_cached,
+)
+from titan.agents.prompts import PromptComposer, build_composer
 from titan.agents.registry import AgentRegistry
 from titan.db import uuid7
 from titan.events.service import STREAM_EVENTS_DOMAIN, write_event
@@ -237,6 +244,42 @@ def get_definition(registry: AgentRegistry, agent_id: str) -> AgentDefinition:
     return definition
 
 
+# ---------------------------------------------------------------------------
+# Prompt composition + model policy (Phase 28; Vol 2 §8).
+# ---------------------------------------------------------------------------
+
+
+def build_prompt_composer(settings: Settings) -> PromptComposer:
+    """The Jinja2 system-prompt composer rooted at the configured templates dir."""
+    return build_composer(settings.agent_prompts_dir)
+
+
+def compose_system_prompt(
+    composer: PromptComposer,
+    definition: AgentDefinition,
+    *,
+    task_context: str = "",
+    memory: str = "",
+) -> str:
+    """Compose an agent's full system prompt in the §8 seven-part order. The
+    authority section is rendered from the definition's YAML — the single source
+    of truth (R5)."""
+    return composer.compose(definition, task_context=task_context, memory=memory)
+
+
+def load_model_policy(settings: Settings) -> ModelPolicyConfig:
+    """Load + validate the agent model policy (§8)."""
+    return load_model_policy_cached(settings.model_policy_path)
+
+
+def resolve_model(
+    policy: ModelPolicyConfig, agent_id: str, *, profile: str | None
+) -> ModelSelection:
+    """Resolve an agent to its concrete provider/model for this turn (§8),
+    honouring the active profile and the optional Critic pin."""
+    return policy.resolve(agent_id, profile=profile)
+
+
 __all__ = [
     "AgentCreate",
     "AgentDefinition",
@@ -250,16 +293,24 @@ __all__ = [
     "FailurePolicy",
     "MemoryScopes",
     "ModelPolicy",
+    "ModelPolicyConfig",
+    "ModelPolicyError",
+    "ModelSelection",
+    "PromptComposer",
     "RosterError",
     "agent_exists",
     "agent_in_project",
+    "build_prompt_composer",
+    "compose_system_prompt",
     "create_agent",
     "get_agent",
     "get_definition",
     "list_agents",
     "list_definitions",
+    "load_model_policy",
     "load_roster",
     "pause_agent",
+    "resolve_model",
     "resume_agent",
     "update_agent",
 ]

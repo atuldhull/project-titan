@@ -139,6 +139,14 @@ class Settings(BaseSettings):
     # the container mounts the repo config/ and sets an absolute path.
     agents_config_dir: str = "config/agents"
 
+    # --- Prompt composition + model policy (Phase 28; Vol 2 §8) ---
+    # Jinja2 system-prompt templates root (templates are agents/<id>.j2 under it).
+    agent_prompts_dir: str = "config/prompts"
+    # agent -> tier -> provider/model policy (TITAN-AGT-021, config-only switching).
+    model_policy_path: str = "config/model-policy.yaml"
+    # Active model-policy profile: None = cloud tiers; "local-free" = offline Ollama.
+    model_policy_profile: str | None = None
+
     # OTLP trace export (TITAN-BCK-025). Empty = tracing disabled (no
     # collector running); Compose obs profile sets http://otel-collector:4317.
     otel_exporter_otlp_endpoint: str = ""

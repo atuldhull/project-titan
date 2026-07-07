@@ -1,0 +1,43 @@
+# PROJECT TITAN — agent model policy (Vol 2 §8, TITAN-AGT-021/022/026).
+#
+# Which model each AGENT uses is configuration only: an agent maps to a tier, a
+# tier maps to a provider+model. Switching any agent's provider/model is a change
+# HERE ONLY — no code (TITAN-AGT-021). The gateway (config/models.yaml) still owns
+# provider connection details, pricing, and fallbacks; this file owns the
+# agent -> tier -> model policy the runtime resolves per turn.
+
+tiers:
+  reasoning: { provider: anthropic, model: claude-opus-latest, temperature: 0.2 }
+  standard: { provider: anthropic, model: claude-sonnet-latest, temperature: 0.3 }
+  fast: { provider: openai, model: gpt-mini-latest, temperature: 0.2 }
+
+profiles:
+  # Laptop / offline profile (hard requirement, TITAN-AGT-007): overrides each
+  # tier to a local Ollama model. Select it with TITAN_MODEL_POLICY_PROFILE.
+  local-free:
+    reasoning: { provider: ollama, model: qwen2.5-coder:32b }
+    standard: { provider: ollama, model: qwen2.5-coder:14b }
+    fast: { provider: ollama, model: llama3.2:3b }
+
+agents:
+  ceo: reasoning
+  architect: reasoning
+  critic: reasoning
+  eng_backend: standard
+  eng_frontend: standard
+  eng_database: standard
+  eng_devops: standard
+  reviewer: standard
+  security: reasoning
+  qa: standard
+  pm_product: standard
+  pm_project: fast
+  orchestrator: standard
+  docs: fast
+  research: fast
+  memory: fast
+
+# TITAN-AGT-026 (optional, off by default): pin the Critic's turns to a different
+# provider than the artifact author (multi-model critique). Uncomment to enable —
+# no code change, config only.
+# critic_pin: { provider: openai, model: gpt-mini-latest, temperature: 0.2 }

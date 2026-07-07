@@ -55,13 +55,23 @@ def resolve_config_dir(configured: str | Path) -> Path:
     the caller fails with a clear in-project "not found" rather than a silent
     wrong roster.
     """
+    return _resolve(configured, want_dir=True)
+
+
+def resolve_config_file(configured: str | Path) -> Path:
+    """Like :func:`resolve_config_dir`, but resolves a config FILE (e.g.
+    ``config/model-policy.yaml``) rather than a directory."""
+    return _resolve(configured, want_dir=False)
+
+
+def _resolve(configured: str | Path, *, want_dir: bool) -> Path:
     path = Path(configured)
     if path.is_absolute():
         return path
     cwd = Path.cwd()
     for base in (cwd, *cwd.parents):
         candidate = base / path
-        if candidate.is_dir():
+        if candidate.is_dir() if want_dir else candidate.is_file():
             return candidate
         if (base / ".git").exists():  # repo boundary — do not search above it
             break
@@ -168,4 +178,5 @@ __all__ = [
     "load_roster",
     "load_roster_cached",
     "resolve_config_dir",
+    "resolve_config_file",
 ]
