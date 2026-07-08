@@ -37,6 +37,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "audit:read",
         # Resolve admin-risk tool approvals (Vol 7 §4.4, TITAN-INT-022).
         "tool_approval:write",
+        # Write durable memory (Vol 5 Memory Service, Phase 33).
+        "memory:write",
         "*:read",
     ],
     "maintainer": [
@@ -59,6 +61,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "task:transition",
         "run:create",
         "message:write",
+        # Agents write durable memory through the Memory Service (Vol 5, Phase 33).
+        "memory:write",
         "workspace:read",
         "workspace:write",
         "terminal:run",

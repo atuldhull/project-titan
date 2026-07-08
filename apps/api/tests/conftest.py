@@ -85,6 +85,9 @@ def migrated_engine(schema_url: str) -> Iterator[AsyncEngine]:
         try:
             async with engine.begin() as conn:
                 await conn.execute(text("DROP SCHEMA public CASCADE"))
+                # Non-public schemas (brain, Phase 33) survive a public drop, so
+                # clear them too or the from-base re-migration hits existing tables.
+                await conn.execute(text("DROP SCHEMA IF EXISTS brain CASCADE"))
                 await conn.execute(text("CREATE SCHEMA public"))
         finally:
             await engine.dispose()

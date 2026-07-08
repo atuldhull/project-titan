@@ -1,9 +1,296 @@
 """Public service interface of the `memory` module (TITAN-BCK-004).
 
-Responsibility: memory API facade over PostgreSQL and Qdrant (internals: Vol 5).
-Owns: memory_items and Qdrant collections.
+Responsibility: the Memory Service write path — Memory Events, the canonical
+record/chunk store, the transactional embedding outbox, and the append-only
+audit ledger (Vol 5 §4, §5.1, TITAN-BRN-001/005). Retrieval (§6) and the
+embedding worker (§5.1) land in later phases.
 
-Only this interface may be imported by other modules; routers, repositories,
-and ORM models stay private to the package. Pydantic v2 DTOs — never
-SQLAlchemy models — cross this boundary.
+Only this interface may be imported by other modules; the ORM models, the
+repository, and the chunker internals stay private to the package. Pydantic v2
+DTOs — never SQLAlchemy models — cross this boundary.
 """
+
+import json
+import uuid
+from datetime import datetime
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from titan.db import uuid7
+from titan.gateway.dto import JsonbDict
+from titan.gateway.problems import ProblemException, problem_type
+from titan.memory import repository as repo
+from titan.memory.chunker import CONTENT_TYPES, ContentType, get_chunker
+
+MemoryKind = Literal["episodic", "semantic", "procedural"]
+LedgerAction = Literal["read", "write", "promote", "prune", "supersede"]
+
+# Upper bound on a single memory body (chars). Distilled records are small; the
+# cap keeps the generated tsvector well under Postgres's ~1 MiB limit so an
+# oversized body is rejected at validation (422), never a 500 mid-write.
+MAX_BODY_MD_CHARS = 200_000
+
+
+def parse_scope(scope: str) -> uuid.UUID | None:
+    """The project id a scope names, or None for org scope (§3.2). Raises
+    ValueError on a malformed scope — 'org' | 'project:<uuid>' are the only
+    shapes (surfaces as a 422 from the Pydantic validator)."""
+    if scope == "org":
+        return None
+    if scope.startswith("project:"):
+        try:
+            return uuid.UUID(scope[len("project:") :])
+        except ValueError as exc:
+            raise ValueError("project scope must be 'project:<uuid>'") from exc
+    raise ValueError("scope must be 'org' or 'project:<uuid>'")
+
+
+# --- DTOs ------------------------------------------------------------------
+
+
+class MemoryEvent(BaseModel):
+    """One durable memory to write (§5.1). ``kind`` and ``scope`` are mandatory
+    (TITAN-BRN-001); ``content_type`` selects the chunker (§5.2)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: MemoryKind
+    scope: str = Field(min_length=1)
+    content_type: ContentType = "markdown"
+    title: str = Field(min_length=1, max_length=1000)
+    # A memory record is DISTILLED knowledge, not a blob (large docs are the KB's
+    # job, §10, and are chunked there). The cap keeps the STORED generated tsvector
+    # comfortably under Postgres's ~1 MiB tsvector limit, so an oversized body is a
+    # clean 422 at the boundary rather than a 54000 error surfacing as a 500.
+    body_md: str = Field(min_length=1, max_length=MAX_BODY_MD_CHARS)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    importance: float = Field(default=0.5, ge=0.0, le=1.0)
+    # Optional per-event task provenance (else the batch's task_id is used).
+    source_task_id: uuid.UUID | None = None
+
+    @field_validator("scope")
+    @classmethod
+    def _validate_scope(cls, value: str) -> str:
+        parse_scope(value)  # raises ValueError on a malformed scope -> 422
+        return value
+
+    @field_validator("content_type")
+    @classmethod
+    def _validate_content_type(cls, value: str) -> str:
+        if value not in CONTENT_TYPES:
+            raise ValueError(f"content_type must be one of {CONTENT_TYPES}")
+        return value
+
+
+class MemoryEventBatch(BaseModel):
+    """A transactional batch of Memory Events written by one agent turn."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_agent: str = Field(min_length=1, max_length=200)
+    task_id: uuid.UUID | None = None
+    events: list[MemoryEvent] = Field(min_length=1)
+
+
+class WrittenRecord(BaseModel):
+    record_id: uuid.UUID
+    chunk_count: int
+
+
+class MemoryWriteResult(BaseModel):
+    records: list[WrittenRecord]
+
+
+class MemoryRecordOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    kind: str
+    scope: str
+    project_id: uuid.UUID | None
+    source_agent: str
+    source_task_id: uuid.UUID | None
+    title: str
+    body_md: str
+    metadata: JsonbDict
+    importance: float
+    decay_score: float
+    access_count: int
+    last_accessed_at: datetime | None
+    status: str
+    superseded_by: uuid.UUID | None
+    created_at: datetime
+
+
+class MemoryChunkOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    record_id: uuid.UUID
+    seq: int
+    text: str
+    token_count: int
+    embed_model: str | None
+    embedded_at: datetime | None
+
+
+class MemoryLedgerEntry(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    at: datetime
+    actor_agent: str
+    task_id: uuid.UUID | None
+    action: str
+    record_ids: list[uuid.UUID]
+    detail: JsonbDict
+
+
+class MemoryRecordDetail(BaseModel):
+    """A record + its chunks + its complete ledger trail (§14 GET endpoint)."""
+
+    record: MemoryRecordOut
+    chunks: list[MemoryChunkOut]
+    ledger: list[MemoryLedgerEntry]
+
+
+def _validation_error(detail: str) -> ProblemException:
+    return ProblemException(
+        status=422, title="Invalid request", detail=detail, problem_type=problem_type("validation")
+    )
+
+
+# --- write path (§5.1) -----------------------------------------------------
+
+
+async def write_events(
+    conn: AsyncConnection,
+    batch: MemoryEventBatch,
+    *,
+    source_agent: str,
+    actor_agent: str,
+) -> MemoryWriteResult:
+    """Write each event's record + chunks + ingest-outbox rows, plus one ``write``
+    ledger row per event, ALL in the caller's single transaction (§5.1,
+    TITAN-BRN-005). A failure anywhere (a bad project FK, a CHECK violation)
+    aborts the whole batch — no partial writes. The caller owns the transaction
+    (``engine.begin()``), so raising here rolls everything back.
+
+    ``source_agent`` is application data — WHICH agent role authored the memory,
+    stored on the record. ``actor_agent`` is the AUTHENTICATED principal that
+    performed the write, stamped on the append-only ledger: the audit trail's
+    actor is never spoofable client input (TITAN-BRN-005)."""
+    written: list[WrittenRecord] = []
+    try:
+        for event in batch.events:
+            record_id = uuid7()
+            await repo.insert_record(
+                conn,
+                record_id=record_id,
+                kind=event.kind,
+                scope=event.scope,
+                project_id=parse_scope(event.scope),
+                source_agent=source_agent,
+                source_task_id=event.source_task_id or batch.task_id,
+                title=event.title,
+                body_md=event.body_md,
+                metadata=json.dumps(event.metadata),
+                importance=event.importance,
+            )
+            chunks = get_chunker(event.content_type).chunk(event.body_md)
+            for chunk in chunks:
+                chunk_id = uuid7()
+                await repo.insert_chunk(
+                    conn,
+                    chunk_id=chunk_id,
+                    record_id=record_id,
+                    seq=chunk.seq,
+                    chunk_text=chunk.text,
+                    token_count=chunk.token_count,
+                )
+                await repo.insert_outbox(conn, chunk_id=chunk_id, op="upsert")
+            # TITAN-BRN-005: exactly one ledger row per write operation, attributed
+            # to the authenticated actor (not the record's declared source_agent).
+            await repo.append_ledger(
+                conn,
+                actor_agent=actor_agent,
+                task_id=batch.task_id,
+                action="write",
+                record_ids=[record_id],
+                detail=json.dumps(
+                    {
+                        "kind": event.kind,
+                        "scope": event.scope,
+                        "chunks": len(chunks),
+                        "source_agent": source_agent,
+                    }
+                ),
+            )
+            written.append(WrittenRecord(record_id=record_id, chunk_count=len(chunks)))
+    except IntegrityError as exc:
+        # A project-scoped event whose project (or source_task) does not exist, or
+        # a value the DB CHECKs reject — client error, and the whole batch rolls back.
+        raise _validation_error(
+            "An event references an unknown project or task, or a rejected value."
+        ) from exc
+    return MemoryWriteResult(records=written)
+
+
+# --- read path (§14) -------------------------------------------------------
+
+
+async def get_record_detail(
+    conn: AsyncConnection,
+    record_id: uuid.UUID,
+    *,
+    actor_agent: str,
+    task_id: uuid.UUID | None,
+) -> MemoryRecordDetail | None:
+    """Fetch the canonical record + its chunks + its complete ledger trail (§14).
+    A read is a first-class memory operation: it bumps the record's access
+    lifecycle metadata and appends one ``read`` ledger row (TITAN-BRN-001/005).
+    Runs in the caller's transaction so the read + its audit commit atomically."""
+    row = await repo.get_record(conn, record_id)
+    if row is None:
+        return None
+    await repo.touch_record(conn, record_id)
+    await repo.append_ledger(
+        conn,
+        actor_agent=actor_agent,
+        task_id=task_id,
+        action="read",
+        record_ids=[record_id],
+        detail=json.dumps({}),
+    )
+    # Re-read so the returned record reflects the just-applied access bump, and the
+    # ledger trail includes this very read (the complete trail, §14).
+    row = await repo.get_record(conn, record_id)
+    assert row is not None  # noqa: S101 — same transaction; the row cannot vanish
+    chunks = await repo.list_chunks(conn, record_id)
+    ledger = await repo.ledger_for_record(conn, record_id)
+    return MemoryRecordDetail(
+        record=MemoryRecordOut.model_validate(row),
+        chunks=[MemoryChunkOut.model_validate(c) for c in chunks],
+        ledger=[MemoryLedgerEntry.model_validate(entry) for entry in ledger],
+    )
+
+
+__all__ = [
+    "ContentType",
+    "LedgerAction",
+    "MemoryChunkOut",
+    "MemoryEvent",
+    "MemoryEventBatch",
+    "MemoryKind",
+    "MemoryLedgerEntry",
+    "MemoryRecordDetail",
+    "MemoryRecordOut",
+    "MemoryWriteResult",
+    "WrittenRecord",
+    "get_record_detail",
+    "parse_scope",
+    "write_events",
+]
