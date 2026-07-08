@@ -75,6 +75,38 @@ AGENT_ESCALATIONS_TOTAL = Counter(
     ["agent", "target"],
 )
 
+# --- Orchestrator watchdog (§4.2 TITAN-AGT-009, §10 R6) --------------------
+
+WATCHDOG_RESTARTS_TOTAL = Counter(
+    "titan_watchdog_restarts_total",
+    "Stalled/dead inbox consumers replaced by the watchdog, by agent role",
+    ["agent"],
+)
+
+WATCHDOG_ESCALATIONS_TOTAL = Counter(
+    "titan_watchdog_escalations_total",
+    "Deduplicated watchdog escalations, by cause (unacked | discussion)",
+    ["cause"],
+)
+
+WATCHDOG_DISCUSSIONS_CLOSED_TOTAL = Counter(
+    "titan_watchdog_discussions_closed_total",
+    "ArchitectureDiscussion threads auto-closed past their decision deadline (TITAN-AGT-014)",
+)
+
+
+def observe_watchdog_restart(agent: str) -> None:
+    WATCHDOG_RESTARTS_TOTAL.labels(agent).inc()
+
+
+def observe_watchdog_escalation(cause: str) -> None:
+    WATCHDOG_ESCALATIONS_TOTAL.labels(cause).inc()
+
+
+def observe_discussion_closed() -> None:
+    WATCHDOG_DISCUSSIONS_CLOSED_TOTAL.inc()
+
+
 # The §2.2 universal KPIs are DERIVED in Grafana from the low-cardinality series
 # above: task success rate = turns{outcome=completed}/turns; escalation rate =
 # escalations/turns; mean tokens per completed task and mean latency roll up from
@@ -144,8 +176,14 @@ __all__ = [
     "AGENT_TOOL_GRANT_DENIALS_TOTAL",
     "AGENT_TURNS_TOTAL",
     "AGENT_TURN_LATENCY_SECONDS",
+    "WATCHDOG_DISCUSSIONS_CLOSED_TOTAL",
+    "WATCHDOG_ESCALATIONS_TOTAL",
+    "WATCHDOG_RESTARTS_TOTAL",
     "declare_kpis",
+    "observe_discussion_closed",
     "observe_escalation",
     "observe_rung",
     "observe_turn",
+    "observe_watchdog_escalation",
+    "observe_watchdog_restart",
 ]

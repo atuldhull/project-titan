@@ -139,6 +139,14 @@ class Settings(BaseSettings):
     # the container mounts the repo config/ and sets an absolute path.
     agents_config_dir: str = "config/agents"
 
+    # --- Orchestrator watchdog (Phase 32; Vol 2 §4.2, TITAN-AGT-009/020) ---
+    # Run the non-LLM watchdog service in the API lifespan (stalled-consumer
+    # restart, unacked requires_ack escalation deduped per dispute, discussion
+    # deadline enforcement). Its thresholds live in the watchdog_config table and
+    # take effect without redeploy. Off by default until the Phase-41 run loop
+    # supervises live agent workers.
+    watchdog_enabled: bool = False
+
     # --- Prompt composition + model policy (Phase 28; Vol 2 §8) ---
     # Jinja2 system-prompt templates root (templates are agents/<id>.j2 under it).
     agent_prompts_dir: str = "config/prompts"

@@ -166,6 +166,9 @@ async def reclaim_unacked(
     watchdog uses to escalate a stuck conversation. Returns the reclaimed
     deliveries so the caller reprocesses them (at-least-once)."""
     stream = inbox_stream(project_id, agent_id)
+    # Self-sufficient like consume_inbox: a reclaim that runs before the first
+    # consume (e.g. a worker loop that reclaims first) must not NOGROUP-crash.
+    await bus.ensure_group(stream, RUNTIME_GROUP)
     reclaimed = await bus.reap(stream, RUNTIME_GROUP, consumer, min_idle_ms=min_idle_ms)
     for delivery in reclaimed:
         try:

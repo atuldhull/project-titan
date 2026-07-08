@@ -44,15 +44,23 @@ TOOLS_TABLES = {"tool_audit", "tool_approvals", "project_egress_hosts"}
 # …plus the conflict-resolution state machine + veto gate + deadlock config added
 # in Phase 31 (migration 0012).
 CONFLICT_TABLES = {"conflicts", "conflict_transitions", "merge_vetoes", "conflict_thresholds"}
+# …plus the Orchestrator watchdog's live config added in Phase 32 (migration 0013).
+WATCHDOG_TABLES = {"watchdog_config"}
 EXPECTED_TABLES = (
-    CORE_TABLES | IDENTITY_TABLES | EVENTS_TABLES | LLM_TABLES | TOOLS_TABLES | CONFLICT_TABLES
+    CORE_TABLES
+    | IDENTITY_TABLES
+    | EVENTS_TABLES
+    | LLM_TABLES
+    | TOOLS_TABLES
+    | CONFLICT_TABLES
+    | WATCHDOG_TABLES
 )
 
 EXPECTED_INDEXES = {
     "projects": {"idx_projects_status"},
     "agents": {"idx_agents_project_role"},
     "tasks": {"idx_tasks_project_status_priority", "idx_tasks_assignee"},
-    "runs": {"idx_runs_task", "idx_runs_status"},
+    "runs": {"idx_runs_task", "idx_runs_status", "uq_runs_single_active_owner"},
     "artifacts": {"idx_artifacts_project_kind"},
     "messages": {
         "idx_messages_thread",
@@ -70,6 +78,7 @@ EXPECTED_INDEXES = {
     "conflict_transitions": {"idx_conflict_transitions_conflict"},
     "merge_vetoes": {"uq_merge_vetoes_active", "idx_merge_vetoes_task"},
     "conflict_thresholds": {"uq_conflict_thresholds_scope"},
+    "watchdog_config": {"uq_watchdog_config_scope"},
 }
 
 PARTIAL_INDEXES = {
@@ -82,6 +91,7 @@ PARTIAL_INDEXES = {
     "idx_messages_to_agent",
     "uq_merge_vetoes_active",
     "idx_merge_vetoes_task",
+    "uq_runs_single_active_owner",
 }
 
 
@@ -150,6 +160,7 @@ def test_index_predicates_and_ordering_exact(migrated_engine: AsyncEngine) -> No
         "idx_decisions_project": ["created_at DESC"],
         "uq_merge_vetoes_active": ["WHERE", "status = 'active'"],
         "idx_merge_vetoes_task": ["WHERE", "task_id IS NOT NULL", "status = 'active'"],
+        "uq_runs_single_active_owner": ["UNIQUE", "WHERE", "queued", "running"],
     }
 
     async def defs() -> dict[str, str]:

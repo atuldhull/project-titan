@@ -2,6 +2,7 @@
 notifications). SQLAlchemy Core over an AsyncConnection; only ``service.py``
 crosses the module boundary (TITAN-BCK-004)."""
 
+import datetime as dt
 import uuid
 from collections.abc import Sequence
 from typing import Any
@@ -104,6 +105,33 @@ async def message_exists(conn: AsyncConnection, message_id: uuid.UUID) -> bool:
     (TITAN-AGT-002/016)."""
     result = await conn.execute(text("SELECT 1 FROM messages WHERE id = :id"), {"id": message_id})
     return result.first() is not None
+
+
+async def expired_discussion_threads(
+    conn: AsyncConnection, *, now: dt.datetime
+) -> Sequence[Row[Any]]:
+    """Threads holding an ArchitectureDiscussion whose ``decision_deadline`` has
+    passed with NO DecisionLog message recorded in the thread — the watchdog's
+    §5.4 deadline-enforcement sweep source (TITAN-AGT-014).
+
+    Two deliberate hardenings: the deadline is a MODEL/HUMAN-written payload
+    field, so it is parsed with the exception-safe ``try_timestamptz`` (a
+    malformed value degrades that row to NULL — never aborting the whole sweep);
+    and a thread expires only when its LATEST parseable deadline has passed, so
+    a follow-up message extending the deadline actually extends it."""
+    result = await conn.execute(
+        text(
+            "SELECT m.project_id, m.thread_id FROM messages m "
+            "WHERE m.kind = 'architecture_discussion' "
+            "AND m.body->>'decision_deadline' IS NOT NULL "
+            "AND NOT EXISTS (SELECT 1 FROM messages d WHERE d.project_id = m.project_id "
+            "AND d.thread_id = m.thread_id AND d.kind = 'decision_log') "
+            "GROUP BY m.project_id, m.thread_id "
+            "HAVING MAX(try_timestamptz(m.body->>'decision_deadline')) < :now"
+        ),
+        {"now": now},
+    )
+    return result.all()
 
 
 async def get_message(conn: AsyncConnection, message_id: uuid.UUID) -> Row[Any] | None:

@@ -113,14 +113,21 @@ async def cancel_run(
 async def mark_running(conn: AsyncConnection, run_id: uuid.UUID) -> Row[Any] | None:
     """Take (or re-take) a non-terminal run: queued|running|timed_out → running,
     stamping started_at once and clearing any prior finished_at (a re-taken
-    timed_out run is no longer finished). Returns None ONLY for a missing or
-    terminal (succeeded|failed|cancelled) run — the idempotency gate that lets a
-    reclaimed in-flight/timed-out run retry while a finalized one is skipped."""
+    timed_out run is no longer finished). Returns None for a missing or terminal
+    (succeeded|failed|cancelled) run — the idempotency gate that lets a reclaimed
+    in-flight/timed-out run retry while a finalized one is skipped — and ALSO when
+    reviving a timed_out run would mint a SECOND active run on its task (a newer
+    attempt took ownership while this one sat timed out): the single-owner index
+    (uq_runs_single_active_owner, TITAN-AGT-012) forbids two active owners, so the
+    revival is declined cleanly (ack + skip) instead of erupting mid-coordinator."""
     result = await conn.execute(
         text(
             f"UPDATE runs SET status = 'running', started_at = COALESCE(started_at, now()), "
             f"finished_at = NULL, version = version + 1 "
-            f"WHERE id = :id AND status IN ('queued', 'running', 'timed_out') RETURNING {_RUN_COLS}"
+            f"WHERE id = :id AND status IN ('queued', 'running', 'timed_out') "
+            f"AND NOT EXISTS (SELECT 1 FROM runs other WHERE other.task_id = runs.task_id "
+            f"AND other.id <> runs.id AND other.status IN ('queued', 'running')) "
+            f"RETURNING {_RUN_COLS}"
         ),
         {"id": run_id},
     )

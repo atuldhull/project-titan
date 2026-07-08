@@ -63,8 +63,19 @@ def test_create_run_201_attempt_increments(api: dict[str, Any]) -> None:
     assert first.status_code == 201, first.text
     assert first.json()["attempt"] == 1 and first.json()["status"] == "queued"
 
+    # While attempt 1 is still ACTIVE, a second run is refused — one owner per
+    # task at any time (TITAN-AGT-012, Phase 32).
+    blocked = _create_run(api, tid, aid)
+    assert blocked.status_code == 409, blocked.text
+
+    # Once attempt 1 is terminal, the retry attempt is legal and increments.
+    cancel = api["client"].post(
+        f"/api/v1/runs/{first.json()['id']}:cancel", headers=api["token_for"]("owner")
+    )
+    assert cancel.status_code == 200, cancel.text
     second = _create_run(api, tid, aid)
-    assert second.status_code == 201 and second.json()["attempt"] == 2
+    assert second.status_code == 201, second.text
+    assert second.json()["attempt"] == 2
 
 
 def test_create_run_requires_run_create(api: dict[str, Any]) -> None:

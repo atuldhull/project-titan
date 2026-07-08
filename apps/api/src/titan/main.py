@@ -5,6 +5,8 @@ stack lives here, in its mandated order; routers and strategies accumulate
 phase by phase on this single factory.
 """
 
+import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -17,6 +19,7 @@ from fastapi.openapi.utils import get_openapi
 from titan import clients
 from titan.agents import router as agents_router
 from titan.agents import service as agents_service
+from titan.events import service as events_service
 from titan.gateway.idempotency import IdempotencyMiddleware
 from titan.gateway.middleware import RequestContextMiddleware
 from titan.gateway.openapi import problemify_openapi
@@ -42,6 +45,7 @@ from titan.projects import router as projects_router
 from titan.realtime import router as realtime_router
 from titan.realtime import service as realtime_service
 from titan.runs import router as runs_router
+from titan.runtime import service as runtime_service
 from titan.settings import Settings, get_settings
 from titan.tools import router as tools_router
 from titan.tools import service as tools_service
@@ -159,10 +163,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.state.ceo_intake_model_alias = active_settings.ceo_intake_model_alias
         application.state.intake_tasks = set()
         application.state.readyz_budget_seconds = active_settings.readyz_budget_seconds
+        # Phase 32: the non-LLM Orchestrator watchdog (TITAN-AGT-009) — restarts
+        # stalled inbox consumers, escalates unacked requires_ack messages (deduped
+        # per dispute, §10 R6), and enforces discussion deadlines (TITAN-AGT-014).
+        # Its thresholds live in watchdog_config and apply without redeploy.
+        application.state.watchdog = None
+        application.state.watchdog_stop = None
+        application.state.watchdog_task = None
+        if active_settings.watchdog_enabled:
+            agent_runtime = runtime_service.build_runtime(
+                active_settings,
+                application.state.engine,
+                redis=application.state.redis,
+                llm=application.state.llm_gateway,
+                tool_bus=application.state.tool_bus,
+            )
+            watchdog = runtime_service.build_watchdog(
+                agent_runtime, events_service.build_bus(application.state.redis)
+            )
+            watchdog.register()
+            application.state.watchdog = watchdog
+            application.state.watchdog_stop = asyncio.Event()
+            application.state.watchdog_task = asyncio.create_task(
+                watchdog.run_forever(stop=application.state.watchdog_stop)
+            )
         otel.instrument_engine(active_settings, application.state.engine)
         try:
             yield
         finally:
+            if application.state.watchdog is not None:  # stop the watchdog first
+                application.state.watchdog_stop.set()
+                application.state.watchdog_task.cancel()
+                # Suppress ANY exception here: a service task that somehow died
+                # earlier re-raises on await and must not abort the rest of the
+                # shutdown chain (sockets, sandboxes, engine).
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await application.state.watchdog_task
+                await application.state.watchdog.stop()
             for task in list(application.state.intake_tasks):  # cancel in-flight CEO turns
                 task.cancel()
             await application.state.ws_subscriber.stop()  # stop pub/sub subscriber first

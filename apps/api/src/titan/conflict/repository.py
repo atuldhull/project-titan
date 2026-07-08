@@ -262,7 +262,8 @@ async def upsert_thresholds(
             f"max_task_reopens) VALUES (:id, :pid, :rounds, :reopens) "
             f"ON CONFLICT (COALESCE(project_id, '00000000-0000-0000-0000-000000000000'::uuid)) "
             f"DO UPDATE SET max_conflict_rounds = EXCLUDED.max_conflict_rounds, "
-            f"max_task_reopens = EXCLUDED.max_task_reopens "
+            f"max_task_reopens = EXCLUDED.max_task_reopens, "
+            f"version = conflict_thresholds.version + 1 "
             f"RETURNING {_THRESHOLD_COLS}"
         ),
         {

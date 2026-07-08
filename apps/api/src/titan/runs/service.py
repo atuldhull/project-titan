@@ -94,7 +94,9 @@ async def create_run(conn: AsyncConnection, task_id: uuid.UUID, data: RunCreate)
     """Create a new queued run for a task (attempt = max+1). A bad agent_id (or
     a vanished task) FK is a 422, not a 500. Per-task creation serializes on an
     advisory lock so concurrent creates can't mint a duplicate attempt (the
-    uq_runs_task_id_attempt constraint is the durable backstop)."""
+    uq_runs_task_id_attempt constraint is the durable backstop). A task with an
+    ACTIVE run already has its one owner — a second is a 409, enforced by the
+    uq_runs_single_active_owner partial index in the DB itself (TITAN-AGT-012)."""
     await repo.lock_task_runs(conn, task_id)
     attempt = await repo.next_attempt(conn, task_id)
     try:
@@ -109,6 +111,11 @@ async def create_run(conn: AsyncConnection, task_id: uuid.UUID, data: RunCreate)
             model=data.model,
         )
     except IntegrityError as exc:
+        if "uq_runs_single_active_owner" in str(exc.orig):
+            raise _conflict(
+                "Task already has an active run — every task has exactly one "
+                "owner agent at any time (TITAN-AGT-012)."
+            ) from exc
         raise ProblemException(
             status=422,
             title="Invalid run",

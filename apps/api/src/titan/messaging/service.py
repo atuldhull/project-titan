@@ -301,6 +301,23 @@ async def get_message(conn: AsyncConnection, message_id: uuid.UUID) -> MessageOu
     return MessageOut.model_validate(row) if row is not None else None
 
 
+class ExpiredDiscussion(BaseModel):
+    """One ArchitectureDiscussion thread past its decision deadline with no
+    DecisionLog — the watchdog auto-closes or escalates it (TITAN-AGT-014)."""
+
+    project_id: uuid.UUID
+    thread_id: uuid.UUID
+
+
+async def expired_discussion_threads(
+    conn: AsyncConnection, *, now: datetime
+) -> list[ExpiredDiscussion]:
+    """Discussion threads whose ``decision_deadline`` passed without a DecisionLog
+    message in the thread (§5.4) — the watchdog's deadline-enforcement source."""
+    rows = await repo.expired_discussion_threads(conn, now=now)
+    return [ExpiredDiscussion(project_id=r.project_id, thread_id=r.thread_id) for r in rows]
+
+
 # --- decisions -------------------------------------------------------------
 
 
@@ -432,6 +449,7 @@ __all__ = [
     "DecisionCreate",
     "DecisionLogPayload",
     "DecisionOut",
+    "ExpiredDiscussion",
     "MeetingSummaryPayload",
     "MessageCreate",
     "MessageKind",
@@ -451,6 +469,7 @@ __all__ = [
     "create_message",
     "create_notification",
     "ensure_inbox",
+    "expired_discussion_threads",
     "get_message",
     "inbox_stream",
     "list_decisions",

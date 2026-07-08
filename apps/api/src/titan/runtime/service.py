@@ -69,6 +69,15 @@ from titan.runtime.turn import (
     TurnResult,
     run_turn,
 )
+from titan.runtime.watchdog import (
+    DISCUSSION_MODERATOR,
+    SweepReport,
+    Watchdog,
+    WatchdogConfig,
+    build_watchdog,
+    load_watchdog_config,
+    set_watchdog_config,
+)
 from titan.runtime.worker import RuntimeWorker
 from titan.settings import Settings
 from titan.tools.service import ToolBus, build_bus, build_registry
@@ -137,6 +146,7 @@ def build_worker(
 __all__ = [
     "AGENT_ROLE",
     "ANTHROPIC_TIER_ALIAS",
+    "DISCUSSION_MODERATOR",
     "PROVIDER_ALIAS",
     "AgentRuntime",
     "AgentTurnOutput",
@@ -154,19 +164,25 @@ __all__ = [
     "OutboundMessage",
     "RuntimeWorker",
     "SecurityEvent",
+    "SweepReport",
     "ToolCallRecord",
     "TurnOutcome",
     "TurnOutputError",
     "TurnResult",
+    "Watchdog",
+    "WatchdogConfig",
     "build_escalation",
     "build_runtime",
+    "build_watchdog",
     "build_worker",
     "granted_scopes",
     "granted_tool_defs",
     "is_blocked_escalation",
     "is_granted",
     "is_transient",
+    "load_watchdog_config",
     "parse_turn_output",
     "run_turn",
+    "set_watchdog_config",
     "turn_operation_label",
 ]

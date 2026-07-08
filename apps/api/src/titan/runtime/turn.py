@@ -713,19 +713,44 @@ async def _emit_messages(
     """Persist-then-enqueue every message the turn produced, idempotently.
 
     Each message gets a deterministic id derived from the triggering message +
-    its index (:func:`_emitted_id`); the per-message ``message_exists`` guard plus
-    the turn-level :func:`_already_emitted` short-circuit make a reprocessed turn a
-    no-op (TITAN-AGT-002/016). All sends share one transaction: either the whole
-    turn's messages commit or none do, and the thread/correlation id is inherited
-    so the exchange stays one conversation."""
+    its index (:func:`_emitted_id`); the turn-level :func:`_already_emitted`
+    short-circuit makes a reprocessed turn a no-op (TITAN-AGT-002/016). All sends
+    share one transaction: either the whole turn's messages commit or none do,
+    and the thread/correlation id is inherited so the exchange stays one
+    conversation.
+
+    Emission is ALL-OR-NOTHING per attempt: if index 0 already exists when this
+    attempt goes to commit, a CONCURRENT attempt (e.g. a reclaimed message raced
+    by two consumers) already won — this attempt's output is DISCARDED entirely
+    and the winner's committed set returned. Without this, a later attempt whose
+    (non-deterministic) LLM produced MORE messages would skip the winner's
+    indexes and append its own extras — a duplicated send stitched from two
+    different turns. The reverse race (both insert index 0) is settled by the
+    primary key: the loser's whole transaction rolls back and the turn retries
+    into the short-circuit."""
     thread_id = trigger.thread_id or trigger.correlation_id
     emitted: list[uuid.UUID] = []
     async with runtime.engine.begin() as conn:
         for i, om in enumerate(output.messages):
             mid = _emitted_id(trigger, i)
             if await message_exists(conn, mid):
-                emitted.append(mid)  # already emitted on a prior attempt — idempotent
-                continue
+                if emitted:
+                    # Unreachable by construction (contiguous sets + PK blocking
+                    # serialize racing inserts), but never commit a partial mix:
+                    # abort this attempt — the turn re-runs into the idempotent
+                    # short-circuit and converges on the committed winner.
+                    raise RuntimeError(
+                        "concurrent emission detected mid-set; aborting this attempt"
+                    )
+                # index 0 already committed: a concurrent attempt won this turn.
+                # Take the WINNER's contiguous set; discard this attempt's output
+                # entirely (a later, different LLM output must never append).
+                winner: list[uuid.UUID] = []
+                index = 0
+                while await message_exists(conn, _emitted_id(trigger, index)):
+                    winner.append(_emitted_id(trigger, index))
+                    index += 1
+                return winner
             message = AgentMessage(
                 message_id=mid,
                 type=om.type,

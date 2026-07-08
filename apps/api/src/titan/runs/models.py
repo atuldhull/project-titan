@@ -32,6 +32,14 @@ class Run(ConventionsMixin, Base):
             "status",
             postgresql_where=text("status IN ('queued', 'running')"),
         ),
+        # TITAN-AGT-012: at most one ACTIVE run per task — "every task has
+        # exactly one owner agent at any time", enforced by the DB itself.
+        Index(
+            "uq_runs_single_active_owner",
+            "task_id",
+            unique=True,
+            postgresql_where=text("status IN ('queued', 'running')"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
