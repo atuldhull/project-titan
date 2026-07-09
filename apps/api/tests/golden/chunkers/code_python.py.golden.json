@@ -1,0 +1,17 @@
+[
+  {
+    "seq": 0,
+    "token_count": 202,
+    "text": "[org | procedural | retrieval planner (python) | chunk 0/3]\n\"\"\"A representative Python source fixture for the syntax-aware code chunker.\n\nIt mixes several small top-level definitions (packed together into a chunk) with\none deliberately long function whose body exceeds the target and must be split at\nstatement boundaries, never inside its signature.\n\"\"\"\n\nfrom __future__ import annotations\n\nDEFAULT_BUDGET = 512\n\n\ndef clamp(value: int, low: int, high: int) -> int:\n    return max(low, min(high, value))\n\n\ndef normalise(name: str) -> str:\n    return name.strip().lower().replace(\" \", \"_\")\n\n\nclass Accumulator:\n    def __init__(self, limit: int) -> None:\n        self.limit = limit\n        self.total = 0\n\n    def add(self, amount: int) -> bool:\n        if self.total + amount > self.limit:\n            return False\n        self.total += amount\n        return True\n\n\n"
+  },
+  {
+    "seq": 1,
+    "token_count": 401,
+    "text": "[org | procedural | retrieval planner (python) | chunk 1/3]\ndef plan_retrieval(query: str, scope: str, kinds: list[str], budget: int) -> dict[str, int]:\n    normalised_query = normalise(query)\n    normalised_scope = normalise(scope)\n    stage_budget = clamp(budget, 64, DEFAULT_BUDGET)\n    weights: dict[str, int] = {}\n    dense_share = stage_budget // 2\n    lexical_share = stage_budget - dense_share\n    weights[\"dense\"] = dense_share\n    weights[\"lexical\"] = lexical_share\n    for index, kind in enumerate(kinds):\n        base = stage_budget // (index + 2)\n        adjusted = clamp(base, 8, stage_budget)\n        weights[f\"kind_{normalise(kind)}\"] = adjusted\n    if normalised_scope.startswith(\"project_\"):\n        weights[\"scope_boost\"] = clamp(stage_budget // 4, 8, 128)\n    else:\n        weights[\"scope_boost\"] = 0\n    if \"code\" in kinds:\n        weights[\"rerank\"] = clamp(stage_budget // 3, 16, 256)\n    else:\n        weights[\"rerank\"] = clamp(stage_budget // 6, 8, 128)\n    dense_floor = clamp(dense_share // 3, 4, 64)\n    lexical_floor = clamp(lexical_share // 3, 4, 64)\n    weights[\"dense_floor\"] = dense_floor\n    weights[\"lexical_floor\"] = lexical_floor\n    recency_bonus = clamp(stage_budget // 8, 4, 96)\n    weights[\"recency_bonus\"] = recency_bonus\n    importance_bonus = clamp(stage_budget // 10, 4, 80)\n    weights[\"importance_bonus\"] = importance_bonus\n    if len(kinds) > 3:\n        weights[\"diversity_penalty\"] = clamp(stage_budget // 5, 8, 160)\n    else:\n        weights[\"diversity_penalty\"] = clamp(stage_budget // 12, 4, 64)\n    header_overhead = clamp(len(normalised_query) // 4, 2, 32)\n    weights[\"header_overhead\"] = header_overhead\n    scope_terms = normalised_scope.count(\"_\") + 1"
+  },
+  {
+    "seq": 2,
+    "token_count": 117,
+    "text": "[org | procedural | retrieval planner (python) | chunk 2/3]\n\n    weights[\"scope_terms\"] = clamp(scope_terms * 4, 4, 48)\n    for pass_index in range(3):\n        pass_key = f\"pass_{pass_index}\"\n        pass_weight = clamp(stage_budget // (pass_index + 3), 4, 128)\n        weights[pass_key] = pass_weight\n    total = sum(value for key, value in weights.items() if key != \"total\")\n    weights[\"query_len\"] = len(normalised_query)\n    weights[\"total\"] = total\n    return weights\n"
+  }
+]

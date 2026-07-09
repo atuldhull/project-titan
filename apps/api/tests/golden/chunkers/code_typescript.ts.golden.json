@@ -1,0 +1,17 @@
+[
+  {
+    "seq": 0,
+    "token_count": 195,
+    "text": "[org | procedural | retrieval planner (ts) | chunk 0/3]\n// A representative TypeScript source fixture for the syntax-aware code chunker.\n// Several small declarations pack together; the long exported function exceeds\n// the target and must be split at statement boundaries, never in its signature.\n\nexport const DEFAULT_BUDGET = 512;\n\nexport function clamp(value: number, low: number, high: number): number {\n  return Math.max(low, Math.min(high, value));\n}\n\nexport function normalise(name: string): string {\n  return name.trim().toLowerCase().replace(/ /g, \"_\");\n}\n\nexport class Accumulator {\n  private total = 0;\n  constructor(private readonly limit: number) {}\n\n  add(amount: number): boolean {\n    if (this.total + amount > this.limit) {\n      return false;\n    }\n    this.total += amount;\n    return true;\n  }\n}\n\n"
+  },
+  {
+    "seq": 1,
+    "token_count": 406,
+    "text": "[org | procedural | retrieval planner (ts) | chunk 1/3]\nexport function planRetrieval(\n  query: string,\n  scope: string,\n  kinds: string[],\n  budget: number,\n): Record<string, number> {\n  const normalisedQuery = normalise(query);\n  const normalisedScope = normalise(scope);\n  const stageBudget = clamp(budget, 64, DEFAULT_BUDGET);\n  const weights: Record<string, number> = {};\n  const denseShare = Math.floor(stageBudget / 2);\n  const lexicalShare = stageBudget - denseShare;\n  weights[\"dense\"] = denseShare;\n  weights[\"lexical\"] = lexicalShare;\n  kinds.forEach((kind, index) => {\n    const base = Math.floor(stageBudget / (index + 2));\n    const adjusted = clamp(base, 8, stageBudget);\n    weights[`kind_${normalise(kind)}`] = adjusted;\n  });\n  if (normalisedScope.startsWith(\"project_\")) {\n    weights[\"scopeBoost\"] = clamp(Math.floor(stageBudget / 4), 8, 128);\n  } else {\n    weights[\"scopeBoost\"] = 0;\n  }\n  if (kinds.includes(\"code\")) {\n    weights[\"rerank\"] = clamp(Math.floor(stageBudget / 3), 16, 256);\n  } else {\n    weights[\"rerank\"] = clamp(Math.floor(stageBudget / 6), 8, 128);\n  }\n  const denseFloor = clamp(Math.floor(denseShare / 3), 4, 64);\n  const lexicalFloor = clamp(Math.floor(lexicalShare / 3), 4, 64);\n  weights[\"denseFloor\"] = denseFloor;\n  weights[\"lexicalFloor\"] = lexicalFloor;\n  const recencyBonus = clamp(Math.floor(stageBudget / 8), 4, 96);\n  weights[\"recencyBonus\"] = recencyBonus;\n  const importanceBonus = clamp(Math.floor(stageBudget / 10), 4, 80);\n  weights[\"importanceBonus\"] = importanceBonus;"
+  },
+  {
+    "seq": 2,
+    "token_count": 241,
+    "text": "[org | procedural | retrieval planner (ts) | chunk 2/3]\n\n  if (kinds.length > 3) {\n    weights[\"diversityPenalty\"] = clamp(Math.floor(stageBudget / 5), 8, 160);\n  } else {\n    weights[\"diversityPenalty\"] = clamp(Math.floor(stageBudget / 12), 4, 64);\n  }\n  const headerOverhead = clamp(Math.floor(normalisedQuery.length / 4), 2, 32);\n  weights[\"headerOverhead\"] = headerOverhead;\n  const scopeTerms = (normalisedScope.split(\"_\").length || 1);\n  weights[\"scopeTerms\"] = clamp(scopeTerms * 4, 4, 48);\n  for (let passIndex = 0; passIndex < 3; passIndex += 1) {\n    const passWeight = clamp(Math.floor(stageBudget / (passIndex + 3)), 4, 128);\n    weights[`pass_${passIndex}`] = passWeight;\n  }\n  weights[\"queryLen\"] = normalisedQuery.length;\n  weights[\"total\"] = Object.values(weights).reduce((a, b) => a + b, 0);\n  return weights;\n}\n"
+  }
+]

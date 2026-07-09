@@ -23,7 +23,7 @@ from titan.db import uuid7
 from titan.gateway.dto import JsonbDict
 from titan.gateway.problems import ProblemException, problem_type
 from titan.memory import repository as repo
-from titan.memory.chunker import CONTENT_TYPES, ContentType, get_chunker
+from titan.memory.chunker import CONTENT_TYPES, ChunkContext, ContentType, get_chunker
 
 MemoryKind = Literal["episodic", "semantic", "procedural"]
 LedgerAction = Literal["read", "write", "promote", "prune", "supersede"]
@@ -200,7 +200,8 @@ async def write_events(
                 metadata=json.dumps(event.metadata),
                 importance=event.importance,
             )
-            chunks = get_chunker(event.content_type).chunk(event.body_md)
+            ctx = ChunkContext(scope=event.scope, kind=event.kind, title=event.title)
+            chunks = get_chunker(event.content_type).chunk(event.body_md, ctx)
             for chunk in chunks:
                 chunk_id = uuid7()
                 await repo.insert_chunk(

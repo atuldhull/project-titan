@@ -1,0 +1,12 @@
+[
+  {
+    "seq": 0,
+    "token_count": 386,
+    "text": "[org | semantic | agent authority matrix | chunk 0/2]\n| agent | domain | authority | escalates_to | veto_power |\n|-------|--------|-----------|--------------|------------|\n| ceo | executive | final arbiter on cross domain disputes across the org | none | yes |\n| architect | technical | resolves technical disputes and owns the architecture | ceo | no |\n| pm_product | scope | resolves scope disputes and owns the product backlog | ceo | no |\n| pm_project | priority | resolves priority disputes and owns the schedule | ceo | no |\n| security | security | blocks merge and release on an unresolved veto | ceo | yes |\n| qa | quality | rejects work that fails the acceptance criteria | pm_project | no |\n| engineer | implementation | implements assigned tasks and raises disputes | architect | no |\n| reviewer | quality | reviews diffs and approves or rejects each change | qa | no |\n| memory_agent | brain | curates durable memory records for the whole org | architect | no |\n| orchestrator | runtime | schedules turns and enforces discussion deadlines | ceo | no |\n| researcher | discovery | gathers external context and cites its sources | architect | no |\n| designer | product | produces interface specifications and mockups | pm_product | no |\n| release_manager | delivery | cuts releases once security has cleared them | ceo | no |\n| data_steward | governance | enforces retention and scope isolation rules | security | no |\n| planner | strategy | decomposes briefs into tasks and milestones | pm_project | no |\n| estimator | strategy | sizes tasks and flags unrealistic schedules | pm_project | no |\n| integrator | delivery | merges approved diffs and resolves conflicts | architect | no |\n| observer | runtime | watches health metrics and raises incidents | orchestrator | no |"
+  },
+  {
+    "seq": 1,
+    "token_count": 116,
+    "text": "[org | semantic | agent authority matrix | chunk 1/2]\n| agent | domain | authority | escalates_to | veto_power |\n|-------|--------|-----------|--------------|------------|\n| scribe | brain | records decision logs and meeting summaries | memory_agent | no |\n| auditor | governance | verifies ledgers are append only and complete | data_steward | no |"
+  }
+]
