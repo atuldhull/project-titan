@@ -125,8 +125,9 @@ disallow_untyped_calls = false
 
 [[tool.mypy.overrides]]
 # Optional `rerank` extra (§6.1 cross-encoder); imported lazily and absent in
-# the default dev environment.
-module = ["sentence_transformers", "sentence_transformers.*"]
+# the default dev environment. numpy rides in with onnxruntime there and is
+# only an optional fast path for the benchmark's corpus seeding.
+module = ["sentence_transformers", "sentence_transformers.*", "numpy", "numpy.*"]
 ignore_missing_imports = true
 disallow_untyped_calls = false
 

@@ -246,9 +246,18 @@ async def mark_chunks_embedded(
 
 
 async def all_chunk_ids(conn: AsyncConnection) -> set[uuid.UUID]:
-    """Every chunk id in PostgreSQL — the canonical side of the TITAN-BRN-004
-    set-difference reconciliation."""
-    result = await conn.execute(text("SELECT id FROM brain.memory_chunks"))
+    """The CANONICAL chunk-id set for TITAN-BRN-004 reconciliation: chunks of
+    ACTIVE records only. Non-active records must have no points — the live
+    pipeline deletes them on supersede (Phase 35) and §9.2 archiving drops
+    vectors — so a rebuild that re-created them would diverge from the
+    live-converged index; their leftover points are strays to delete."""
+    result = await conn.execute(
+        text(
+            "SELECT c.id FROM brain.memory_chunks c "
+            "JOIN brain.memory_records r ON r.id = c.record_id "
+            "WHERE r.status = 'active'"
+        )
+    )
     return {row.id for row in result.all()}
 
 
@@ -269,7 +278,10 @@ async def quarantined_chunk_ids(conn: AsyncConnection) -> set[uuid.UUID]:
 async def chunks_for_rebuild(
     conn: AsyncConnection, chunk_ids: Sequence[uuid.UUID]
 ) -> Sequence[Row[Any]]:
-    """Chunk+record rows for a rebuild batch (same shape as chunk_for_embedding)."""
+    """Chunk+record rows for a rebuild batch (same shape as chunk_for_embedding).
+    Re-asserts status='active': a record superseded between the rebuild's
+    snapshot and this batch must not get its points re-created (the live
+    pipeline just deleted them)."""
     if not chunk_ids:
         return []
     result = await conn.execute(
@@ -278,7 +290,7 @@ async def chunks_for_rebuild(
             "       r.scope, r.kind, r.project_id, r.source_agent, r.created_at, "
             "       r.decay_score, r.status, r.metadata "
             "FROM brain.memory_chunks c JOIN brain.memory_records r ON r.id = c.record_id "
-            "WHERE c.id = ANY(CAST(:ids AS uuid[])) ORDER BY c.id"
+            "WHERE c.id = ANY(CAST(:ids AS uuid[])) AND r.status = 'active' ORDER BY c.id"
         ),
         {"ids": list(chunk_ids)},
     )

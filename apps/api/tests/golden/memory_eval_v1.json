@@ -1,0 +1,2176 @@
+{
+ "version": 1,
+ "description": "Phase 37 golden retrieval dataset (TITAN-BRN-011): 72 records (24 episodic / 24 semantic / 24 procedural; 48 org / 24 project) x exact-identifier, phrase, and natural-language-probe queries, plus 8 org-record-from-project-scope pairs. 224 pairs total. Seeded through the real ingest path by tests/test_memory_eval_gate.py; baseline in memory_eval_baseline.json.",
+ "records": [
+  {
+   "marker": "EVL_SVC_LEDGER_01",
+   "kind": "semantic",
+   "scope": "org",
+   "title": "billing ledger ownership (EVL_SVC_LEDGER_01)",
+   "body_md": "The billing-ledger service owns all invoice postings and payment captures. Ledger rows are append-only; corrections are posted as reversal entries, never updates. Reference: EVL_SVC_LEDGER_01.",
+   "importance": 0.2
+  },
+  {
+   "marker": "EVL_FLAG_DARKMODE_02",
+   "kind": "semantic",
+   "scope": "org",
+   "title": "dark mode rollout flag (EVL_FLAG_DARKMODE_02)",
+   "body_md": "Dark mode ships behind a percentage rollout flag managed in the flag console. The rollout holds at 25 percent until contrast audits on embedded charts pass. Reference: EVL_FLAG_DARKMODE_02.",
+   "importance": 0.27
+  },
+  {
+   "marker": "EVL_SCHEMA_ORDERS_03",
+   "kind": "semantic",
+   "scope": "org",
+   "title": "orders table partitioning (EVL_SCHEMA_ORDERS_03)",
+   "body_md": "The orders table is range-partitioned by month on created_at, with twelve hot partitions kept on fast storage. Older partitions are detached to the archive tablespace quarterly. Reference: EVL_SCHEMA_ORDERS_03.",
+   "importance": 0.34
+  },
+  {
+   "marker": "EVL_TOPOLOGY_EDGE_04",
+   "kind": "semantic",
+   "scope": "org",
+   "title": "edge proxy topology (EVL_TOPOLOGY_EDGE_04)",
+   "body_md": "The edge proxy terminates public TLS and forwards to internal services over mutual TLS. Certificates rotate weekly through the internal issuer. Reference: EVL_TOPOLOGY_EDGE_04.",
+   "importance": 0.41
+  },
+  {
+   "marker": "EVL_QUOTA_TENANT_05",
+   "kind": "semantic",
+   "scope": "org",
+   "title": "tenant API quotas (EVL_QUOTA_TENANT_05)",
+   "body_md": "Each tenant gets 10000 API requests per hour enforced by a leaky-bucket counter in Redis. Burst headroom is 20 percent for five minutes before throttling returns 429. Reference: EVL_QUOTA_TENANT_05.",
+   "importance": 0.48
+  },
+  {
+   "marker": "EVL_DNS_FAILOVER_06",
+   "kind": "semantic",
+   "scope": "org",
+   "title": "DNS failover design (EVL_DNS_FAILOVER_06)",
+   "body_md": "Health-checked DNS failover flips public traffic to the warm standby stack in Frankfurt when three consecutive probes fail. TTLs are pinned to 60 seconds to bound the cutover. Reference: EVL_DNS_FAILOVER_06.",
+   "importance": 0.55
+  },
+  {
+   "marker": "EVL_CACHE_MENU_07",
+   "kind": "semantic",
+   "scope": "org",
+   "title": "menu cache invalidation (EVL_CACHE_MENU_07)",
+   "body_md": "Vendor menu caches are invalidated by the vendor webhook, not by TTL: a menu-changed event purges the cached menu document and repopulates it lazily on next read. Reference: EVL_CACHE_MENU_07.",
+   "importance": 0.62
+  },
+  {
+   "marker": "EVL_AUTH_SAML_08",
+   "kind": "semantic",
+   "scope": "org",
+   "title": "enterprise SSO mapping (EVL_AUTH_SAML_08)",
+   "body_md": "Enterprise SSO consumes a SAML assertion and maps the groups attribute onto internal roles. Unknown groups fall back to the viewer role and are logged for the identity team. Reference: EVL_AUTH_SAML_08.",
+   "importance": 0.69
+  },
+  {
+   "marker": "EVL_QUEUE_EXPORT_09",
+   "kind": "semantic",
+   "scope": "org",
+   "title": "export job queue (EVL_QUEUE_EXPORT_09)",
+   "body_md": "CSV export jobs run on a dedicated low-priority queue so bulk exports can never starve interactive work. Exports above 100k rows stream directly to object storage. Reference: EVL_QUEUE_EXPORT_09.",
+   "importance": 0.76
+  },
+  {
+   "marker": "EVL_GEO_SHARDING_10",
+   "kind": "semantic",
+   "scope": "org",
+   "title": "EU data residency (EVL_GEO_SHARDING_10)",
+   "body_md": "Customer rows for EU tenants are pinned to the Dublin cluster to satisfy residency terms. Cross-region joins are forbidden; aggregates replicate as anonymised rollups only. Reference: EVL_GEO_SHARDING_10.",
+   "importance": 0.83
+  },
+  {
+   "marker": "EVL_SDK_RETRY_11",
+   "kind": "semantic",
+   "scope": "org",
+   "title": "mobile SDK retry policy (EVL_SDK_RETRY_11)",
+   "body_md": "The mobile SDK retries idempotent calls with exponential backoff capped at five attempts and a 30 second ceiling. Non-idempotent calls surface the failure to the app immediately. Reference: EVL_SDK_RETRY_11.",
+   "importance": 0.2
+  },
+  {
+   "marker": "EVL_BILLING_PRORATE_12",
+   "kind": "semantic",
+   "scope": "org",
+   "title": "mid-cycle proration (EVL_BILLING_PRORATE_12)",
+   "body_md": "Mid-cycle plan upgrades are prorated per day and the unused balance is credited on the next invoice. Downgrades take effect only at the next renewal boundary. Reference: EVL_BILLING_PRORATE_12.",
+   "importance": 0.27
+  },
+  {
+   "marker": "EVL_SEARCH_SYNONYM_13",
+   "kind": "semantic",
+   "scope": "org",
+   "title": "search synonym expansion (EVL_SEARCH_SYNONYM_13)",
+   "body_md": "Product search expands queries through a curated synonym dictionary maintained by the catalog team. Synonym updates deploy nightly and are versioned with the index build. Reference: EVL_SEARCH_SYNONYM_13.",
+   "importance": 0.34
+  },
+  {
+   "marker": "EVL_AUDIT_EXPORT_14",
+   "kind": "semantic",
+   "scope": "org",
+   "title": "signed audit exports (EVL_AUDIT_EXPORT_14)",
+   "body_md": "Audit-trail exports are signed with the org signing key so auditors can verify integrity offline with the verifier CLI. Unsigned exports are rejected by compliance tooling. Reference: EVL_AUDIT_EXPORT_14.",
+   "importance": 0.41
+  },
+  {
+   "marker": "EVL_EMAIL_SUPPRESS_15",
+   "kind": "semantic",
+   "scope": "org",
+   "title": "bounce suppression list (EVL_EMAIL_SUPPRESS_15)",
+   "body_md": "Campaign sends consult the bounce suppression list before dispatch; hard bounces suppress an address permanently while soft bounces expire after 30 days. Reference: EVL_EMAIL_SUPPRESS_15.",
+   "importance": 0.48
+  },
+  {
+   "marker": "EVL_PDF_RENDER_16",
+   "kind": "semantic",
+   "scope": "org",
+   "title": "invoice PDF rendering (EVL_PDF_RENDER_16)",
+   "body_md": "Invoice PDFs render in a headless Chromium pool sized to four workers per node. Render jobs above two seconds are shed to the async path and delivered by email. Reference: EVL_PDF_RENDER_16.",
+   "importance": 0.55
+  },
+  {
+   "marker": "EVL_PRJ_GATEWAY_TIMEOUT_17",
+   "kind": "semantic",
+   "scope": "project",
+   "title": "checkout gateway timeout (EVL_PRJ_GATEWAY_TIMEOUT_17)",
+   "body_md": "The checkout gateway timeout was raised to 12 seconds because the payment provider's 3DS challenge flow regularly exceeds eight. The mobile client shows a progress state after four. Reference: EVL_PRJ_GATEWAY_TIMEOUT_17.",
+   "importance": 0.62
+  },
+  {
+   "marker": "EVL_PRJ_CART_MERGE_18",
+   "kind": "semantic",
+   "scope": "project",
+   "title": "anonymous cart merge (EVL_PRJ_CART_MERGE_18)",
+   "body_md": "Anonymous carts merge into the account cart at login: quantities take the newest value and expired promotional lines are dropped silently during the merge. Reference: EVL_PRJ_CART_MERGE_18.",
+   "importance": 0.69
+  },
+  {
+   "marker": "EVL_PRJ_TAXRATE_CACHE_19",
+   "kind": "semantic",
+   "scope": "project",
+   "title": "tax rate caching (EVL_PRJ_TAXRATE_CACHE_19)",
+   "body_md": "Tax-rate lookups are cached per postcode for 24 hours because the provider bills per query. Rate changes publish an invalidation message that clears affected postcodes early. Reference: EVL_PRJ_TAXRATE_CACHE_19.",
+   "importance": 0.76
+  },
+  {
+   "marker": "EVL_PRJ_IMG_CDN_20",
+   "kind": "semantic",
+   "scope": "project",
+   "title": "product image variants (EVL_PRJ_IMG_CDN_20)",
+   "body_md": "Product images are resized into four variants at upload and served from the CDN under immutable hashed URLs. Originals stay in cold storage for re-derivation. Reference: EVL_PRJ_IMG_CDN_20.",
+   "importance": 0.83
+  },
+  {
+   "marker": "EVL_PRJ_STOCK_RESERVE_21",
+   "kind": "semantic",
+   "scope": "project",
+   "title": "stock reservation window (EVL_PRJ_STOCK_RESERVE_21)",
+   "body_md": "Stock is reserved for 15 minutes when checkout starts; the reservation sweeper releases expired holds every minute so flash-sale inventory never strands. Reference: EVL_PRJ_STOCK_RESERVE_21.",
+   "importance": 0.2
+  },
+  {
+   "marker": "EVL_PRJ_COUPON_STACK_22",
+   "kind": "semantic",
+   "scope": "project",
+   "title": "coupon stacking rules (EVL_PRJ_COUPON_STACK_22)",
+   "body_md": "Coupon stacking is disallowed except that a free-shipping promotion may combine with one percentage discount. The rules engine evaluates stacking before totals are computed. Reference: EVL_PRJ_COUPON_STACK_22.",
+   "importance": 0.27
+  },
+  {
+   "marker": "EVL_PRJ_WEBHOOK_SIGN_23",
+   "kind": "semantic",
+   "scope": "project",
+   "title": "partner webhook signing (EVL_PRJ_WEBHOOK_SIGN_23)",
+   "body_md": "Partner webhooks are signed with HMAC SHA-256 using a per-partner rotating secret. Receivers must verify within a five-minute timestamp window to defeat replay. Reference: EVL_PRJ_WEBHOOK_SIGN_23.",
+   "importance": 0.34
+  },
+  {
+   "marker": "EVL_PRJ_LEDGER_RECON_24",
+   "kind": "semantic",
+   "scope": "project",
+   "title": "settlement reconciliation (EVL_PRJ_LEDGER_RECON_24)",
+   "body_md": "The nightly reconciliation job compares provider settlement files against ledger captures and opens a discrepancy ticket for any mismatch above one cent. Reference: EVL_PRJ_LEDGER_RECON_24.",
+   "importance": 0.41
+  },
+  {
+   "marker": "EVL_INC_0114_25",
+   "kind": "episodic",
+   "scope": "org",
+   "title": "kafka lag incident (EVL_INC_0114_25)",
+   "body_md": "2026-01-14 incident: consumer lag alarms fired after a broker disk stall; partitions rebalanced for 22 minutes. Mitigation moved cold topics to tiered storage. Reference: EVL_INC_0114_25.",
+   "importance": 0.48
+  },
+  {
+   "marker": "EVL_INC_REGISTRY_26",
+   "kind": "episodic",
+   "scope": "org",
+   "title": "registry certificate expiry (EVL_INC_REGISTRY_26)",
+   "body_md": "2026-02-03: the internal container registry certificate expired and blocked every deploy for 47 minutes. A 30-day expiry alert and auto-renewal were added afterwards. Reference: EVL_INC_REGISTRY_26.",
+   "importance": 0.55
+  },
+  {
+   "marker": "EVL_RETRO_SPRINT41_27",
+   "kind": "episodic",
+   "scope": "org",
+   "title": "sprint 41 retrospective (EVL_RETRO_SPRINT41_27)",
+   "body_md": "Sprint 41 retro concluded the Selenium suite was the top flake source; the team voted to migrate smoke coverage to Playwright and quarantine the worst specs meanwhile. Reference: EVL_RETRO_SPRINT41_27.",
+   "importance": 0.62
+  },
+  {
+   "marker": "EVL_TICKET_7733_28",
+   "kind": "episodic",
+   "scope": "org",
+   "title": "duplicate refund ticket (EVL_TICKET_7733_28)",
+   "body_md": "Ticket EVL_TICKET_7733_28: double-clicking the refund button issued duplicate refunds for 19 orders. Fixed with an idempotency key derived from order and amount. Reference: EVL_TICKET_7733_28.",
+   "importance": 0.69
+  },
+  {
+   "marker": "EVL_OUTAGE_0412_29",
+   "kind": "episodic",
+   "scope": "org",
+   "title": "postgres read-only window (EVL_OUTAGE_0412_29)",
+   "body_md": "2026-04-12: an unattended failover triggered by a runaway vacuum froze writes for nine minutes. The autovacuum cost limit was tuned and failover now requires a health quorum. Reference: EVL_OUTAGE_0412_29.",
+   "importance": 0.76
+  },
+  {
+   "marker": "EVL_ROLLBACK_V487_30",
+   "kind": "episodic",
+   "scope": "org",
+   "title": "v4.87 rollback (EVL_ROLLBACK_V487_30)",
+   "body_md": "Release v4.87 was rolled back two hours after deploy when checkout conversion dropped six percent; the culprit was an eager address validation call blocking the pay button. Reference: EVL_ROLLBACK_V487_30.",
+   "importance": 0.83
+  },
+  {
+   "marker": "EVL_SPIKE_LOGIN_31",
+   "kind": "episodic",
+   "scope": "org",
+   "title": "credential stuffing spike (EVL_SPIKE_LOGIN_31)",
+   "body_md": "A credential-stuffing spike hit login at 40x baseline; the rate limiter held and a captcha challenge was enabled for anonymous ASNs. No account takeovers were confirmed. Reference: EVL_SPIKE_LOGIN_31.",
+   "importance": 0.2
+  },
+  {
+   "marker": "EVL_MIGRATE_UUIDV7_32",
+   "kind": "episodic",
+   "scope": "org",
+   "title": "uuidv7 key migration (EVL_MIGRATE_UUIDV7_32)",
+   "body_md": "Migrating hot tables to UUIDv7 primary keys halved index bloat and cut insert latency 30 percent because keys became time-ordered. Backfill ran online over two weekends. Reference: EVL_MIGRATE_UUIDV7_32.",
+   "importance": 0.27
+  },
+  {
+   "marker": "EVL_DRILL_REGION_33",
+   "kind": "episodic",
+   "scope": "org",
+   "title": "region evacuation drill (EVL_DRILL_REGION_33)",
+   "body_md": "The May region-evacuation drill met a 28-minute RTO against the 45-minute objective. DNS cutover was clean; the slow step was rehydrating the feature-flag cache. Reference: EVL_DRILL_REGION_33.",
+   "importance": 0.34
+  },
+  {
+   "marker": "EVL_LEAK_APIKEY_34",
+   "kind": "episodic",
+   "scope": "org",
+   "title": "leaked API key (EVL_LEAK_APIKEY_34)",
+   "body_md": "A contractor pasted a production API key into a public gist; the key was rotated within one hour and a repository secret scanner now runs on every push. Reference: EVL_LEAK_APIKEY_34.",
+   "importance": 0.41
+  },
+  {
+   "marker": "EVL_PERF_N1QUERY_35",
+   "kind": "episodic",
+   "scope": "org",
+   "title": "dashboard N+1 fix (EVL_PERF_N1QUERY_35)",
+   "body_md": "The activity dashboard issued an N+1 query per widget; switching to eager loading with a single join dropped page p95 by 600 milliseconds. Reference: EVL_PERF_N1QUERY_35.",
+   "importance": 0.48
+  },
+  {
+   "marker": "EVL_ONCALL_PAGERSTORM_36",
+   "kind": "episodic",
+   "scope": "org",
+   "title": "pager storm postmortem (EVL_ONCALL_PAGERSTORM_36)",
+   "body_md": "A flapping health check paged on-call 41 times in one night. A dampening window and alert dedup were added, and the check now requires three consecutive failures. Reference: EVL_ONCALL_PAGERSTORM_36.",
+   "importance": 0.55
+  },
+  {
+   "marker": "EVL_VENDOR_SMSOUTAGE_37",
+   "kind": "episodic",
+   "scope": "org",
+   "title": "SMS vendor outage (EVL_VENDOR_SMSOUTAGE_37)",
+   "body_md": "During the SMS vendor outage on 2026-03-19, OTP delivery fell back to email codes automatically; login success dipped only two percent. A second SMS provider is onboarding. Reference: EVL_VENDOR_SMSOUTAGE_37.",
+   "importance": 0.62
+  },
+  {
+   "marker": "EVL_CHAOS_REDISKILL_38",
+   "kind": "episodic",
+   "scope": "org",
+   "title": "chaos day redis kill (EVL_CHAOS_REDISKILL_38)",
+   "body_md": "Chaos day killed the Redis primary mid-traffic; Sentinel promoted the replica in 40 seconds and rate-limit counters rebuilt from the write-behind log as designed. Reference: EVL_CHAOS_REDISKILL_38.",
+   "importance": 0.69
+  },
+  {
+   "marker": "EVL_COST_EGRESS_39",
+   "kind": "episodic",
+   "scope": "org",
+   "title": "egress cost spike (EVL_COST_EGRESS_39)",
+   "body_md": "The June cloud bill spiked 18 percent, traced to cross-zone egress from a replica placed in the wrong zone by the autoscaler. Placement constraints were pinned. Reference: EVL_COST_EGRESS_39.",
+   "importance": 0.76
+  },
+  {
+   "marker": "EVL_AB_PAYWALL_40",
+   "kind": "episodic",
+   "scope": "org",
+   "title": "paywall experiment result (EVL_AB_PAYWALL_40)",
+   "body_md": "The paywall experiment concluded: variant B with the annual-first toggle raised trial conversion 14 percent and was shipped to all traffic on 2026-05-28. Reference: EVL_AB_PAYWALL_40.",
+   "importance": 0.83
+  },
+  {
+   "marker": "EVL_PRJ_LAUNCH_BETA_41",
+   "kind": "episodic",
+   "scope": "project",
+   "title": "beta launch numbers (EVL_PRJ_LAUNCH_BETA_41)",
+   "body_md": "Beta launched 2026-06-02 with 400 invites; 61 percent activated within a week and the top request was CSV import of legacy catalog data. Reference: EVL_PRJ_LAUNCH_BETA_41.",
+   "importance": 0.2
+  },
+  {
+   "marker": "EVL_PRJ_BUG_ROUNDING_42",
+   "kind": "episodic",
+   "scope": "project",
+   "title": "cart rounding bug (EVL_PRJ_BUG_ROUNDING_42)",
+   "body_md": "A banker's-rounding mismatch between cart and invoice undercharged baskets by one cent in three-item carts; totals now round once at the ledger boundary. Reference: EVL_PRJ_BUG_ROUNDING_42.",
+   "importance": 0.27
+  },
+  {
+   "marker": "EVL_PRJ_DEMO_ACME_43",
+   "kind": "episodic",
+   "scope": "project",
+   "title": "acme corp demo notes (EVL_PRJ_DEMO_ACME_43)",
+   "body_md": "The Acme Corp demo went well except bulk import: they need column mapping with a preview before commit. Follow-up scheduled for the 18th with their ops lead. Reference: EVL_PRJ_DEMO_ACME_43.",
+   "importance": 0.34
+  },
+  {
+   "marker": "EVL_PRJ_LOADTEST_44",
+   "kind": "episodic",
+   "scope": "project",
+   "title": "checkout load test (EVL_PRJ_LOADTEST_44)",
+   "body_md": "The pre-launch load test sustained 1200 rps at p95 under 300 ms until the worker pool saturated at the fulfillment queue; adding two workers cleared the knee. Reference: EVL_PRJ_LOADTEST_44.",
+   "importance": 0.41
+  },
+  {
+   "marker": "EVL_PRJ_HOTFIX_TZ_45",
+   "kind": "episodic",
+   "scope": "project",
+   "title": "DST slot hotfix (EVL_PRJ_HOTFIX_TZ_45)",
+   "body_md": "Hotfix 2026-03-30: delivery slots displayed one hour late after the DST change because slot boundaries were computed in UTC and rendered without zone conversion. Reference: EVL_PRJ_HOTFIX_TZ_45.",
+   "importance": 0.48
+  },
+  {
+   "marker": "EVL_PRJ_REVIEW_SEC_46",
+   "kind": "episodic",
+   "scope": "project",
+   "title": "security review finding (EVL_PRJ_REVIEW_SEC_46)",
+   "body_md": "The quarterly security review flagged an unscoped S3 bucket policy on export artifacts; the policy was tightened to the exporter role and access logging enabled. Reference: EVL_PRJ_REVIEW_SEC_46.",
+   "importance": 0.55
+  },
+  {
+   "marker": "EVL_PRJ_INTERVIEW_USER_47",
+   "kind": "episodic",
+   "scope": "project",
+   "title": "merchant interviews (EVL_PRJ_INTERVIEW_USER_47)",
+   "body_md": "Five merchant interviews converged on partial refunds as the top gap: support agents currently refund full orders and re-invoice manually, which breaks their books. Reference: EVL_PRJ_INTERVIEW_USER_47.",
+   "importance": 0.62
+  },
+  {
+   "marker": "EVL_PRJ_MILESTONE_M2_48",
+   "kind": "episodic",
+   "scope": "project",
+   "title": "milestone M2 slip (EVL_PRJ_MILESTONE_M2_48)",
+   "body_md": "Milestone M2 slipped one week because the payment sandbox approval from the provider took nine business days; the critical path was re-sequenced to unblock webhook work. Reference: EVL_PRJ_MILESTONE_M2_48.",
+   "importance": 0.69
+  },
+  {
+   "marker": "EVL_RUNBOOK_PGFAILOVER_49",
+   "kind": "procedural",
+   "scope": "org",
+   "title": "postgres failover runbook (EVL_RUNBOOK_PGFAILOVER_49)",
+   "body_md": "Failover runbook: pause writers, confirm replication lag is zero, promote the replica, repoint pgbouncer, then unpause. Never promote with lag above zero. Reference: EVL_RUNBOOK_PGFAILOVER_49.",
+   "importance": 0.76
+  },
+  {
+   "marker": "EVL_POLICY_BRANCH_50",
+   "kind": "procedural",
+   "scope": "org",
+   "title": "branching policy (EVL_POLICY_BRANCH_50)",
+   "body_md": "Trunk-based development: feature branches live at most three days, merge by squash only, and red main blocks all merges until green. Reference: EVL_POLICY_BRANCH_50.",
+   "importance": 0.83
+  },
+  {
+   "marker": "EVL_HOWTO_SECRETSROT_51",
+   "kind": "procedural",
+   "scope": "org",
+   "title": "secret rotation how-to (EVL_HOWTO_SECRETSROT_51)",
+   "body_md": "Rotate a secret with the vault CLI: create the new version, roll consumers in a staged order, verify each consumer, then disable the old version after 24 hours. Reference: EVL_HOWTO_SECRETSROT_51.",
+   "importance": 0.2
+  },
+  {
+   "marker": "EVL_STD_APIERRORS_52",
+   "kind": "procedural",
+   "scope": "org",
+   "title": "API error standard (EVL_STD_APIERRORS_52)",
+   "body_md": "All API errors follow RFC 9457 problem details: a registered type URL, stable title, and correlation id. Free-text error strings are forbidden in responses. Reference: EVL_STD_APIERRORS_52.",
+   "importance": 0.27
+  },
+  {
+   "marker": "EVL_GUIDE_LOADSHED_53",
+   "kind": "procedural",
+   "scope": "org",
+   "title": "load shedding order (EVL_GUIDE_LOADSHED_53)",
+   "body_md": "Under overload shed in this order: analytics first, then recommendations, then search suggestions. Checkout and auth are never shed; they degrade features instead. Reference: EVL_GUIDE_LOADSHED_53.",
+   "importance": 0.34
+  },
+  {
+   "marker": "EVL_CONV_COMMITMSG_54",
+   "kind": "procedural",
+   "scope": "org",
+   "title": "commit message convention (EVL_CONV_COMMITMSG_54)",
+   "body_md": "Commit subjects use imperative mood with a scope prefix and stay under 72 characters; bodies explain why, not what. Fixups squash before review. Reference: EVL_CONV_COMMITMSG_54.",
+   "importance": 0.41
+  },
+  {
+   "marker": "EVL_RUNBOOK_QDRANTSNAP_55",
+   "kind": "procedural",
+   "scope": "org",
+   "title": "qdrant snapshot runbook (EVL_RUNBOOK_QDRANTSNAP_55)",
+   "body_md": "Qdrant snapshots run nightly to object storage; the restore drill runs monthly by restoring the latest snapshot into a scratch instance and diffing collection counts. Reference: EVL_RUNBOOK_QDRANTSNAP_55.",
+   "importance": 0.48
+  },
+  {
+   "marker": "EVL_POLICY_DATARET_56",
+   "kind": "procedural",
+   "scope": "org",
+   "title": "telemetry retention policy (EVL_POLICY_DATARET_56)",
+   "body_md": "Raw telemetry is retained 90 days then purged; hourly aggregates are kept indefinitely. Purge jobs write a ledger entry with row counts for compliance. Reference: EVL_POLICY_DATARET_56.",
+   "importance": 0.55
+  },
+  {
+   "marker": "EVL_HOWTO_CANARY_57",
+   "kind": "procedural",
+   "scope": "org",
+   "title": "canary deploy how-to (EVL_HOWTO_CANARY_57)",
+   "body_md": "Canary deploys route five percent of traffic for 30 minutes while watching the error budget burn rate; auto-rollback fires at twice the baseline burn. Reference: EVL_HOWTO_CANARY_57.",
+   "importance": 0.62
+  },
+  {
+   "marker": "EVL_STD_LOGFIELDS_58",
+   "kind": "procedural",
+   "scope": "org",
+   "title": "structured log fields (EVL_STD_LOGFIELDS_58)",
+   "body_md": "Structured logs must carry trace_id, actor, and event fields; payload bodies and prompt content are forbidden in logs \u2014 metadata only, per the observability standard. Reference: EVL_STD_LOGFIELDS_58.",
+   "importance": 0.69
+  },
+  {
+   "marker": "EVL_GUIDE_INDEXREVIEW_59",
+   "kind": "procedural",
+   "scope": "org",
+   "title": "index review guide (EVL_GUIDE_INDEXREVIEW_59)",
+   "body_md": "Every new database index needs an EXPLAIN ANALYZE from a production-sized dataset in the PR, plus the write-amplification estimate. Unused indexes are dropped quarterly. Reference: EVL_GUIDE_INDEXREVIEW_59.",
+   "importance": 0.76
+  },
+  {
+   "marker": "EVL_CONV_FEATUREFLAG_60",
+   "kind": "procedural",
+   "scope": "org",
+   "title": "feature flag naming (EVL_CONV_FEATUREFLAG_60)",
+   "body_md": "Flags are named domain_action_yyyymm and must be deleted within two releases of full rollout; the flag console pages owners of expired flags weekly. Reference: EVL_CONV_FEATUREFLAG_60.",
+   "importance": 0.83
+  },
+  {
+   "marker": "EVL_RUNBOOK_DLQREPLAY_61",
+   "kind": "procedural",
+   "scope": "org",
+   "title": "DLQ replay runbook (EVL_RUNBOOK_DLQREPLAY_61)",
+   "body_md": "Dead-letter replay: inspect a sample, fix the root cause, then replay in batches of fifty with a pause between batches, watching the failure rate gauge. Reference: EVL_RUNBOOK_DLQREPLAY_61.",
+   "importance": 0.2
+  },
+  {
+   "marker": "EVL_POLICY_ACCESSREQ_62",
+   "kind": "procedural",
+   "scope": "org",
+   "title": "production access policy (EVL_POLICY_ACCESSREQ_62)",
+   "body_md": "Production access requires a ticket, a named approver, and expires after eight hours; break-glass access pages the security channel and is audited next morning. Reference: EVL_POLICY_ACCESSREQ_62.",
+   "importance": 0.27
+  },
+  {
+   "marker": "EVL_HOWTO_PROFILING_63",
+   "kind": "procedural",
+   "scope": "org",
+   "title": "production profiling (EVL_HOWTO_PROFILING_63)",
+   "body_md": "CPU profiling in production uses py-spy in sampling mode with 60-second captures; attach only to one worker per service and upload flamegraphs to the perf bucket. Reference: EVL_HOWTO_PROFILING_63.",
+   "importance": 0.34
+  },
+  {
+   "marker": "EVL_STD_MIGRATIONS_64",
+   "kind": "procedural",
+   "scope": "org",
+   "title": "migration standard (EVL_STD_MIGRATIONS_64)",
+   "body_md": "Migrations must be reversible and lock-safe: no table rewrites in peak hours, backfills run in batches with progress checkpoints, and every migration ships its down path. Reference: EVL_STD_MIGRATIONS_64.",
+   "importance": 0.41
+  },
+  {
+   "marker": "EVL_PRJ_RUNBOOK_REFUND_65",
+   "kind": "procedural",
+   "scope": "project",
+   "title": "manual refund runbook (EVL_PRJ_RUNBOOK_REFUND_65)",
+   "body_md": "Manual refund: verify the settlement landed, issue the refund from the provider console, then post the ledger note with the ticket reference before closing. Reference: EVL_PRJ_RUNBOOK_REFUND_65.",
+   "importance": 0.48
+  },
+  {
+   "marker": "EVL_PRJ_CHECKLIST_GOLIVE_66",
+   "kind": "procedural",
+   "scope": "project",
+   "title": "go-live checklist (EVL_PRJ_CHECKLIST_GOLIVE_66)",
+   "body_md": "Go-live checklist: DNS cutover window agreed, cache warmed from the staging snapshot, rollback rehearsed end-to-end, and the on-call rota doubled for launch week. Reference: EVL_PRJ_CHECKLIST_GOLIVE_66.",
+   "importance": 0.55
+  },
+  {
+   "marker": "EVL_PRJ_STD_PRICING_67",
+   "kind": "procedural",
+   "scope": "project",
+   "title": "pricing change process (EVL_PRJ_STD_PRICING_67)",
+   "body_md": "Pricing changes require finance sign-off and 30 days notice to affected merchants; grandfathered plans are flagged in the catalog and excluded from repricing jobs. Reference: EVL_PRJ_STD_PRICING_67.",
+   "importance": 0.62
+  },
+  {
+   "marker": "EVL_PRJ_HOWTO_SANDBOX_68",
+   "kind": "procedural",
+   "scope": "project",
+   "title": "payment sandbox reset (EVL_PRJ_HOWTO_SANDBOX_68)",
+   "body_md": "Reset the payment sandbox by clearing registered webhooks, reseeding the test card set, and re-running the smoke checkout; document the sandbox version in the run log. Reference: EVL_PRJ_HOWTO_SANDBOX_68.",
+   "importance": 0.69
+  },
+  {
+   "marker": "EVL_PRJ_POLICY_SUPPORT_69",
+   "kind": "procedural",
+   "scope": "project",
+   "title": "sev1 support policy (EVL_PRJ_POLICY_SUPPORT_69)",
+   "body_md": "Sev1 merchant issues: respond within 15 minutes, page the merchant-success lead, and open a status-page incident if more than five merchants are affected. Reference: EVL_PRJ_POLICY_SUPPORT_69.",
+   "importance": 0.76
+  },
+  {
+   "marker": "EVL_PRJ_GUIDE_CATALOG_70",
+   "kind": "procedural",
+   "scope": "project",
+   "title": "catalog bulk updates (EVL_PRJ_GUIDE_CATALOG_70)",
+   "body_md": "Catalog bulk updates go through CSV upload with a dry-run diff preview; apply only after the diff is approved, and keep the rejected-rows file for the merchant. Reference: EVL_PRJ_GUIDE_CATALOG_70.",
+   "importance": 0.83
+  },
+  {
+   "marker": "EVL_PRJ_RUNBOOK_STUCKORD_71",
+   "kind": "procedural",
+   "scope": "project",
+   "title": "stuck order recovery (EVL_PRJ_RUNBOOK_STUCKORD_71)",
+   "body_md": "Stuck order recovery: requeue the fulfillment event with a fresh idempotency key, confirm the state machine advances, then notify the customer with the revised ETA. Reference: EVL_PRJ_RUNBOOK_STUCKORD_71.",
+   "importance": 0.2
+  },
+  {
+   "marker": "EVL_PRJ_CONV_EVENTNAME_72",
+   "kind": "procedural",
+   "scope": "project",
+   "title": "analytics event naming (EVL_PRJ_CONV_EVENTNAME_72)",
+   "body_md": "Analytics events are snake_case verb_noun, registered in the schema registry before first emit; unregistered events are dropped at the collector with a weekly report. Reference: EVL_PRJ_CONV_EVENTNAME_72.",
+   "importance": 0.27
+  }
+ ],
+ "pairs": [
+  {
+   "query": "EVL_SVC_LEDGER_01",
+   "expected_marker": "EVL_SVC_LEDGER_01",
+   "scope": "org",
+   "kinds": [
+    "semantic"
+   ],
+   "leg": "lexical"
+  },
+  {
+   "query": "which service owns invoice postings and reversal entries",
+   "expected_marker": "EVL_SVC_LEDGER_01",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_SVC_LEDGER_01",
+   "expected_marker": "EVL_SVC_LEDGER_01",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "from this project, anything relevant about EVL_SVC_LEDGER_01?",
+   "expected_marker": "EVL_SVC_LEDGER_01",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_FLAG_DARKMODE_02",
+   "expected_marker": "EVL_FLAG_DARKMODE_02",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "dark mode percentage rollout contrast audit",
+   "expected_marker": "EVL_FLAG_DARKMODE_02",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_FLAG_DARKMODE_02?",
+   "expected_marker": "EVL_FLAG_DARKMODE_02",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_SCHEMA_ORDERS_03",
+   "expected_marker": "EVL_SCHEMA_ORDERS_03",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "orders table partitioned by month archive tablespace",
+   "expected_marker": "EVL_SCHEMA_ORDERS_03",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_SCHEMA_ORDERS_03 before making changes",
+   "expected_marker": "EVL_SCHEMA_ORDERS_03",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_TOPOLOGY_EDGE_04",
+   "expected_marker": "EVL_TOPOLOGY_EDGE_04",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "edge proxy terminates TLS mutual internal issuer",
+   "expected_marker": "EVL_TOPOLOGY_EDGE_04",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_TOPOLOGY_EDGE_04",
+   "expected_marker": "EVL_TOPOLOGY_EDGE_04",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_QUOTA_TENANT_05",
+   "expected_marker": "EVL_QUOTA_TENANT_05",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "tenant requests per hour leaky bucket throttling",
+   "expected_marker": "EVL_QUOTA_TENANT_05",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_QUOTA_TENANT_05",
+   "expected_marker": "EVL_QUOTA_TENANT_05",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "from this project, anything relevant about EVL_QUOTA_TENANT_05?",
+   "expected_marker": "EVL_QUOTA_TENANT_05",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_DNS_FAILOVER_06",
+   "expected_marker": "EVL_DNS_FAILOVER_06",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "DNS failover warm standby Frankfurt probes",
+   "expected_marker": "EVL_DNS_FAILOVER_06",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_DNS_FAILOVER_06?",
+   "expected_marker": "EVL_DNS_FAILOVER_06",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_CACHE_MENU_07",
+   "expected_marker": "EVL_CACHE_MENU_07",
+   "scope": "org",
+   "kinds": [
+    "semantic"
+   ],
+   "leg": "lexical"
+  },
+  {
+   "query": "vendor webhook purges cached menu document",
+   "expected_marker": "EVL_CACHE_MENU_07",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_CACHE_MENU_07 before making changes",
+   "expected_marker": "EVL_CACHE_MENU_07",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_AUTH_SAML_08",
+   "expected_marker": "EVL_AUTH_SAML_08",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "SAML assertion groups mapped internal roles viewer",
+   "expected_marker": "EVL_AUTH_SAML_08",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_AUTH_SAML_08",
+   "expected_marker": "EVL_AUTH_SAML_08",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_QUEUE_EXPORT_09",
+   "expected_marker": "EVL_QUEUE_EXPORT_09",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "csv export dedicated low priority queue starve",
+   "expected_marker": "EVL_QUEUE_EXPORT_09",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_QUEUE_EXPORT_09",
+   "expected_marker": "EVL_QUEUE_EXPORT_09",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "from this project, anything relevant about EVL_QUEUE_EXPORT_09?",
+   "expected_marker": "EVL_QUEUE_EXPORT_09",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_GEO_SHARDING_10",
+   "expected_marker": "EVL_GEO_SHARDING_10",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "EU tenants pinned Dublin cluster residency",
+   "expected_marker": "EVL_GEO_SHARDING_10",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_GEO_SHARDING_10?",
+   "expected_marker": "EVL_GEO_SHARDING_10",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_SDK_RETRY_11",
+   "expected_marker": "EVL_SDK_RETRY_11",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "mobile SDK exponential backoff five attempts ceiling",
+   "expected_marker": "EVL_SDK_RETRY_11",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_SDK_RETRY_11 before making changes",
+   "expected_marker": "EVL_SDK_RETRY_11",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_BILLING_PRORATE_12",
+   "expected_marker": "EVL_BILLING_PRORATE_12",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "mid cycle upgrades prorated credited next invoice",
+   "expected_marker": "EVL_BILLING_PRORATE_12",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_BILLING_PRORATE_12",
+   "expected_marker": "EVL_BILLING_PRORATE_12",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_SEARCH_SYNONYM_13",
+   "expected_marker": "EVL_SEARCH_SYNONYM_13",
+   "scope": "org",
+   "kinds": [
+    "semantic"
+   ],
+   "leg": "lexical"
+  },
+  {
+   "query": "product search curated synonym dictionary nightly",
+   "expected_marker": "EVL_SEARCH_SYNONYM_13",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_SEARCH_SYNONYM_13",
+   "expected_marker": "EVL_SEARCH_SYNONYM_13",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "from this project, anything relevant about EVL_SEARCH_SYNONYM_13?",
+   "expected_marker": "EVL_SEARCH_SYNONYM_13",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_AUDIT_EXPORT_14",
+   "expected_marker": "EVL_AUDIT_EXPORT_14",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "audit trail exports signed verify integrity offline",
+   "expected_marker": "EVL_AUDIT_EXPORT_14",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_AUDIT_EXPORT_14?",
+   "expected_marker": "EVL_AUDIT_EXPORT_14",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_EMAIL_SUPPRESS_15",
+   "expected_marker": "EVL_EMAIL_SUPPRESS_15",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "bounce suppression hard soft expire dispatch",
+   "expected_marker": "EVL_EMAIL_SUPPRESS_15",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_EMAIL_SUPPRESS_15 before making changes",
+   "expected_marker": "EVL_EMAIL_SUPPRESS_15",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PDF_RENDER_16",
+   "expected_marker": "EVL_PDF_RENDER_16",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "invoice PDF headless Chromium pool workers",
+   "expected_marker": "EVL_PDF_RENDER_16",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_PDF_RENDER_16",
+   "expected_marker": "EVL_PDF_RENDER_16",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_GATEWAY_TIMEOUT_17",
+   "expected_marker": "EVL_PRJ_GATEWAY_TIMEOUT_17",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "checkout gateway timeout raised payment provider challenge",
+   "expected_marker": "EVL_PRJ_GATEWAY_TIMEOUT_17",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_PRJ_GATEWAY_TIMEOUT_17",
+   "expected_marker": "EVL_PRJ_GATEWAY_TIMEOUT_17",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_CART_MERGE_18",
+   "expected_marker": "EVL_PRJ_CART_MERGE_18",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "anonymous carts merge login newest quantities",
+   "expected_marker": "EVL_PRJ_CART_MERGE_18",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_PRJ_CART_MERGE_18?",
+   "expected_marker": "EVL_PRJ_CART_MERGE_18",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_TAXRATE_CACHE_19",
+   "expected_marker": "EVL_PRJ_TAXRATE_CACHE_19",
+   "scope": "project",
+   "kinds": [
+    "semantic"
+   ],
+   "leg": "lexical"
+  },
+  {
+   "query": "tax rate cached postcode provider bills",
+   "expected_marker": "EVL_PRJ_TAXRATE_CACHE_19",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_PRJ_TAXRATE_CACHE_19 before making changes",
+   "expected_marker": "EVL_PRJ_TAXRATE_CACHE_19",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_IMG_CDN_20",
+   "expected_marker": "EVL_PRJ_IMG_CDN_20",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "product images resized variants CDN immutable",
+   "expected_marker": "EVL_PRJ_IMG_CDN_20",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_PRJ_IMG_CDN_20",
+   "expected_marker": "EVL_PRJ_IMG_CDN_20",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_STOCK_RESERVE_21",
+   "expected_marker": "EVL_PRJ_STOCK_RESERVE_21",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "stock reserved checkout sweeper releases expired holds",
+   "expected_marker": "EVL_PRJ_STOCK_RESERVE_21",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_PRJ_STOCK_RESERVE_21",
+   "expected_marker": "EVL_PRJ_STOCK_RESERVE_21",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_COUPON_STACK_22",
+   "expected_marker": "EVL_PRJ_COUPON_STACK_22",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "coupon stacking disallowed free shipping combine",
+   "expected_marker": "EVL_PRJ_COUPON_STACK_22",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_PRJ_COUPON_STACK_22?",
+   "expected_marker": "EVL_PRJ_COUPON_STACK_22",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_WEBHOOK_SIGN_23",
+   "expected_marker": "EVL_PRJ_WEBHOOK_SIGN_23",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "partner webhooks HMAC rotating secret replay window",
+   "expected_marker": "EVL_PRJ_WEBHOOK_SIGN_23",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_PRJ_WEBHOOK_SIGN_23 before making changes",
+   "expected_marker": "EVL_PRJ_WEBHOOK_SIGN_23",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_LEDGER_RECON_24",
+   "expected_marker": "EVL_PRJ_LEDGER_RECON_24",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "nightly reconciliation settlement files discrepancy ticket",
+   "expected_marker": "EVL_PRJ_LEDGER_RECON_24",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_PRJ_LEDGER_RECON_24",
+   "expected_marker": "EVL_PRJ_LEDGER_RECON_24",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_INC_0114_25",
+   "expected_marker": "EVL_INC_0114_25",
+   "scope": "org",
+   "kinds": [
+    "episodic"
+   ],
+   "leg": "lexical"
+  },
+  {
+   "query": "consumer lag broker disk stall tiered storage",
+   "expected_marker": "EVL_INC_0114_25",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_INC_0114_25",
+   "expected_marker": "EVL_INC_0114_25",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_INC_REGISTRY_26",
+   "expected_marker": "EVL_INC_REGISTRY_26",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "container registry certificate expired blocked deploys",
+   "expected_marker": "EVL_INC_REGISTRY_26",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_INC_REGISTRY_26?",
+   "expected_marker": "EVL_INC_REGISTRY_26",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_RETRO_SPRINT41_27",
+   "expected_marker": "EVL_RETRO_SPRINT41_27",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "retro Selenium flake migrate Playwright quarantine",
+   "expected_marker": "EVL_RETRO_SPRINT41_27",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_RETRO_SPRINT41_27 before making changes",
+   "expected_marker": "EVL_RETRO_SPRINT41_27",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_TICKET_7733_28",
+   "expected_marker": "EVL_TICKET_7733_28",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "double click refund duplicate idempotency key",
+   "expected_marker": "EVL_TICKET_7733_28",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_TICKET_7733_28",
+   "expected_marker": "EVL_TICKET_7733_28",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_OUTAGE_0412_29",
+   "expected_marker": "EVL_OUTAGE_0412_29",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "runaway vacuum froze writes autovacuum quorum",
+   "expected_marker": "EVL_OUTAGE_0412_29",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_OUTAGE_0412_29",
+   "expected_marker": "EVL_OUTAGE_0412_29",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_ROLLBACK_V487_30",
+   "expected_marker": "EVL_ROLLBACK_V487_30",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "rolled back conversion dropped address validation pay button",
+   "expected_marker": "EVL_ROLLBACK_V487_30",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_ROLLBACK_V487_30?",
+   "expected_marker": "EVL_ROLLBACK_V487_30",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_SPIKE_LOGIN_31",
+   "expected_marker": "EVL_SPIKE_LOGIN_31",
+   "scope": "org",
+   "kinds": [
+    "episodic"
+   ],
+   "leg": "lexical"
+  },
+  {
+   "query": "credential stuffing spike rate limiter captcha",
+   "expected_marker": "EVL_SPIKE_LOGIN_31",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_SPIKE_LOGIN_31 before making changes",
+   "expected_marker": "EVL_SPIKE_LOGIN_31",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_MIGRATE_UUIDV7_32",
+   "expected_marker": "EVL_MIGRATE_UUIDV7_32",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "UUIDv7 primary keys halved index bloat time ordered",
+   "expected_marker": "EVL_MIGRATE_UUIDV7_32",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_MIGRATE_UUIDV7_32",
+   "expected_marker": "EVL_MIGRATE_UUIDV7_32",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_DRILL_REGION_33",
+   "expected_marker": "EVL_DRILL_REGION_33",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "evacuation drill RTO cutover rehydrating flag cache",
+   "expected_marker": "EVL_DRILL_REGION_33",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_DRILL_REGION_33",
+   "expected_marker": "EVL_DRILL_REGION_33",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_LEAK_APIKEY_34",
+   "expected_marker": "EVL_LEAK_APIKEY_34",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "contractor pasted production key gist rotated scanner",
+   "expected_marker": "EVL_LEAK_APIKEY_34",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_LEAK_APIKEY_34?",
+   "expected_marker": "EVL_LEAK_APIKEY_34",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PERF_N1QUERY_35",
+   "expected_marker": "EVL_PERF_N1QUERY_35",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "dashboard widget eager loading join p95",
+   "expected_marker": "EVL_PERF_N1QUERY_35",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_PERF_N1QUERY_35 before making changes",
+   "expected_marker": "EVL_PERF_N1QUERY_35",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_ONCALL_PAGERSTORM_36",
+   "expected_marker": "EVL_ONCALL_PAGERSTORM_36",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "flapping health check paged dampening dedup consecutive",
+   "expected_marker": "EVL_ONCALL_PAGERSTORM_36",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_ONCALL_PAGERSTORM_36",
+   "expected_marker": "EVL_ONCALL_PAGERSTORM_36",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_VENDOR_SMSOUTAGE_37",
+   "expected_marker": "EVL_VENDOR_SMSOUTAGE_37",
+   "scope": "org",
+   "kinds": [
+    "episodic"
+   ],
+   "leg": "lexical"
+  },
+  {
+   "query": "SMS vendor outage OTP fell back email codes",
+   "expected_marker": "EVL_VENDOR_SMSOUTAGE_37",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_VENDOR_SMSOUTAGE_37",
+   "expected_marker": "EVL_VENDOR_SMSOUTAGE_37",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_CHAOS_REDISKILL_38",
+   "expected_marker": "EVL_CHAOS_REDISKILL_38",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "chaos killed Redis primary Sentinel promoted replica",
+   "expected_marker": "EVL_CHAOS_REDISKILL_38",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_CHAOS_REDISKILL_38?",
+   "expected_marker": "EVL_CHAOS_REDISKILL_38",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_COST_EGRESS_39",
+   "expected_marker": "EVL_COST_EGRESS_39",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "cloud bill spiked cross zone egress replica autoscaler",
+   "expected_marker": "EVL_COST_EGRESS_39",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_COST_EGRESS_39 before making changes",
+   "expected_marker": "EVL_COST_EGRESS_39",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_AB_PAYWALL_40",
+   "expected_marker": "EVL_AB_PAYWALL_40",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "paywall variant annual toggle raised trial conversion",
+   "expected_marker": "EVL_AB_PAYWALL_40",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_AB_PAYWALL_40",
+   "expected_marker": "EVL_AB_PAYWALL_40",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_LAUNCH_BETA_41",
+   "expected_marker": "EVL_PRJ_LAUNCH_BETA_41",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "beta invites activated top request legacy catalog",
+   "expected_marker": "EVL_PRJ_LAUNCH_BETA_41",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_PRJ_LAUNCH_BETA_41",
+   "expected_marker": "EVL_PRJ_LAUNCH_BETA_41",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_BUG_ROUNDING_42",
+   "expected_marker": "EVL_PRJ_BUG_ROUNDING_42",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "rounding mismatch undercharged one cent baskets",
+   "expected_marker": "EVL_PRJ_BUG_ROUNDING_42",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_PRJ_BUG_ROUNDING_42?",
+   "expected_marker": "EVL_PRJ_BUG_ROUNDING_42",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_DEMO_ACME_43",
+   "expected_marker": "EVL_PRJ_DEMO_ACME_43",
+   "scope": "project",
+   "kinds": [
+    "episodic"
+   ],
+   "leg": "lexical"
+  },
+  {
+   "query": "Acme demo bulk import column mapping preview",
+   "expected_marker": "EVL_PRJ_DEMO_ACME_43",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_PRJ_DEMO_ACME_43 before making changes",
+   "expected_marker": "EVL_PRJ_DEMO_ACME_43",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_LOADTEST_44",
+   "expected_marker": "EVL_PRJ_LOADTEST_44",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "load test sustained rps worker pool saturated fulfillment",
+   "expected_marker": "EVL_PRJ_LOADTEST_44",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_PRJ_LOADTEST_44",
+   "expected_marker": "EVL_PRJ_LOADTEST_44",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_HOTFIX_TZ_45",
+   "expected_marker": "EVL_PRJ_HOTFIX_TZ_45",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "delivery slots hour late DST zone conversion",
+   "expected_marker": "EVL_PRJ_HOTFIX_TZ_45",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_PRJ_HOTFIX_TZ_45",
+   "expected_marker": "EVL_PRJ_HOTFIX_TZ_45",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_REVIEW_SEC_46",
+   "expected_marker": "EVL_PRJ_REVIEW_SEC_46",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "security review unscoped bucket policy exporter role",
+   "expected_marker": "EVL_PRJ_REVIEW_SEC_46",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_PRJ_REVIEW_SEC_46?",
+   "expected_marker": "EVL_PRJ_REVIEW_SEC_46",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_INTERVIEW_USER_47",
+   "expected_marker": "EVL_PRJ_INTERVIEW_USER_47",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "merchant interviews partial refunds top gap re-invoice",
+   "expected_marker": "EVL_PRJ_INTERVIEW_USER_47",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_PRJ_INTERVIEW_USER_47 before making changes",
+   "expected_marker": "EVL_PRJ_INTERVIEW_USER_47",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_MILESTONE_M2_48",
+   "expected_marker": "EVL_PRJ_MILESTONE_M2_48",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "milestone slipped sandbox approval critical path",
+   "expected_marker": "EVL_PRJ_MILESTONE_M2_48",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_PRJ_MILESTONE_M2_48",
+   "expected_marker": "EVL_PRJ_MILESTONE_M2_48",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_RUNBOOK_PGFAILOVER_49",
+   "expected_marker": "EVL_RUNBOOK_PGFAILOVER_49",
+   "scope": "org",
+   "kinds": [
+    "procedural"
+   ],
+   "leg": "lexical"
+  },
+  {
+   "query": "pause writers promote replica repoint pgbouncer unpause",
+   "expected_marker": "EVL_RUNBOOK_PGFAILOVER_49",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_RUNBOOK_PGFAILOVER_49",
+   "expected_marker": "EVL_RUNBOOK_PGFAILOVER_49",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "from this project, anything relevant about EVL_RUNBOOK_PGFAILOVER_49?",
+   "expected_marker": "EVL_RUNBOOK_PGFAILOVER_49",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_POLICY_BRANCH_50",
+   "expected_marker": "EVL_POLICY_BRANCH_50",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "trunk based branches three days squash merges",
+   "expected_marker": "EVL_POLICY_BRANCH_50",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_POLICY_BRANCH_50?",
+   "expected_marker": "EVL_POLICY_BRANCH_50",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_HOWTO_SECRETSROT_51",
+   "expected_marker": "EVL_HOWTO_SECRETSROT_51",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "rotate secret vault staged consumers disable old version",
+   "expected_marker": "EVL_HOWTO_SECRETSROT_51",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_HOWTO_SECRETSROT_51 before making changes",
+   "expected_marker": "EVL_HOWTO_SECRETSROT_51",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_STD_APIERRORS_52",
+   "expected_marker": "EVL_STD_APIERRORS_52",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "errors problem details type URL correlation forbidden",
+   "expected_marker": "EVL_STD_APIERRORS_52",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_STD_APIERRORS_52",
+   "expected_marker": "EVL_STD_APIERRORS_52",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_GUIDE_LOADSHED_53",
+   "expected_marker": "EVL_GUIDE_LOADSHED_53",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "overload shed analytics recommendations suggestions never checkout",
+   "expected_marker": "EVL_GUIDE_LOADSHED_53",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_GUIDE_LOADSHED_53",
+   "expected_marker": "EVL_GUIDE_LOADSHED_53",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "from this project, anything relevant about EVL_GUIDE_LOADSHED_53?",
+   "expected_marker": "EVL_GUIDE_LOADSHED_53",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_CONV_COMMITMSG_54",
+   "expected_marker": "EVL_CONV_COMMITMSG_54",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "commit subjects imperative scope prefix characters",
+   "expected_marker": "EVL_CONV_COMMITMSG_54",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_CONV_COMMITMSG_54?",
+   "expected_marker": "EVL_CONV_COMMITMSG_54",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_RUNBOOK_QDRANTSNAP_55",
+   "expected_marker": "EVL_RUNBOOK_QDRANTSNAP_55",
+   "scope": "org",
+   "kinds": [
+    "procedural"
+   ],
+   "leg": "lexical"
+  },
+  {
+   "query": "snapshots nightly restore drill scratch instance diffing",
+   "expected_marker": "EVL_RUNBOOK_QDRANTSNAP_55",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_RUNBOOK_QDRANTSNAP_55 before making changes",
+   "expected_marker": "EVL_RUNBOOK_QDRANTSNAP_55",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_POLICY_DATARET_56",
+   "expected_marker": "EVL_POLICY_DATARET_56",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "raw telemetry retained purged aggregates indefinitely ledger",
+   "expected_marker": "EVL_POLICY_DATARET_56",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_POLICY_DATARET_56",
+   "expected_marker": "EVL_POLICY_DATARET_56",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_HOWTO_CANARY_57",
+   "expected_marker": "EVL_HOWTO_CANARY_57",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "canary five percent thirty minutes error budget burn",
+   "expected_marker": "EVL_HOWTO_CANARY_57",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_HOWTO_CANARY_57",
+   "expected_marker": "EVL_HOWTO_CANARY_57",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "from this project, anything relevant about EVL_HOWTO_CANARY_57?",
+   "expected_marker": "EVL_HOWTO_CANARY_57",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_STD_LOGFIELDS_58",
+   "expected_marker": "EVL_STD_LOGFIELDS_58",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "structured logs trace actor event forbidden metadata",
+   "expected_marker": "EVL_STD_LOGFIELDS_58",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_STD_LOGFIELDS_58?",
+   "expected_marker": "EVL_STD_LOGFIELDS_58",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_GUIDE_INDEXREVIEW_59",
+   "expected_marker": "EVL_GUIDE_INDEXREVIEW_59",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "index EXPLAIN ANALYZE production sized write amplification",
+   "expected_marker": "EVL_GUIDE_INDEXREVIEW_59",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_GUIDE_INDEXREVIEW_59 before making changes",
+   "expected_marker": "EVL_GUIDE_INDEXREVIEW_59",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_CONV_FEATUREFLAG_60",
+   "expected_marker": "EVL_CONV_FEATUREFLAG_60",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "flags named domain action deleted two releases expired",
+   "expected_marker": "EVL_CONV_FEATUREFLAG_60",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_CONV_FEATUREFLAG_60",
+   "expected_marker": "EVL_CONV_FEATUREFLAG_60",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_RUNBOOK_DLQREPLAY_61",
+   "expected_marker": "EVL_RUNBOOK_DLQREPLAY_61",
+   "scope": "org",
+   "kinds": [
+    "procedural"
+   ],
+   "leg": "lexical"
+  },
+  {
+   "query": "dead letter replay batches fifty pause failure gauge",
+   "expected_marker": "EVL_RUNBOOK_DLQREPLAY_61",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_RUNBOOK_DLQREPLAY_61",
+   "expected_marker": "EVL_RUNBOOK_DLQREPLAY_61",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "from this project, anything relevant about EVL_RUNBOOK_DLQREPLAY_61?",
+   "expected_marker": "EVL_RUNBOOK_DLQREPLAY_61",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_POLICY_ACCESSREQ_62",
+   "expected_marker": "EVL_POLICY_ACCESSREQ_62",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "production access ticket approver expires break glass",
+   "expected_marker": "EVL_POLICY_ACCESSREQ_62",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_POLICY_ACCESSREQ_62?",
+   "expected_marker": "EVL_POLICY_ACCESSREQ_62",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_HOWTO_PROFILING_63",
+   "expected_marker": "EVL_HOWTO_PROFILING_63",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "profiling py-spy sampling captures flamegraphs",
+   "expected_marker": "EVL_HOWTO_PROFILING_63",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_HOWTO_PROFILING_63 before making changes",
+   "expected_marker": "EVL_HOWTO_PROFILING_63",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_STD_MIGRATIONS_64",
+   "expected_marker": "EVL_STD_MIGRATIONS_64",
+   "scope": "org",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "migrations reversible lock safe backfills checkpoints",
+   "expected_marker": "EVL_STD_MIGRATIONS_64",
+   "scope": "org",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_STD_MIGRATIONS_64",
+   "expected_marker": "EVL_STD_MIGRATIONS_64",
+   "scope": "org",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_RUNBOOK_REFUND_65",
+   "expected_marker": "EVL_PRJ_RUNBOOK_REFUND_65",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "manual refund verify settlement provider console ledger note",
+   "expected_marker": "EVL_PRJ_RUNBOOK_REFUND_65",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_PRJ_RUNBOOK_REFUND_65",
+   "expected_marker": "EVL_PRJ_RUNBOOK_REFUND_65",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_CHECKLIST_GOLIVE_66",
+   "expected_marker": "EVL_PRJ_CHECKLIST_GOLIVE_66",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "go live DNS cutover cache warmed rollback rehearsed",
+   "expected_marker": "EVL_PRJ_CHECKLIST_GOLIVE_66",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_PRJ_CHECKLIST_GOLIVE_66?",
+   "expected_marker": "EVL_PRJ_CHECKLIST_GOLIVE_66",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_STD_PRICING_67",
+   "expected_marker": "EVL_PRJ_STD_PRICING_67",
+   "scope": "project",
+   "kinds": [
+    "procedural"
+   ],
+   "leg": "lexical"
+  },
+  {
+   "query": "pricing finance sign off notice grandfathered repricing",
+   "expected_marker": "EVL_PRJ_STD_PRICING_67",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_PRJ_STD_PRICING_67 before making changes",
+   "expected_marker": "EVL_PRJ_STD_PRICING_67",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_HOWTO_SANDBOX_68",
+   "expected_marker": "EVL_PRJ_HOWTO_SANDBOX_68",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "reset sandbox clearing webhooks reseeding test cards",
+   "expected_marker": "EVL_PRJ_HOWTO_SANDBOX_68",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_PRJ_HOWTO_SANDBOX_68",
+   "expected_marker": "EVL_PRJ_HOWTO_SANDBOX_68",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_POLICY_SUPPORT_69",
+   "expected_marker": "EVL_PRJ_POLICY_SUPPORT_69",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "sev1 respond fifteen minutes page merchant success lead",
+   "expected_marker": "EVL_PRJ_POLICY_SUPPORT_69",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what do we know about EVL_PRJ_POLICY_SUPPORT_69",
+   "expected_marker": "EVL_PRJ_POLICY_SUPPORT_69",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_GUIDE_CATALOG_70",
+   "expected_marker": "EVL_PRJ_GUIDE_CATALOG_70",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "catalog bulk updates dry run diff preview rejected rows",
+   "expected_marker": "EVL_PRJ_GUIDE_CATALOG_70",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "any notes on EVL_PRJ_GUIDE_CATALOG_70?",
+   "expected_marker": "EVL_PRJ_GUIDE_CATALOG_70",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_RUNBOOK_STUCKORD_71",
+   "expected_marker": "EVL_PRJ_RUNBOOK_STUCKORD_71",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "stuck order requeue fulfillment idempotency state machine",
+   "expected_marker": "EVL_PRJ_RUNBOOK_STUCKORD_71",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "need context on EVL_PRJ_RUNBOOK_STUCKORD_71 before making changes",
+   "expected_marker": "EVL_PRJ_RUNBOOK_STUCKORD_71",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  },
+  {
+   "query": "EVL_PRJ_CONV_EVENTNAME_72",
+   "expected_marker": "EVL_PRJ_CONV_EVENTNAME_72",
+   "scope": "project",
+   "kinds": [],
+   "leg": "lexical"
+  },
+  {
+   "query": "analytics events snake case registered schema registry collector",
+   "expected_marker": "EVL_PRJ_CONV_EVENTNAME_72",
+   "scope": "project",
+   "kinds": [],
+   "leg": "hybrid"
+  },
+  {
+   "query": "what happened with EVL_PRJ_CONV_EVENTNAME_72",
+   "expected_marker": "EVL_PRJ_CONV_EVENTNAME_72",
+   "scope": "project",
+   "kinds": [],
+   "leg": "probe"
+  }
+ ]
+}

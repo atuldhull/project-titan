@@ -1,10 +1,14 @@
 """`rebuild-index` (TITAN-BRN-004): reconstruct every Qdrant collection from
 PostgreSQL — the recovery path that makes Qdrant safely disposable (ADR-05-01).
 
-Reconciliation is a set difference on point-id == chunk-id:
+Reconciliation is a set difference on point-id == chunk-id, where the
+canonical set is chunks of ACTIVE records only (the live pipeline deletes a
+record's points on supersede, and §9.2 archiving drops vectors — a rebuild
+must converge to the same state, so non-active records' leftover points are
+strays):
 
-* points in Qdrant with no PostgreSQL chunk → deleted (strays);
-* chunks in PostgreSQL with no Qdrant point → re-embedded through the gateway
+* points in Qdrant with no ACTIVE PostgreSQL chunk → deleted (strays);
+* active chunks with no Qdrant point → re-embedded through the gateway
   (TITAN-BRN-006) and upserted, with ``embedded_at``/``embed_model`` restamped.
 
 ``titan_kb`` and ``titan_kg_labels`` have no canonical source tables until

@@ -64,6 +64,43 @@ class StubEmbeddings:
         )
 
 
+_TOKEN = re.compile(r"\w+")
+
+
+def hashing_vector(text: str, dim: int = VECTOR_SIZE) -> list[float]:
+    """Bag-of-words feature-hashing unit vector: each lowercased token hashes
+    to a (dimension, sign) bucket, so texts sharing vocabulary get high cosine
+    and disjoint texts sit near zero. A semantically MEANINGFUL dense-leg
+    stand-in — unlike :func:`deterministic_vector`, whose random directions
+    make the dense leg pure noise (fine for wiring tests, useless for eval)."""
+    raw = [0.0] * dim
+    for token in _TOKEN.findall(text.lower()):
+        digest = hashlib.sha256(token.encode("utf-8")).digest()
+        index = int.from_bytes(digest[:8], "big") % dim
+        sign = 1.0 if digest[8] % 2 == 0 else -1.0
+        raw[index] += sign
+    norm = math.sqrt(sum(x * x for x in raw)) or 1.0
+    return [x / norm for x in raw]
+
+
+class HashingEmbeddings(StubEmbeddings):
+    """StubEmbeddings with token-overlap-meaningful vectors — the eval gate's
+    embedder (TITAN-BRN-011), so the dense leg genuinely contributes recall and
+    a corrupted fusion demonstrably tanks the metrics."""
+
+    async def embed(self, req: EmbeddingsRequest) -> EmbeddingsResponse:
+        response = await super().embed(req)
+        return response.model_copy(
+            update={
+                "embeddings": [
+                    EmbeddingVector(index=i, embedding=hashing_vector(text))
+                    for i, text in enumerate(req.input)
+                ],
+                "model_id": "hash-embed-1",
+            }
+        )
+
+
 class FakeQdrantServer:
     """The subset of the Qdrant REST API the memory module uses, in memory."""
 

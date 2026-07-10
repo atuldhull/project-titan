@@ -27,3 +27,8 @@ Thumbs.db
 # Test/coverage artifacts
 .coverage*
 htmlcov/
+
+# Local model artifacts (Phase 37: rerank venv, HF cache, packaged int8 ONNX)
+.venv-rerank/
+.hf-cache/
+.models/

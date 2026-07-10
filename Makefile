@@ -9,7 +9,7 @@ SCHEMAS_DIR := packages/schemas
 
 .PHONY: dev test test-schema test-llm-live lint lint-style boundaries route-guards \
         agent-purity typecheck migrate seed generate-types check-types-drift \
-        lint-openapi secret-scan
+        lint-openapi secret-scan eval-retrieval eval-baseline bench-memory
 
 ## dev: run the API (uvicorn, reload) and the web app (next dev) together.
 ## Docker Compose is the primary dev loop from Phase 2 onward.
@@ -89,3 +89,26 @@ test-schema:
 # the main pipeline (no coverage gate here).
 test-llm-live:
 	cd $(API_DIR) && uv run pytest -m live_llm --no-cov
+
+# Local runs read TITAN_TEST_DATABASE_URL from .env; CI runners have no .env
+# (gitignored) and inject it as a job env var instead — and `uv run
+# --env-file <missing>` HARD-FAILS, so the flag must be conditional.
+ENV_FILE_FLAG := $(if $(wildcard $(CURDIR)/.env),--env-file $(CURDIR)/.env,)
+
+# TITAN-BRN-011: the retrieval quality gate. Seeds the versioned golden
+# dataset, runs recall@10 + nDCG@10 in all three reranker modes, fails on a
+# >5% regression vs tests/golden/memory_eval_baseline.json — plus the
+# broken-fusion-weight negative control and the TITAN-BRN-004 rebuild gate.
+eval-retrieval:
+	cd $(API_DIR) && uv run $(ENV_FILE_FLAG) pytest tests/test_memory_eval_gate.py -q -s --no-cov
+
+# Consciously refresh the stored eval baseline (dataset bump / real retrieval
+# improvement) — commit the resulting memory_eval_baseline.json diff.
+eval-baseline:
+	cd $(API_DIR) && TITAN_EVAL_WRITE_BASELINE=1 uv run $(ENV_FILE_FLAG) pytest \
+		"tests/test_memory_eval_gate.py::test_eval_gate_against_baseline" -q -s --no-cov
+
+# TITAN-BRN-010: the 100k-chunk query->packet latency benchmark (reference
+# laptop, real PG/Redis/Qdrant; see scripts/bench_retrieval.py for setup).
+bench-memory:
+	cd $(API_DIR) && uv run python scripts/bench_retrieval.py $(BENCH_ARGS)

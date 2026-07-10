@@ -340,30 +340,48 @@ class NoopReranker:
 
 
 class CrossEncoderReranker:
-    """The §6.1 primary reranker: bge-reranker-v2-m3 cross-encoder, in-process
-    via ``sentence-transformers`` (CPU, ONNX backend; install the optional
-    ``rerank`` extra). The heavyweight import and model load happen lazily on
-    first use, off the event loop (main.py warms it at startup so no user
-    request pays the load). ``onnx_file`` selects an explicit weight file —
-    e.g. an int8 export baked into the image (§6.1/§6.3); without one the
-    library may auto-export, which Phase 37's packaging eliminates.
+    """The §6.1 primary reranker: an in-process cross-encoder via
+    ``sentence-transformers`` (CPU, ONNX backend; install the optional
+    ``rerank`` extra). ``model`` is a HF id or a local directory packaged by
+    ``scripts/fetch_reranker.py``; the settings default is a small model that
+    fits TITAN-BRN-010's 800 ms budget on the reference laptop — §6.1's named
+    bge-reranker-v2-m3 (kept as :attr:`QUALITY_MODEL`) measures ~4.3 s per
+    24-pair int8 batch there and remains a config-selected upgrade. The
+    heavyweight import and model load happen lazily on first use, off the
+    event loop (main.py warms it at startup so no user request pays the load).
+    ``onnx_file`` selects an explicit weight file — e.g. the packaged int8
+    export (§6.1/§6.3); without one the library may auto-export, slowly.
     ``score_fn`` is injectable so the pipeline logic is testable without the
     model download."""
 
-    MODEL = "BAAI/bge-reranker-v2-m3"
+    # §6.1's named model — the quality-first option, NOT the laptop default
+    # (see settings.reranker_model for the measured TITAN-BRN-010 conflict).
+    QUALITY_MODEL = "BAAI/bge-reranker-v2-m3"
+    DEFAULT_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
-    def __init__(self, score_fn: "ScoreFn | None" = None, *, onnx_file: str | None = None) -> None:
+    def __init__(
+        self,
+        score_fn: "ScoreFn | None" = None,
+        *,
+        model: str | None = None,
+        onnx_file: str | None = None,
+        max_length: int = 256,
+    ) -> None:
         self._score_fn: ScoreFn | None = score_fn
+        self._model = model or self.DEFAULT_MODEL
         self._onnx_file = onnx_file
+        self._max_length = max_length
         self._load_lock = asyncio.Lock()
 
     def _load(self) -> "ScoreFn":  # pragma: no cover — exercised only with the extra
         from sentence_transformers import CrossEncoder  # noqa: PLC0415
 
-        kwargs: dict[str, Any] = {"backend": "onnx"}
+        # max_length: rerank cost is linear in sequence length; full 512-token
+        # chunks blow the TITAN-BRN-010 budget (see settings.reranker_max_length).
+        kwargs: dict[str, Any] = {"backend": "onnx", "max_length": self._max_length}
         if self._onnx_file:
             kwargs["model_kwargs"] = {"file_name": self._onnx_file}
-        model = CrossEncoder(self.MODEL, **kwargs)
+        model = CrossEncoder(self._model, **kwargs)
 
         def predict(pairs: list[tuple[str, str]]) -> list[float]:
             return [float(s) for s in model.predict(pairs)]

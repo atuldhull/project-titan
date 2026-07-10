@@ -285,7 +285,11 @@ def build_reranker(settings: Any, gateway: Any) -> retrieval.Reranker:
         return retrieval.NoopReranker()
     if settings.reranker == "on":
         if _cross_encoder_deps_present():
-            return retrieval.CrossEncoderReranker(onnx_file=settings.reranker_onnx_file)
+            return retrieval.CrossEncoderReranker(
+                model=settings.reranker_model,
+                onnx_file=settings.reranker_onnx_file,
+                max_length=settings.reranker_max_length,
+            )
         logger.warning(
             "memory.reranker_extra_missing",
             detail="RERANKER=on but the `rerank` extra (sentence-transformers[onnx]) "

@@ -84,6 +84,38 @@ jobs:
       # pytest carries the coverage gate: --cov-fail-under=80 (TITAN-FND-064)
       - run: make test
 
+  # TITAN-BRN-011: the retrieval quality gate — seeds the versioned golden
+  # dataset, reports recall@10 + nDCG@10 in all three reranker modes, and
+  # fails on a >5% regression vs the stored baseline (plus the broken-fusion
+  # negative control and the TITAN-BRN-004 rebuild gate). Metrics land in the
+  # job log and the GitHub step summary.
+  retrieval-eval:
+    needs: typecheck
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: titan
+          POSTGRES_PASSWORD: titan
+          POSTGRES_DB: titan_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U titan -d titan_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TITAN_TEST_DATABASE_URL: postgresql+asyncpg://titan:titan@localhost:5432/titan_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: cd apps/api && uv sync --frozen
+      - run: make eval-retrieval
+
   types-drift:
     needs: typecheck
     runs-on: ubuntu-latest

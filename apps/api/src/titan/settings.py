@@ -40,11 +40,30 @@ class Settings(BaseSettings):
     # TITAN-BRN-010 ≤400 ms reranker-off budget, which an LLM round-trip cannot;
     # the §6.1-vs-§6.4 tension is resolved by offering both as distinct modes).
     reranker: Literal["on", "llm", "off"] = "on"
-    # Explicit ONNX weight file for the cross-encoder (e.g. an int8 export baked
-    # into the image, §6.1/§6.3). None = the library default (which may trigger
-    # a slow in-process export for models without published ONNX weights —
-    # Phase 37's packaging bakes the int8 artifact).
+    # The cross-encoder for RERANKER=on: a HF model id or a local directory
+    # (scripts/fetch_reranker.py packages one with int8 ONNX weights). The
+    # default is the model that MEETS TITAN-BRN-010 on the reference laptop
+    # profile: §6.1 names bge-reranker-v2-m3 at "~30 ms per pair batch", but
+    # its measured int8 cost is ~180 ms/pair on the reference CPU (Ryzen
+    # 8845HS, AVX-512 VNNI) — 4.3 s per 24-pair batch, 5x the entire 800 ms
+    # budget. The numbered §6.4 MUST outranks the §6.1 prose (the Phase-36
+    # precedent), so the laptop default is a small cross-encoder inside the
+    # budget, and bge-reranker-v2-m3 stays one config switch away for beefier
+    # hosts / multilingual orgs (the §15 R1 "config-only upgrade" philosophy).
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    # Explicit ONNX weight file for the cross-encoder, relative to the model
+    # directory (e.g. the int8 export scripts/fetch_reranker.py produces and
+    # the image bakes, §6.1/§6.3). None = the library default (which may
+    # trigger a slow in-process export for models without published ONNX
+    # weights).
     reranker_onnx_file: str | None = None
+    # Token cap per (query, chunk) rerank pair. Cross-encoder cost scales
+    # linearly with sequence length: 24 full 512-token chunks cost ~970 ms
+    # even on the small default model — over the TITAN-BRN-010 budget — vs
+    # ~365 ms truncated to 256 (measured, reference laptop). Relevance signal
+    # is front-loaded (each chunk leads with its contextual header + opening),
+    # so truncation is the standard latency/quality trade.
+    reranker_max_length: int = 256
 
     # /readyz dependency-check budget in seconds (Vol 3 §12: 500 ms)
     readyz_budget_seconds: float = 0.5

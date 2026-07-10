@@ -56,9 +56,20 @@ def test_rebuild_reconciles_by_point_id_set_difference(api: dict[str, Any]) -> N
         server.seed_point("titan_memory", stray, deterministic_vector("stray"))
         report = await memory.rebuild_index(engine, index, stub)
         async with engine.connect() as conn:
+            # The canonical set is ACTIVE records' chunks (Phase 37): other
+            # tests on the shared DB may leave superseded residue, which
+            # rebuild rightly treats as strays, not corpus.
             pg_ids = {
                 str(row.id)
-                for row in (await conn.execute(text("SELECT id FROM brain.memory_chunks"))).all()
+                for row in (
+                    await conn.execute(
+                        text(
+                            "SELECT c.id FROM brain.memory_chunks c "
+                            "JOIN brain.memory_records r ON r.id = c.record_id "
+                            "WHERE r.status = 'active'"
+                        )
+                    )
+                ).all()
             }
             unstamped = (
                 await conn.execute(
@@ -76,7 +87,11 @@ def test_rebuild_reconciles_by_point_id_set_difference(api: dict[str, Any]) -> N
     stats = report.collections["titan_memory"]
     assert stats.strays_deleted >= 1  # the seeded stray is gone
     assert stats.chunks_embedded >= 3  # this test's three records re-embedded
-    assert stats.points == pg_count == len(qdrant_ids)  # exact set equality
+    assert stats.points == len(qdrant_ids)  # report matches the actual index
+    # Canonical set = active chunks MINUS dead-lettered poison (rebuild skips
+    # quarantine): another test's live dead_at outbox row on the shared DB
+    # must not break the equality.
+    assert stats.points == pg_count - stats.quarantined
     assert unstamped == 0  # embedded_at restamped (TITAN-BRN-004)
 
 
