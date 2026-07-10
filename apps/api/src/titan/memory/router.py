@@ -11,19 +11,28 @@ principal performing the operation, so provenance and audit are both recorded.
 """
 
 import uuid
-from typing import Annotated
+from typing import Annotated, cast
 
+import httpx
 from fastapi import APIRouter, Depends, FastAPI, Query, Request
 
 from titan.gateway.rbac import Requires, not_found
 from titan.identity.service import Principal
 from titan.memory import service
-from titan.memory.service import MemoryEventBatch, MemoryRecordDetail, MemoryWriteResult
+from titan.memory.service import (
+    EmbeddingsClient,
+    MemoryEventBatch,
+    MemoryRecordDetail,
+    MemoryWriteResult,
+    QdrantIndex,
+    RebuildReport,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["memory"])
 
 _WriteMemory = Annotated[Principal, Depends(Requires("memory:write"))]
 _ReadMemory = Annotated[Principal, Depends(Requires("memory:read"))]
+_AdminMemory = Annotated[Principal, Depends(Requires("memory:admin"))]
 
 
 def _actor(principal: Principal) -> str:
@@ -67,6 +76,18 @@ async def get_memory_record(
     if detail is None:
         raise not_found("memory record")
     return detail
+
+
+@router.post("/memory/admin/rebuild-index", response_model=RebuildReport)
+async def rebuild_index(request: Request, principal: _AdminMemory) -> RebuildReport:
+    """Fully reconstruct every Qdrant collection from PostgreSQL, reconciling by
+    point-id == chunk-id set difference (TITAN-BRN-004). Admin-only; runs
+    synchronously — laptop-scale collections rebuild in seconds, and the caller
+    gets the reconciliation report as the response."""
+    state = request.app.state
+    qdrant = QdrantIndex(cast(httpx.AsyncClient, state.http))
+    embeddings = cast(EmbeddingsClient, state.llm_gateway)
+    return await service.rebuild_index(state.engine, qdrant, embeddings)
 
 
 def mount(app: FastAPI) -> None:

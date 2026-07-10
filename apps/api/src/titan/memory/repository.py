@@ -124,6 +124,167 @@ async def insert_outbox(conn: AsyncConnection, *, chunk_id: uuid.UUID, op: str) 
     )
 
 
+async def drainable_outbox(
+    conn: AsyncConnection, *, republish_before_seconds: float, batch: int
+) -> Sequence[Row[Any]]:
+    """The relay's working set: unprocessed rows never published, PLUS rows
+    published longer than ``republish_before_seconds`` ago but still unprocessed
+    (heals a wiped/lossy Redis — PostgreSQL is canonical, ADR-05-01). Dead rows
+    (quarantined after MAX_ATTEMPTS deliveries) are EXCLUDED — republishing them
+    would defeat the DLQ (§5.1); an operator replay clears ``dead_at``. Row-
+    locked with SKIP LOCKED so concurrent relays never double-publish."""
+    result = await conn.execute(
+        text(
+            "SELECT id, chunk_id, op, enqueued_at FROM brain.ingest_outbox "
+            "WHERE processed_at IS NULL AND dead_at IS NULL AND (published_at IS NULL "
+            "  OR published_at < now() - make_interval(secs => :stale)) "
+            "ORDER BY id LIMIT :batch FOR UPDATE SKIP LOCKED"
+        ),
+        {"stale": republish_before_seconds, "batch": batch},
+    )
+    return result.all()
+
+
+async def mark_outbox_dead(conn: AsyncConnection, outbox_id: int) -> None:
+    """Terminal quarantine (§5.1): the row's message was dead-lettered; the relay
+    must stop republishing it. Cleared only by an explicit operator replay."""
+    await conn.execute(
+        text("UPDATE brain.ingest_outbox SET dead_at = now() WHERE id = :id"),
+        {"id": outbox_id},
+    )
+
+
+async def mark_outbox_published(conn: AsyncConnection, outbox_id: int) -> None:
+    await conn.execute(
+        text("UPDATE brain.ingest_outbox SET published_at = now() WHERE id = :id"),
+        {"id": outbox_id},
+    )
+
+
+async def outbox_row(conn: AsyncConnection, outbox_id: int) -> Row[Any] | None:
+    result = await conn.execute(
+        text(
+            "SELECT id, chunk_id, op, enqueued_at, published_at, processed_at "
+            "FROM brain.ingest_outbox WHERE id = :id"
+        ),
+        {"id": outbox_id},
+    )
+    return result.one_or_none()
+
+
+async def chunk_for_embedding(conn: AsyncConnection, chunk_id: uuid.UUID) -> Row[Any] | None:
+    """A chunk joined to its record — everything the embedder needs: the text to
+    embed and the §4.4 payload fields."""
+    result = await conn.execute(
+        text(
+            "SELECT c.id AS chunk_id, c.record_id, c.seq, c.text, "
+            "       r.scope, r.kind, r.project_id, r.source_agent, r.created_at, "
+            "       r.decay_score, r.metadata "
+            "FROM brain.memory_chunks c JOIN brain.memory_records r ON r.id = c.record_id "
+            "WHERE c.id = :cid"
+        ),
+        {"cid": chunk_id},
+    )
+    return result.one_or_none()
+
+
+async def mark_embedded(
+    conn: AsyncConnection, *, chunk_id: uuid.UUID, outbox_id: int, embed_model: str
+) -> None:
+    """Stamp the §5.1 success markers in ONE transaction: the chunk's
+    embedded_at/embed_model and the outbox row's processed_at."""
+    await conn.execute(
+        text(
+            "UPDATE brain.memory_chunks SET embedded_at = now(), embed_model = :model "
+            "WHERE id = :cid"
+        ),
+        {"cid": chunk_id, "model": embed_model},
+    )
+    await conn.execute(
+        text("UPDATE brain.ingest_outbox SET processed_at = now() WHERE id = :id"),
+        {"id": outbox_id},
+    )
+
+
+async def mark_outbox_processed(conn: AsyncConnection, outbox_id: int) -> None:
+    await conn.execute(
+        text("UPDATE brain.ingest_outbox SET processed_at = now() WHERE id = :id"),
+        {"id": outbox_id},
+    )
+
+
+async def later_delete_exists(
+    conn: AsyncConnection, *, chunk_id: uuid.UUID, after_outbox_id: int
+) -> bool:
+    """True when a ``delete`` op for this chunk was enqueued AFTER the given
+    outbox row. The outbox (canonical, ordered) arbitrates op order — parallel
+    embedders may interleave stream deliveries, and an upsert processed after a
+    later delete would resurrect a deleted point."""
+    result = await conn.execute(
+        text(
+            "SELECT EXISTS (SELECT 1 FROM brain.ingest_outbox "
+            "WHERE chunk_id = :cid AND op = 'delete' AND id > :oid)"
+        ),
+        {"cid": chunk_id, "oid": after_outbox_id},
+    )
+    return bool(result.scalar_one())
+
+
+async def mark_chunks_embedded(
+    conn: AsyncConnection, chunk_ids: Sequence[uuid.UUID], *, embed_model: str
+) -> None:
+    """Restamp a rebuild batch's chunks as embedded (TITAN-BRN-004)."""
+    if not chunk_ids:
+        return
+    await conn.execute(
+        text(
+            "UPDATE brain.memory_chunks SET embedded_at = now(), embed_model = :model "
+            "WHERE id = ANY(CAST(:ids AS uuid[]))"
+        ),
+        {"ids": list(chunk_ids), "model": embed_model},
+    )
+
+
+async def all_chunk_ids(conn: AsyncConnection) -> set[uuid.UUID]:
+    """Every chunk id in PostgreSQL — the canonical side of the TITAN-BRN-004
+    set-difference reconciliation."""
+    result = await conn.execute(text("SELECT id FROM brain.memory_chunks"))
+    return {row.id for row in result.all()}
+
+
+async def quarantined_chunk_ids(conn: AsyncConnection) -> set[uuid.UUID]:
+    """Chunks whose pipeline work was dead-lettered (a live ``dead_at`` outbox
+    row): known poison. Rebuild skips them — retrying deterministic failures
+    would abort the TITAN-BRN-004 recovery command; an operator replay clears
+    the quarantine first."""
+    result = await conn.execute(
+        text(
+            "SELECT DISTINCT chunk_id FROM brain.ingest_outbox "
+            "WHERE dead_at IS NOT NULL AND processed_at IS NULL"
+        )
+    )
+    return {row.chunk_id for row in result.all()}
+
+
+async def chunks_for_rebuild(
+    conn: AsyncConnection, chunk_ids: Sequence[uuid.UUID]
+) -> Sequence[Row[Any]]:
+    """Chunk+record rows for a rebuild batch (same shape as chunk_for_embedding)."""
+    if not chunk_ids:
+        return []
+    result = await conn.execute(
+        text(
+            "SELECT c.id AS chunk_id, c.record_id, c.seq, c.text, "
+            "       r.scope, r.kind, r.project_id, r.source_agent, r.created_at, "
+            "       r.decay_score, r.metadata "
+            "FROM brain.memory_chunks c JOIN brain.memory_records r ON r.id = c.record_id "
+            "WHERE c.id = ANY(CAST(:ids AS uuid[])) ORDER BY c.id"
+        ),
+        {"ids": list(chunk_ids)},
+    )
+    return result.all()
+
+
 # --- ledger (append-only) --------------------------------------------------
 
 

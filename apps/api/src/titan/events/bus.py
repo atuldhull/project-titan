@@ -7,10 +7,16 @@ in titan.events.redis_bus.
 """
 
 import datetime as dt
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from titan.events.envelope import Envelope
+
+# Invoked by reap() for each envelope it routes to the DLQ, so the caller can
+# make dead-lettering terminal in ITS canonical store (e.g. stamp the source
+# outbox row) — otherwise a stale-republish loop would resurrect the poison.
+DeadLetterHook = Callable[[Envelope], Awaitable[None]]
 
 
 @dataclass
@@ -65,10 +71,13 @@ class QueueBus(Protocol):
         *,
         min_idle_ms: int = 60_000,
         max_attempts: int = 3,
+        on_dead: DeadLetterHook | None = None,
     ) -> list[Delivery]:
         """Reclaim idle-pending messages from dead consumers; route poison
-        (over max_attempts deliveries) to the DLQ. Callers MUST reprocess the
-        returned deliveries (retry) — discarding them breaks at-least-once."""
+        (over max_attempts deliveries) to the DLQ, invoking ``on_dead`` per
+        dead-lettered envelope so the producer's canonical store can stop
+        republishing it. Callers MUST reprocess the returned deliveries
+        (retry) — discarding them breaks at-least-once."""
         ...
 
     async def pending_depth(self, topic: str, group: str) -> int:

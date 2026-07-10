@@ -39,6 +39,15 @@ STREAM_DEPTH = Gauge(
     ["stream", "group"],
 )
 
+# Memory-ingestion lag: Memory Event commit → chunk searchable in Qdrant
+# (Vol 5 §5.4, TITAN-BRN-007: p95 ≤ 5 s at ≤ 10 events/s). Buckets bracket the
+# 5 s target on both sides so the p95 estimate is meaningful at the threshold.
+MEMORY_INGEST_LAG = Histogram(
+    "titan_memory_ingest_lag_seconds",
+    "Seconds from Memory Event commit to the chunk confirmed searchable in Qdrant",
+    buckets=(0.1, 0.25, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 30.0, 60.0),
+)
+
 router = APIRouter()
 
 _FIXED_PATHS = frozenset({"/api/docs", "/api/openapi.json", "/metrics"})

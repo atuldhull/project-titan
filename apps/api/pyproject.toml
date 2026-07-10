@@ -36,6 +36,10 @@ dependencies = [
     "tree-sitter-language-pack>=1.10",
 ]
 
+[project.scripts]
+# The operator CLI (Phase 35: `titan memory rebuild-index`, TITAN-BRN-004).
+titan = "titan.cli:main"
+
 [dependency-groups]
 dev = [
     "ruff>=0.6",

@@ -129,7 +129,13 @@ class IngestOutbox(Base):
     enqueued_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
     )
+    # Two-phase drain (Phase 35): the relay stamps published_at when the row hits
+    # the ingest stream; the embedder stamps processed_at after Qdrant confirms.
+    published_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     processed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    # Terminal quarantine (§5.1): stamped when the message dead-letters after
+    # MAX_ATTEMPTS deliveries; excluded from republish until an operator replay.
+    dead_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
 
 
 class MemoryLedger(Base):

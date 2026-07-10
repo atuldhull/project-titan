@@ -39,6 +39,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "tool_approval:write",
         # Write durable memory (Vol 5 Memory Service, Phase 33).
         "memory:write",
+        # rebuild-index and other memory maintenance (TITAN-BRN-004, Phase 35).
+        "memory:admin",
         "*:read",
     ],
     "maintainer": [

@@ -15,7 +15,7 @@ import uuid_utils
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
 
-from titan.events.bus import Delivery
+from titan.events.bus import DeadLetterHook, Delivery
 from titan.events.envelope import Envelope
 from titan.events.streams import dlq_stream
 from titan.observability.metrics import STREAM_DLQ_DEPTH
@@ -97,6 +97,7 @@ class RedisStreamBus:
         *,
         min_idle_ms: int = 60_000,
         max_attempts: int = 3,
+        on_dead: DeadLetterHook | None = None,
     ) -> list[Delivery]:
         _cursor, claimed, _deleted = await self._redis.xautoclaim(
             topic, group, consumer, min_idle_time=min_idle_ms, start_id="0-0", count=100
@@ -109,6 +110,24 @@ class RedisStreamBus:
                 continue
             times = await self._delivery_count(topic, group, entry_id)
             if times > max_attempts:
+                if on_dead is not None:
+                    # Let the producer's canonical store record the quarantine —
+                    # e.g. stamp its outbox row so a stale-republish loop cannot
+                    # resurrect the poison and refill the DLQ forever. Invoked
+                    # BEFORE _to_dlq: a crash between the two leaves the entry
+                    # in the PEL with the stamp durable, and the next reap
+                    # re-detects it. A failing hook must not abort the pass —
+                    # the co-claimed entries already paid a delivery count and
+                    # deserve their retry; the unstamped row converges through
+                    # the seen-TTL republish cycle.
+                    try:
+                        await on_dead(envelope)
+                    except Exception:
+                        logger.exception(
+                            "queue.dead_letter_hook_failed",
+                            stream=topic,
+                            event_id=envelope.event_id,
+                        )
                 await self._to_dlq(topic, group, entry_id, envelope, times)
                 continue
             deliveries.append(Delivery(handle=entry_id, envelope=envelope, delivery_count=times))
@@ -117,6 +136,14 @@ class RedisStreamBus:
     async def pending_depth(self, topic: str, group: str) -> int:
         summary = await self._redis.xpending(topic, group)
         return int(cast(Any, summary)["pending"]) if summary else 0
+
+    async def forget(self, group: str, event_id: str) -> None:
+        """Erase the seen-ledger entry for ``event_id`` (Redis-specific admin
+        helper, not part of the QueueBus protocol). A dead-lettered event id is
+        marked seen so republished copies are dropped; an operator REPLAY (e.g.
+        clearing ingest_outbox.dead_at/published_at) must call this too, or the
+        replayed publish is silently swallowed for the seen TTL."""
+        await self._redis.delete(self._seen_key(group, event_id))
 
     # -- internals ---------------------------------------------------------
 
@@ -154,6 +181,10 @@ class RedisStreamBus:
             approximate=True,
         )
         await self._redis.xack(topic, group, entry_id)
+        # A dead-lettered event_id is DISPOSED: mark it seen so a republished
+        # copy (same stable id, e.g. an outbox stale-republish) is dropped at
+        # consume instead of burning another full retry cycle into the DLQ.
+        await self._mark_seen(group, envelope.event_id)
         depth = await self._redis.xlen(dlq)
         STREAM_DLQ_DEPTH.labels(stream=topic).set(depth)
         logger.warning(

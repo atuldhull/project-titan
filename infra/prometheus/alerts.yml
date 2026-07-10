@@ -1,0 +1,31 @@
+# Alert rules for local Compose (Vol 3 §12; Vol 5 §5.1).
+groups:
+  - name: titan-memory-pipeline
+    rules:
+      # §5.1: a message dead-lettered after MAX_ATTEMPTS deliveries means a
+      # memory chunk is NOT searchable and needs an operator (TITAN-BRN-007's
+      # lag target is silently broken for it until replayed).
+      - alert: MemoryIngestDeadLetters
+        expr: titan_stream_dlq_depth{stream="titan:memory:ingest"} > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memory ingest DLQ is non-empty"
+          description: >-
+            {{ $value }} poison message(s) in the titan:memory:ingest dead-letter
+            stream — chunks are missing from Qdrant until replayed
+            (Vol 5 §5.1; check worker logs for memory.ingest_failed).
+      # TITAN-BRN-007: p95 commit→searchable must stay ≤ 5 s.
+      - alert: MemoryIngestLagHigh
+        expr: >-
+          histogram_quantile(0.95,
+            sum(rate(titan_memory_ingest_lag_seconds_bucket[5m])) by (le)) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memory ingestion lag p95 above 5s"
+          description: >-
+            p95 Memory-Event-commit → searchable latency exceeded the
+            TITAN-BRN-007 budget for 5 minutes.

@@ -1,13 +1,15 @@
 """Public service interface of the `memory` module (TITAN-BCK-004).
 
 Responsibility: the Memory Service write path — Memory Events, the canonical
-record/chunk store, the transactional embedding outbox, and the append-only
-audit ledger (Vol 5 §4, §5.1, TITAN-BRN-001/005). Retrieval (§6) and the
-embedding worker (§5.1) land in later phases.
+record/chunk store, the transactional embedding outbox, the append-only audit
+ledger (Vol 5 §4, §5.1, TITAN-BRN-001/005) — and, from Phase 35, the embedding
+ingestion pipeline (outbox relay → ``titan:memory:ingest`` → gateway
+/embeddings → Qdrant) plus the ``rebuild-index`` reconstruction command
+(TITAN-BRN-004). Retrieval (§6) lands in Phase 36.
 
 Only this interface may be imported by other modules; the ORM models, the
-repository, and the chunker internals stay private to the package. Pydantic v2
-DTOs — never SQLAlchemy models — cross this boundary.
+repository, the chunker, and the Qdrant/ingest internals stay private to the
+package. Pydantic v2 DTOs — never SQLAlchemy models — cross this boundary.
 """
 
 import json
@@ -24,6 +26,19 @@ from titan.gateway.dto import JsonbDict
 from titan.gateway.problems import ProblemException, problem_type
 from titan.memory import repository as repo
 from titan.memory.chunker import CONTENT_TYPES, ChunkContext, ContentType, get_chunker
+from titan.memory.ingest import (
+    EMBEDDERS_GROUP,
+    INGEST_DLQ,
+    STREAM_MEMORY_INGEST,
+    EmbeddingsClient,
+    IngestRelay,
+    MemoryEmbedder,
+    run_embedder,
+    run_ingest_reaper,
+    run_ingest_relay,
+)
+from titan.memory.qdrant import COLLECTION_SPECS, QdrantIndex
+from titan.memory.rebuild import CollectionRebuild, RebuildReport, rebuild_index
 
 MemoryKind = Literal["episodic", "semantic", "procedural"]
 LedgerAction = Literal["read", "write", "promote", "prune", "supersede"]
@@ -280,9 +295,17 @@ async def get_record_detail(
 
 
 __all__ = [
+    "COLLECTION_SPECS",
+    "EMBEDDERS_GROUP",
+    "INGEST_DLQ",
+    "STREAM_MEMORY_INGEST",
+    "CollectionRebuild",
     "ContentType",
+    "EmbeddingsClient",
+    "IngestRelay",
     "LedgerAction",
     "MemoryChunkOut",
+    "MemoryEmbedder",
     "MemoryEvent",
     "MemoryEventBatch",
     "MemoryKind",
@@ -290,8 +313,14 @@ __all__ = [
     "MemoryRecordDetail",
     "MemoryRecordOut",
     "MemoryWriteResult",
+    "QdrantIndex",
+    "RebuildReport",
     "WrittenRecord",
     "get_record_detail",
     "parse_scope",
+    "rebuild_index",
+    "run_embedder",
+    "run_ingest_reaper",
+    "run_ingest_relay",
     "write_events",
 ]
