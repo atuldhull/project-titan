@@ -32,6 +32,20 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     qdrant_url: str = "http://localhost:6333"
 
+    # §6.1 reranker mode (TITAN_RERANKER). "on" = in-process bge-reranker-v2-m3
+    # cross-encoder (needs the optional `rerank` extra). "llm" = listwise rerank
+    # through the gateway's cheapest chat model (§6.1's stated fallback). "off"
+    # = a zero-latency rank-preserving no-op — fusion order + freshness/
+    # importance decide (§15 R4 low-RAM mode; the only mode that can meet the
+    # TITAN-BRN-010 ≤400 ms reranker-off budget, which an LLM round-trip cannot;
+    # the §6.1-vs-§6.4 tension is resolved by offering both as distinct modes).
+    reranker: Literal["on", "llm", "off"] = "on"
+    # Explicit ONNX weight file for the cross-encoder (e.g. an int8 export baked
+    # into the image, §6.1/§6.3). None = the library default (which may trigger
+    # a slow in-process export for models without published ONNX weights —
+    # Phase 37's packaging bakes the int8 artifact).
+    reranker_onnx_file: str | None = None
+
     # /readyz dependency-check budget in seconds (Vol 3 §12: 500 ms)
     readyz_budget_seconds: float = 0.5
 

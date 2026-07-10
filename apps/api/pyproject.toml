@@ -36,6 +36,12 @@ dependencies = [
     "tree-sitter-language-pack>=1.10",
 ]
 
+[project.optional-dependencies]
+# §6.1 in-process cross-encoder reranker (bge-reranker-v2-m3), ONNX backend.
+# The [onnx] extra pulls optimum+onnxruntime, and >=4.0 is required for
+# CrossEncoder(backend=...). Heavy (torch); RERANKER=llm|off run without it.
+rerank = ["sentence-transformers[onnx]>=4.0"]
+
 [project.scripts]
 # The operator CLI (Phase 35: `titan memory rebuild-index`, TITAN-BRN-004).
 titan = "titan.cli:main"
@@ -114,6 +120,13 @@ disallow_untyped_calls = false
 [[tool.mypy.overrides]]
 # readability-lxml + markdownify ship no stubs; wrapped by titan.tools.web.extract.
 module = ["readability", "readability.*", "markdownify"]
+ignore_missing_imports = true
+disallow_untyped_calls = false
+
+[[tool.mypy.overrides]]
+# Optional `rerank` extra (§6.1 cross-encoder); imported lazily and absent in
+# the default dev environment.
+module = ["sentence_transformers", "sentence_transformers.*"]
 ignore_missing_imports = true
 disallow_untyped_calls = false
 

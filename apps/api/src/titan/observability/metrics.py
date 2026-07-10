@@ -8,7 +8,7 @@ into a single ``unmatched`` route label.
 import time
 
 from fastapi import APIRouter, Response
-from prometheus_client import CONTENT_TYPE_LATEST, Gauge, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response as StarletteResponse
@@ -46,6 +46,14 @@ MEMORY_INGEST_LAG = Histogram(
     "titan_memory_ingest_lag_seconds",
     "Seconds from Memory Event commit to the chunk confirmed searchable in Qdrant",
     buckets=(0.1, 0.25, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 30.0, 60.0),
+)
+
+# Memory Packet cache (Vol 5 §6.4, TITAN-BRN-012): identical (scope, query)
+# retrievals within 300 s serve from Redis; the hit counter is the acceptance.
+MEMORY_PACKET_CACHE = Counter(
+    "titan_memory_packet_cache_total",
+    "Memory Packet cache lookups by result",
+    ["result"],  # hit | miss
 )
 
 router = APIRouter()

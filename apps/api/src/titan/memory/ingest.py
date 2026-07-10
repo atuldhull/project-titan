@@ -264,6 +264,8 @@ def build_point(chunk: Row[Any], vector: list[float]) -> dict[str, Any]:
         "created_at": chunk.created_at.isoformat(),
         "tags": _tags(chunk.metadata),
         "decay_score": float(chunk.decay_score),
+        # §6.1 filters by status; not in the §4.4 INDEX list, so payload-only.
+        "status": chunk.status,
     }
     if chunk.project_id is not None:
         payload["project_id"] = str(chunk.project_id)

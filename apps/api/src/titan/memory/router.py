@@ -22,10 +22,13 @@ from titan.memory import service
 from titan.memory.service import (
     EmbeddingsClient,
     MemoryEventBatch,
+    MemoryPacketOut,
     MemoryRecordDetail,
     MemoryWriteResult,
+    PacketRequest,
     QdrantIndex,
     RebuildReport,
+    Reranker,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["memory"])
@@ -76,6 +79,28 @@ async def get_memory_record(
     if detail is None:
         raise not_found("memory record")
     return detail
+
+
+@router.post("/memory/packets", response_model=MemoryPacketOut)
+async def assemble_memory_packet(
+    request: Request,
+    body: PacketRequest,
+    principal: _ReadMemory,
+) -> MemoryPacketOut:
+    """Assemble a cited §6.2 Memory Packet through the §6.1 hybrid retrieval
+    pipeline (dense ∥ lexical → RRF → rerank → budget fill), served from the
+    300 s Redis cache for identical (scope, query) requests (TITAN-BRN-012).
+    Scope isolation is mandatory: org + the caller's named project only
+    (TITAN-BRN-003)."""
+    state = request.app.state
+    return await service.assemble_packet(
+        state.engine,
+        state.redis,
+        QdrantIndex(cast(httpx.AsyncClient, state.http)),
+        cast(EmbeddingsClient, state.llm_gateway),
+        cast(Reranker, state.memory_reranker),
+        body,
+    )
 
 
 @router.post("/memory/admin/rebuild-index", response_model=RebuildReport)

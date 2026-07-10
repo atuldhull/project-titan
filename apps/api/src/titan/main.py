@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -35,6 +36,7 @@ from titan.identity.tokens import KeyRing
 from titan.llm import router as llm_router
 from titan.llm import service as llm_service
 from titan.memory import router as memory_router
+from titan.memory import service as memory_service
 from titan.messaging import router as messaging_router
 from titan.observability import otel
 from titan.observability.health import router as health_router
@@ -50,6 +52,8 @@ from titan.runtime import service as runtime_service
 from titan.settings import Settings, get_settings
 from titan.tools import router as tools_router
 from titan.tools import service as tools_service
+
+logger = structlog.get_logger("titan.main")
 
 
 def _egress_config(settings: Settings) -> "tools_service.EgressConfig | None":
@@ -90,6 +94,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             engine=application.state.engine,
             redis=application.state.redis,
         )
+        # §6.1 reranker (Phase 36): cross-encoder (RERANKER=on, extra installed),
+        # LLM listwise (llm / degraded on), or the zero-latency no-op (off) —
+        # built once, reused across packet requests. (Its background warm-up is
+        # created just before yield so a startup failure never orphans it.)
+        application.state.memory_reranker = memory_service.build_reranker(
+            active_settings, application.state.llm_gateway
+        )
+        application.state.reranker_warmup = None
         # §4.1 boot-time registry rebuild + the single side-effect chokepoint.
         application.state.tool_registry = tools_service.build_registry()
         # Per-task workspace jail (fs.* tools) + the hardened sandbox controller
@@ -189,6 +201,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 watchdog.run_forever(stop=application.state.watchdog_stop)
             )
         otel.instrument_engine(active_settings, application.state.engine)
+        # Warm the cross-encoder model off the request path (TITAN-BRN-010: no
+        # user request pays the load). Created LAST so a startup failure above
+        # never orphans it. NOTE: cancel() cannot stop an in-flight load thread
+        # (asyncio joins the executor at exit) — Phase 37's baked int8 artifact
+        # makes the load fast; without it a mid-load shutdown may linger.
+        if isinstance(application.state.memory_reranker, memory_service.CrossEncoderReranker):
+
+            async def _warm_reranker() -> None:  # pragma: no cover — model path
+                try:
+                    await application.state.memory_reranker.warm_up()
+                except Exception:
+                    logger.exception("memory.reranker_warmup_failed")
+
+            application.state.reranker_warmup = asyncio.create_task(_warm_reranker())
         try:
             yield
         finally:
@@ -212,6 +238,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await application.state.browser_controller.destroy_all()
             if application.state.research_client is not None:
                 await application.state.research_client.aclose()
+            if application.state.reranker_warmup is not None:
+                application.state.reranker_warmup.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await application.state.reranker_warmup
             await application.state.llm_gateway.aclose()
             await application.state.http.aclose()
             await application.state.redis.aclose()

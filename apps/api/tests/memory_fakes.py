@@ -74,6 +74,7 @@ class FakeQdrantServer:
         self.upsert_calls = 0
         self.delete_calls = 0
         self.fail_upserts = 0  # next N upserts return 503 (transient-failure path)
+        self.search_calls: list[str] = []  # collection names, in call order
 
     def client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
@@ -168,9 +169,13 @@ class FakeQdrantServer:
                 }
             )
         if method == "POST" and action == "search":
+            self.search_calls.append(match["name"])  # pre-alias-resolution name
             query = body["vector"]["vector"]
+            conditions = (body.get("filter") or {}).get("must", [])
             scored = []
             for point_id, point in store.items():
+                if not _matches(point["payload"], conditions):
+                    continue
                 vector = point["vector"][VECTOR_NAME]
                 score = _cosine(query, vector)
                 scored.append({"id": point_id, "score": score, "payload": point["payload"]})
@@ -181,6 +186,26 @@ class FakeQdrantServer:
     @staticmethod
     def _ok(result: Any) -> httpx.Response:
         return httpx.Response(200, json={"result": result, "status": "ok"})
+
+
+def _matches(payload: dict[str, Any], must: list[dict[str, Any]]) -> bool:
+    """Qdrant `must` filter subset: {"key", "match": {"value": x} | {"any": [..]}}.
+    A list-valued payload field (tags) matches when it CONTAINS the target."""
+    for condition in must:
+        value = payload.get(condition["key"])
+        match = condition.get("match", {})
+        if "value" in match:
+            wanted = [match["value"]]
+        elif "any" in match:
+            wanted = list(match["any"])
+        else:
+            return False
+        if isinstance(value, list):
+            if not any(v in wanted for v in value):
+                return False
+        elif value not in wanted:
+            return False
+    return True
 
 
 def _cosine(a: list[float], b: list[float]) -> float:

@@ -179,7 +179,7 @@ async def chunk_for_embedding(conn: AsyncConnection, chunk_id: uuid.UUID) -> Row
         text(
             "SELECT c.id AS chunk_id, c.record_id, c.seq, c.text, "
             "       r.scope, r.kind, r.project_id, r.source_agent, r.created_at, "
-            "       r.decay_score, r.metadata "
+            "       r.decay_score, r.status, r.metadata "
             "FROM brain.memory_chunks c JOIN brain.memory_records r ON r.id = c.record_id "
             "WHERE c.id = :cid"
         ),
@@ -276,13 +276,91 @@ async def chunks_for_rebuild(
         text(
             "SELECT c.id AS chunk_id, c.record_id, c.seq, c.text, "
             "       r.scope, r.kind, r.project_id, r.source_agent, r.created_at, "
-            "       r.decay_score, r.metadata "
+            "       r.decay_score, r.status, r.metadata "
             "FROM brain.memory_chunks c JOIN brain.memory_records r ON r.id = c.record_id "
             "WHERE c.id = ANY(CAST(:ids AS uuid[])) ORDER BY c.id"
         ),
         {"ids": list(chunk_ids)},
     )
     return result.all()
+
+
+# --- retrieval (§6.1) --------------------------------------------------------
+
+
+async def lexical_search(
+    conn: AsyncConnection,
+    *,
+    query: str,
+    scopes: Sequence[str],
+    kinds: Sequence[str] | None,
+    limit: int,
+) -> Sequence[Row[Any]]:
+    """The lexical leg (§6.1, ADR-05-03): PostgreSQL FTS over the STORED tsv via
+    websearch_to_tsquery + ts_rank_cd — catches exact identifiers (error codes,
+    function names) that dense vectors miss. Scope-filtered in SQL: org + the
+    caller's project only, never other projects (TITAN-BRN-003)."""
+    kind_clause = "AND r.kind = ANY(:kinds) " if kinds else ""
+    result = await conn.execute(
+        text(
+            "SELECT r.id AS record_id, ts_rank_cd(r.tsv, q) AS rank "
+            "FROM brain.memory_records r, websearch_to_tsquery('english', :query) q "
+            "WHERE r.tsv @@ q AND r.status = 'active' AND r.scope = ANY(:scopes) "
+            f"{kind_clause}"
+            "ORDER BY rank DESC, r.id LIMIT :limit"
+        ),
+        {"query": query, "scopes": list(scopes), "kinds": list(kinds or []), "limit": limit},
+    )
+    return result.all()
+
+
+async def hydrate_chunks(
+    conn: AsyncConnection, chunk_ids: Sequence[uuid.UUID], *, scopes: Sequence[str]
+) -> Sequence[Row[Any]]:
+    """Canonical text + ranking fields for candidate chunks (PostgreSQL is the
+    source of truth; Qdrant only nominated ids — ADR-05-01). Re-asserts scope
+    (defense in depth vs a stale/poisoned index — TITAN-BRN-003) and drops
+    non-active records (§6.1 status filter)."""
+    if not chunk_ids:
+        return []
+    result = await conn.execute(
+        text(
+            "SELECT c.id AS chunk_id, c.record_id, c.seq, c.text, c.token_count, "
+            "       r.kind, r.scope, r.title, r.importance, r.decay_score, r.created_at "
+            "FROM brain.memory_chunks c JOIN brain.memory_records r ON r.id = c.record_id "
+            "WHERE c.id = ANY(CAST(:ids AS uuid[])) AND r.status = 'active' "
+            "  AND r.scope = ANY(:scopes)"
+        ),
+        {"ids": list(chunk_ids), "scopes": list(scopes)},
+    )
+    return result.all()
+
+
+async def first_chunk_ids(
+    conn: AsyncConnection, record_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, uuid.UUID]:
+    """record_id -> its seq-0 chunk id, for lexical-only candidates (the lexical
+    leg ranks records; fusion needs a representative chunk)."""
+    if not record_ids:
+        return {}
+    result = await conn.execute(
+        text(
+            "SELECT record_id, id AS chunk_id FROM brain.memory_chunks "
+            "WHERE record_id = ANY(CAST(:ids AS uuid[])) AND seq = 0"
+        ),
+        {"ids": list(record_ids)},
+    )
+    return {row.record_id: row.chunk_id for row in result.all()}
+
+
+async def project_identity(conn: AsyncConnection, project_id: uuid.UUID) -> Row[Any] | None:
+    """The project one-pager fields for the packet's non-evictable
+    identity_context (§6.2 rule c)."""
+    result = await conn.execute(
+        text("SELECT name, display_name, brief FROM projects WHERE id = :id"),
+        {"id": project_id},
+    )
+    return result.one_or_none()
 
 
 # --- ledger (append-only) --------------------------------------------------

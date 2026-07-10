@@ -1,0 +1,248 @@
+{
+  "version": 1,
+  "description": "Phase 36 smoke eval (~30 pairs). Records are built from `records`; every query must surface its expected_marker record in the top-10 citations in BOTH reranker modes.",
+  "records": [
+    {
+      "marker": "SMK_ERR_CONN_RESET_31",
+      "kind": "semantic",
+      "title": "network retry policy (SMK_ERR_CONN_RESET_31)",
+      "body_md": "The gateway retries transient provider failures. Error SMK_ERR_CONN_RESET_31 signals a dropped upstream socket during streaming; retry with jittered backoff."
+    },
+    {
+      "marker": "SMK_USEAUTHSTORE_HOOK",
+      "kind": "semantic",
+      "title": "frontend auth state (SMK_USEAUTHSTORE_HOOK)",
+      "body_md": "The web app keeps session state in the SMK_USEAUTHSTORE_HOOK zustand store; tokens refresh five minutes before expiry."
+    },
+    {
+      "marker": "SMK_TICKET_4821",
+      "kind": "episodic",
+      "title": "flaky checkout test (SMK_TICKET_4821)",
+      "body_md": "2026-06-30: QA rejected the checkout PR under SMK_TICKET_4821 because a shared fixture leaked a cart row between tests."
+    },
+    {
+      "marker": "SMK_RUNBOOK_PGBOUNCER",
+      "kind": "procedural",
+      "title": "database pooling runbook (SMK_RUNBOOK_PGBOUNCER)",
+      "body_md": "Runbook SMK_RUNBOOK_PGBOUNCER: always size the pgbouncer pool to 2x worker concurrency and alert at 80 percent saturation."
+    },
+    {
+      "marker": "SMK_DEPLOY_FREEZE_RULE",
+      "kind": "procedural",
+      "title": "release freeze policy (SMK_DEPLOY_FREEZE_RULE)",
+      "body_md": "Policy SMK_DEPLOY_FREEZE_RULE: no production deploys on Fridays after 15:00 or during an active incident bridge."
+    },
+    {
+      "marker": "SMK_COMPONENT_BILLING",
+      "kind": "semantic",
+      "title": "billing component map (SMK_COMPONENT_BILLING)",
+      "body_md": "Component map SMK_COMPONENT_BILLING: billing-service owns /invoices and /payments; ledger entries are append-only."
+    },
+    {
+      "marker": "SMK_INCIDENT_0609",
+      "kind": "episodic",
+      "title": "redis outage postmortem (SMK_INCIDENT_0609)",
+      "body_md": "2026-06-09 incident SMK_INCIDENT_0609: a full redis eviction wiped rate-limit counters; mitigation added persistence."
+    },
+    {
+      "marker": "SMK_STYLE_IMPORTS",
+      "kind": "procedural",
+      "title": "python import style (SMK_STYLE_IMPORTS)",
+      "body_md": "Convention SMK_STYLE_IMPORTS: prefer module imports over symbol imports for services; ban wildcard imports everywhere."
+    },
+    {
+      "marker": "SMK_SCHEMA_DRIFT_JOB",
+      "kind": "semantic",
+      "title": "nightly schema drift check (SMK_SCHEMA_DRIFT_JOB)",
+      "body_md": "The nightly job SMK_SCHEMA_DRIFT_JOB diffs production schema against migrations and pages the on-call on drift."
+    },
+    {
+      "marker": "SMK_PR_TEMPLATE_V3",
+      "kind": "procedural",
+      "title": "pull request checklist (SMK_PR_TEMPLATE_V3)",
+      "body_md": "Checklist SMK_PR_TEMPLATE_V3: every PR needs a rollback note, a test plan, and a linked decision when behavior changes."
+    },
+    {
+      "marker": "SMK_KAFKA_LAG_ALERT",
+      "kind": "semantic",
+      "title": "consumer lag alerting (SMK_KAFKA_LAG_ALERT)",
+      "body_md": "Alert SMK_KAFKA_LAG_ALERT fires when consumer lag exceeds five minutes of production traffic on any partition."
+    },
+    {
+      "marker": "SMK_LESSON_RETRY_STORM",
+      "kind": "episodic",
+      "title": "retry storm lesson (SMK_LESSON_RETRY_STORM)",
+      "body_md": "Lesson SMK_LESSON_RETRY_STORM: unbounded client retries amplified the 2026-05 outage; all SDKs now cap at three attempts."
+    },
+    {
+      "marker": "SMK_OWNERSHIP_SEARCH",
+      "kind": "semantic",
+      "title": "search service ownership (SMK_OWNERSHIP_SEARCH)",
+      "body_md": "Ownership note SMK_OWNERSHIP_SEARCH: the discovery squad owns query parsing; ranking weights belong to relevance guild."
+    },
+    {
+      "marker": "SMK_ONCALL_HANDOFF",
+      "kind": "procedural",
+      "title": "on-call handoff steps (SMK_ONCALL_HANDOFF)",
+      "body_md": "Runbook SMK_ONCALL_HANDOFF: outgoing on-call writes a summary, transfers open pages, and reviews silenced alerts together."
+    },
+    {
+      "marker": "SMK_BUG_TZ_ROLLOVER",
+      "kind": "episodic",
+      "title": "timezone rollover bug (SMK_BUG_TZ_ROLLOVER)",
+      "body_md": "2026-04-12 bug SMK_BUG_TZ_ROLLOVER: report totals doubled at DST rollover because bucketing used local time."
+    }
+  ],
+  "pairs": [
+    {
+      "query": "what do we know about SMK_ERR_CONN_RESET_31",
+      "expected_marker": "SMK_ERR_CONN_RESET_31",
+      "leg": "lexical"
+    },
+    {
+      "query": "network retry policy",
+      "expected_marker": "SMK_ERR_CONN_RESET_31",
+      "leg": "phrase"
+    },
+    {
+      "query": "what do we know about SMK_USEAUTHSTORE_HOOK",
+      "expected_marker": "SMK_USEAUTHSTORE_HOOK",
+      "leg": "lexical"
+    },
+    {
+      "query": "frontend auth state",
+      "expected_marker": "SMK_USEAUTHSTORE_HOOK",
+      "leg": "phrase"
+    },
+    {
+      "query": "what do we know about SMK_TICKET_4821",
+      "expected_marker": "SMK_TICKET_4821",
+      "leg": "lexical"
+    },
+    {
+      "query": "flaky checkout test",
+      "expected_marker": "SMK_TICKET_4821",
+      "leg": "phrase"
+    },
+    {
+      "query": "what do we know about SMK_RUNBOOK_PGBOUNCER",
+      "expected_marker": "SMK_RUNBOOK_PGBOUNCER",
+      "leg": "lexical"
+    },
+    {
+      "query": "database pooling runbook",
+      "expected_marker": "SMK_RUNBOOK_PGBOUNCER",
+      "leg": "phrase"
+    },
+    {
+      "query": "what do we know about SMK_DEPLOY_FREEZE_RULE",
+      "expected_marker": "SMK_DEPLOY_FREEZE_RULE",
+      "leg": "lexical"
+    },
+    {
+      "query": "release freeze policy",
+      "expected_marker": "SMK_DEPLOY_FREEZE_RULE",
+      "leg": "phrase"
+    },
+    {
+      "query": "what do we know about SMK_COMPONENT_BILLING",
+      "expected_marker": "SMK_COMPONENT_BILLING",
+      "leg": "lexical"
+    },
+    {
+      "query": "billing component map",
+      "expected_marker": "SMK_COMPONENT_BILLING",
+      "leg": "phrase"
+    },
+    {
+      "query": "what do we know about SMK_INCIDENT_0609",
+      "expected_marker": "SMK_INCIDENT_0609",
+      "leg": "lexical"
+    },
+    {
+      "query": "redis outage postmortem",
+      "expected_marker": "SMK_INCIDENT_0609",
+      "leg": "phrase"
+    },
+    {
+      "query": "what do we know about SMK_STYLE_IMPORTS",
+      "expected_marker": "SMK_STYLE_IMPORTS",
+      "leg": "lexical"
+    },
+    {
+      "query": "python import style",
+      "expected_marker": "SMK_STYLE_IMPORTS",
+      "leg": "phrase"
+    },
+    {
+      "query": "what do we know about SMK_SCHEMA_DRIFT_JOB",
+      "expected_marker": "SMK_SCHEMA_DRIFT_JOB",
+      "leg": "lexical"
+    },
+    {
+      "query": "nightly schema drift check",
+      "expected_marker": "SMK_SCHEMA_DRIFT_JOB",
+      "leg": "phrase"
+    },
+    {
+      "query": "what do we know about SMK_PR_TEMPLATE_V3",
+      "expected_marker": "SMK_PR_TEMPLATE_V3",
+      "leg": "lexical"
+    },
+    {
+      "query": "pull request checklist",
+      "expected_marker": "SMK_PR_TEMPLATE_V3",
+      "leg": "phrase"
+    },
+    {
+      "query": "what do we know about SMK_KAFKA_LAG_ALERT",
+      "expected_marker": "SMK_KAFKA_LAG_ALERT",
+      "leg": "lexical"
+    },
+    {
+      "query": "consumer lag alerting",
+      "expected_marker": "SMK_KAFKA_LAG_ALERT",
+      "leg": "phrase"
+    },
+    {
+      "query": "what do we know about SMK_LESSON_RETRY_STORM",
+      "expected_marker": "SMK_LESSON_RETRY_STORM",
+      "leg": "lexical"
+    },
+    {
+      "query": "retry storm lesson",
+      "expected_marker": "SMK_LESSON_RETRY_STORM",
+      "leg": "phrase"
+    },
+    {
+      "query": "what do we know about SMK_OWNERSHIP_SEARCH",
+      "expected_marker": "SMK_OWNERSHIP_SEARCH",
+      "leg": "lexical"
+    },
+    {
+      "query": "search service ownership",
+      "expected_marker": "SMK_OWNERSHIP_SEARCH",
+      "leg": "phrase"
+    },
+    {
+      "query": "what do we know about SMK_ONCALL_HANDOFF",
+      "expected_marker": "SMK_ONCALL_HANDOFF",
+      "leg": "lexical"
+    },
+    {
+      "query": "on-call handoff steps",
+      "expected_marker": "SMK_ONCALL_HANDOFF",
+      "leg": "phrase"
+    },
+    {
+      "query": "what do we know about SMK_BUG_TZ_ROLLOVER",
+      "expected_marker": "SMK_BUG_TZ_ROLLOVER",
+      "leg": "lexical"
+    },
+    {
+      "query": "timezone rollover bug",
+      "expected_marker": "SMK_BUG_TZ_ROLLOVER",
+      "leg": "phrase"
+    }
+  ]
+}
