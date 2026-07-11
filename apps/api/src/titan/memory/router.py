@@ -15,6 +15,7 @@ from typing import Annotated, cast
 
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, Query, Request
+from pydantic import BaseModel, ConfigDict, Field
 
 from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import (
@@ -29,6 +30,7 @@ from titan.gateway.rbac import (
 from titan.identity.service import Principal
 from titan.memory import service
 from titan.memory.service import (
+    CurationReport,
     EmbeddingsClient,
     KbApprovalResult,
     KbDocumentDetail,
@@ -36,15 +38,22 @@ from titan.memory.service import (
     KbProposalOut,
     KgQueryRequest,
     KgQueryResult,
+    LessonIn,
+    LessonResult,
     MemoryEventBatch,
     MemoryMetricsOut,
     MemoryPacketOut,
     MemoryRecordDetail,
     MemoryWriteResult,
+    MinerReport,
     PacketRequest,
+    PromotionRequest,
+    PromotionResult,
     QdrantIndex,
     RebuildReport,
+    ReflectionResult,
     Reranker,
+    SprintRetroResult,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["memory"])
@@ -268,6 +277,181 @@ async def query_kg(request: Request, body: KgQueryRequest, principal: _ReadMemor
     recursive CTE (§7.1). Scope-isolated: org + the caller's own project only
     (TITAN-BRN-003)."""
     return await service.kg_query(request.app.state.engine, body)
+
+
+# --- §9 curation + §11/§12 learning loops ------------------------------------
+
+
+class CurationRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dry_run: bool = True
+    approve_destructive: bool = False
+
+
+class TaskReflectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: uuid.UUID
+    task_id: uuid.UUID
+    agent_id: str = Field(min_length=1, max_length=200)
+    context: str = Field(min_length=1, max_length=8000)
+
+
+class SprintRetroRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: uuid.UUID
+    task_ids: list[uuid.UUID] = Field(default_factory=list, max_length=500)
+
+
+class MineRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: uuid.UUID
+
+
+class ReflectionStatusOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: uuid.UUID
+    has_reflection: bool
+
+
+async def _require_project_memory_write(
+    resolver: PermissionResolver, principal: Principal, project_id: uuid.UUID
+) -> None:
+    """Project-scoped memory:write: an agent qualifies only in its bound project
+    (TITAN-BCK-021), a human via org memory:write — the write_events rule."""
+    if principal.kind == "agent":
+        granted = await resolver.project_permissions(project_id)
+        if not permission_granted("memory:write", granted):
+            raise forbidden("memory:write")
+    elif not await resolver.has("memory:write"):
+        raise forbidden("memory:write")
+
+
+@router.post("/memory/admin/curation/run", response_model=CurationReport)
+async def run_curation_endpoint(
+    request: Request, body: CurationRunRequest, principal: _AdminMemory
+) -> CurationReport:
+    """Trigger one §9 decay/prune/promotion cycle (also the nightly cron). Admin
+    only. Dry-run-first by default: the plan is written to the ledger; pass
+    ``dry_run=false`` to apply Demote/Archive (and Compact within the approval
+    limit, or with ``approve_destructive``). TITAN-BRN-018."""
+    return await service.run_curation(
+        request.app.state.engine,
+        actor_agent=_actor(principal),
+        dry_run=body.dry_run,
+        approve_destructive=body.approve_destructive,
+    )
+
+
+@router.post("/memory/lessons", response_model=LessonResult, status_code=201)
+async def file_lesson_endpoint(
+    request: Request, body: LessonIn, principal: _Authenticated
+) -> LessonResult:
+    """File a structured lesson (§11.2): a protected episodic record + a lesson KG
+    node with a DERIVED_FROM edge (TITAN-BRN-019/023). Project-scoped
+    ``memory:write``."""
+    resolver = get_resolver(request)
+    project_id = service.parse_scope(body.scope)
+    if project_id is None:
+        raise ProblemException(
+            status=422,
+            title="Invalid request",
+            detail="lessons are project-scoped; scope must be 'project:<uuid>'.",
+            problem_type=problem_type("validation"),
+        )
+    await _require_project_memory_write(resolver, principal, project_id)
+    return await service.file_lesson(
+        request.app.state.engine,
+        body,
+        source_agent=_actor(principal),
+        actor_agent=_actor(principal),
+    )
+
+
+@router.post("/memory/reflections/task", response_model=ReflectionResult, status_code=201)
+async def task_reflection_endpoint(
+    request: Request, body: TaskReflectionRequest, principal: _Authenticated
+) -> ReflectionResult:
+    """§12 task reflection: one utility-tier LLM call answers the five-question
+    rubric and persists it as an episodic record for the task (TITAN-BRN-025).
+    Project-scoped ``memory:write``."""
+    resolver = get_resolver(request)
+    await _require_project_memory_write(resolver, principal, body.project_id)
+    state = request.app.state
+    return await service.generate_task_reflection(
+        state.engine,
+        state.llm_gateway,
+        project_id=body.project_id,
+        task_id=body.task_id,
+        agent_id=body.agent_id,
+        context=body.context,
+        model_alias=getattr(state, "summary_model_alias", None),
+    )
+
+
+@router.get("/memory/tasks/{task_id}/reflection-status", response_model=ReflectionStatusOut)
+async def reflection_status_endpoint(
+    request: Request, task_id: uuid.UUID, principal: _ReadMemory
+) -> ReflectionStatusOut:
+    """The §12 done-block hook exposed for the task state machine (TITAN-BRN-025):
+    whether the task has a schema-valid reflection record yet."""
+    ok = await service.task_has_reflection(request.app.state.engine, task_id)
+    return ReflectionStatusOut(task_id=task_id, has_reflection=ok)
+
+
+@router.post("/memory/reflections/sprint", response_model=SprintRetroResult, status_code=201)
+async def sprint_retro_endpoint(
+    request: Request, body: SprintRetroRequest, principal: _Authenticated
+) -> SprintRetroResult:
+    """§12 sprint retrospective: aggregate a sprint's task reflections into a
+    sprint summary record. Project-scoped ``memory:write``."""
+    resolver = get_resolver(request)
+    await _require_project_memory_write(resolver, principal, body.project_id)
+    return await service.sprint_retrospective(
+        request.app.state.engine,
+        project_id=body.project_id,
+        task_ids=body.task_ids,
+        actor_agent=_actor(principal),
+    )
+
+
+@router.post("/memory/admin/patterns/mine", response_model=MinerReport)
+async def mine_patterns_endpoint(
+    request: Request, body: MineRequest, principal: _AdminMemory
+) -> MinerReport:
+    """§11.1 pattern miner (TITAN-BRN-023): mine novel patterns from a project's
+    decisions into project-scope pattern records. Admin only; the run is
+    ledger-visible."""
+    state = request.app.state
+    return await service.mine_patterns(
+        state.engine,
+        state.llm_gateway,
+        QdrantIndex(cast(httpx.AsyncClient, state.http)),
+        cast(EmbeddingsClient, state.llm_gateway),
+        project_id=body.project_id,
+        model_alias=getattr(state, "summary_model_alias", None),
+    )
+
+
+@router.post("/memory/admin/promote", response_model=PromotionResult)
+async def promote_endpoint(
+    request: Request, body: PromotionRequest, principal: _AdminMemory
+) -> PromotionResult:
+    """§11.3 project→org promotion on the multi-signal rule (TITAN-BRN-024). Admin
+    only — org memory is never filled on a single project's say-so, and agents
+    cannot write org scope directly."""
+    state = request.app.state
+    return await service.promote_record(
+        state.engine,
+        QdrantIndex(cast(httpx.AsyncClient, state.http)),
+        cast(EmbeddingsClient, state.llm_gateway),
+        body,
+        actor_agent=_actor(principal),
+    )
 
 
 def mount(app: FastAPI) -> None:

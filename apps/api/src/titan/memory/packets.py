@@ -66,6 +66,8 @@ class PacketRequest(BaseModel):
     # similarity ranking (e.g. the code-review step always pins its
     # coding_standard docs). Pinned chunks are NEVER evicted by ranking.
     pins: list[str] = Field(default_factory=list, max_length=20)
+    # §9.2: include DEMOTED records (a deep-memory query); default excludes them.
+    deep_search: bool = False
     assembled_for: AssembledFor | None = None
 
     @field_validator("scope")
@@ -147,6 +149,9 @@ def packet_cache_key(request: PacketRequest) -> str:
             # Pins change the packet CONTENT (they force docs in), so they are
             # part of the cache key — order-independent (a set of slugs).
             "pins:" + ",".join(sorted(request.pins)),
+            # deep_search changes which records are eligible (demoted included),
+            # so a deep packet must never share a cache entry with a shallow one.
+            "deep" if request.deep_search else "shallow",
         ]
     )
     digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:32]
@@ -238,6 +243,7 @@ async def _assemble_packet(
             kinds=tuple(request.kinds),
             k=request.k,
             budget_tokens=request.budget_tokens,
+            deep_search=request.deep_search,
         ),
         stats=stats,
     )

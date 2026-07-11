@@ -33,6 +33,7 @@ from titan.memory.chunker import (
     get_chunker,
     token_cost,
 )
+from titan.memory.curation import CurationReport, run_curation
 from titan.memory.ingest import (
     EMBEDDERS_GROUP,
     INGEST_DLQ,
@@ -84,8 +85,27 @@ from titan.memory.packets import (
     cheapest_chat_alias,
     packet_cache_key,
 )
+from titan.memory.patterns import (
+    MinedPattern,
+    MinerReport,
+    PromotionRequest,
+    PromotionResult,
+    mine_patterns,
+    promote_record,
+)
 from titan.memory.qdrant import COLLECTION_SPECS, QdrantIndex
 from titan.memory.rebuild import CollectionRebuild, RebuildReport, rebuild_index
+from titan.memory.reflection import (
+    LessonIn,
+    LessonResult,
+    ReflectionResult,
+    ReflectionRubric,
+    SprintRetroResult,
+    file_lesson,
+    generate_task_reflection,
+    sprint_retrospective,
+    task_has_reflection,
+)
 from titan.memory.retrieval import (
     CrossEncoderReranker,
     LlmListwiseReranker,
@@ -199,6 +219,7 @@ class MemoryRecordOut(BaseModel):
     access_count: int
     last_accessed_at: datetime | None
     status: str
+    demoted: bool
     superseded_by: uuid.UUID | None
     created_at: datetime
 
@@ -350,7 +371,13 @@ async def get_record_detail(
     row = await repo.get_record(conn, record_id)
     if row is None:
         return None
-    await repo.touch_record(conn, record_id)
+    if row.demoted or row.status == "archived":
+        # TITAN-BRN-020: accessing a demoted/archived record restores it (and
+        # re-embeds an archived record's chunks) and resets its decay clock. The
+        # restore itself bumps access lifecycle, so it replaces touch_record.
+        await repo.restore_record(conn, record_id, was_archived=row.status == "archived")
+    else:
+        await repo.touch_record(conn, record_id)
     await repo.append_ledger(
         conn,
         actor_agent=actor_agent,
@@ -505,6 +532,7 @@ __all__ = [
     "CollectionRebuild",
     "ContentType",
     "CrossEncoderReranker",
+    "CurationReport",
     "DOC_TYPES",
     "EDGE_TYPES",
     "EMBEDDERS_GROUP",
@@ -523,8 +551,12 @@ __all__ = [
     "KgQueryResult",
     "LagMetrics",
     "LedgerAction",
+    "LessonIn",
+    "LessonResult",
     "LlmListwiseReranker",
     "MAX_TRAVERSAL_DEPTH",
+    "MinedPattern",
+    "MinerReport",
     "MemoryChunkOut",
     "MemoryEmbedder",
     "MemoryEvent",
@@ -543,13 +575,18 @@ __all__ = [
     "PacketCitation",
     "PacketRequest",
     "PacketSections",
+    "PromotionRequest",
+    "PromotionResult",
     "QdrantIndex",
     "RankedChunk",
     "RebuildReport",
+    "ReflectionResult",
+    "ReflectionRubric",
     "Reranker",
     "RetrievalQuery",
     "RollingSummary",
     "STREAM_MEMORY_INGEST",
+    "SprintRetroResult",
     "SummaryFolder",
     "WM_TTL_SECONDS",
     "WorkingMemory",
@@ -562,24 +599,31 @@ __all__ = [
     "count_tokens",
     "create_proposal",
     "existing_wm_client_keys",
+    "file_lesson",
+    "generate_task_reflection",
     "get_document_detail",
     "get_record_detail",
     "kg_query",
     "load_working_summary_checkpoint",
     "memory_metrics",
+    "mine_patterns",
     "packet_cache_key",
     "parse_scope",
     "pending_wm_events",
+    "promote_record",
     "rebuild_index",
     "record_component",
     "record_decision",
     "record_lesson",
     "retrieve",
+    "run_curation",
     "run_embedder",
     "run_ingest_reaper",
     "run_ingest_relay",
     "shape_queries",
+    "sprint_retrospective",
     "supersede_decision",
+    "task_has_reflection",
     "token_cost",
     "traverse",
     "write_events",

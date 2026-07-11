@@ -102,6 +102,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             active_settings, application.state.llm_gateway
         )
         application.state.reranker_warmup = None
+        # §12/§11.1 reflection + miner LLM calls route to the cheapest configured
+        # tier (TITAN-BRN-017); an unreadable models.yaml → None → gateway default.
+        try:
+            application.state.summary_model_alias = memory_service.cheapest_chat_alias(
+                active_settings.models_config_path
+            )
+        except Exception:
+            application.state.summary_model_alias = None
         # §4.1 boot-time registry rebuild + the single side-effect chokepoint.
         application.state.tool_registry = tools_service.build_registry()
         # Per-task workspace jail (fs.* tools) + the hardened sandbox controller

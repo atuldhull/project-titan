@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 _RECORD_COLS = (
     "id, kind, scope, project_id, source_agent, source_task_id, title, body_md, "
     "metadata, importance, decay_score, access_count, last_accessed_at, status, "
-    "superseded_by, created_at"
+    "demoted, superseded_by, created_at"
 )
 _CHUNK_COLS = "id, record_id, seq, text, token_count, embed_model, embedded_at"
 _LEDGER_COLS = "id, at, actor_agent, task_id, action, record_ids, detail"
@@ -76,6 +76,47 @@ async def touch_record(conn: AsyncConnection, record_id: uuid.UUID) -> None:
         ),
         {"id": record_id},
     )
+
+
+async def restore_record(
+    conn: AsyncConnection, record_id: uuid.UUID, *, was_archived: bool
+) -> None:
+    """Auto-restore a demoted/archived record on access (TITAN-BRN-020): clear the
+    Demote flag, flip an archived record back to active, RESET the decay clock
+    (score to 1.0, low_decay_since cleared), and bump access lifecycle. An
+    archived record's chunks lost their Qdrant points, so re-enqueue an ``upsert``
+    so the §5.1 pipeline re-embeds them within the TITAN-BRN-007 budget; a
+    merely-demoted record still has its points, so no re-embed is needed (the
+    hydration filter that hid it now lets it through)."""
+    await conn.execute(
+        text(
+            "UPDATE brain.memory_records SET demoted = false, status = 'active', "
+            "decay_score = 1.0, low_decay_since = NULL, access_count = access_count + 1, "
+            "last_accessed_at = now() WHERE id = :id"
+        ),
+        {"id": record_id},
+    )
+    # If the record was Compacted (§9.2), reconstitute its full body from the
+    # cold store so the restored record is not left with a truncated stub while
+    # its chunks hold the full text; the tsv follows the restored body.
+    await conn.execute(
+        text(
+            "UPDATE brain.memory_records r SET body_md = c.body_md "
+            "FROM brain.memory_bodies_cold c WHERE c.record_id = r.id AND r.id = :id"
+        ),
+        {"id": record_id},
+    )
+    await conn.execute(
+        text("DELETE FROM brain.memory_bodies_cold WHERE record_id = :id"),
+        {"id": record_id},
+    )
+    if was_archived:
+        rows = await conn.execute(
+            text("SELECT id FROM brain.memory_chunks WHERE record_id = :rid"),
+            {"rid": record_id},
+        )
+        for (chunk_id,) in rows:
+            await insert_outbox(conn, chunk_id=chunk_id, op="upsert", collection="titan_memory")
 
 
 # --- chunks ----------------------------------------------------------------
@@ -189,7 +230,7 @@ async def chunk_for_embedding(conn: AsyncConnection, chunk_id: uuid.UUID) -> Row
         text(
             "SELECT c.id AS chunk_id, c.record_id, c.seq, c.text, "
             "       r.scope, r.kind, r.project_id, r.source_agent, r.created_at, "
-            "       r.decay_score, r.status, r.metadata "
+            "       r.decay_score, r.status, r.demoted, r.metadata "
             "FROM brain.memory_chunks c JOIN brain.memory_records r ON r.id = c.record_id "
             "WHERE c.id = :cid"
         ),
@@ -234,6 +275,26 @@ async def later_delete_exists(
         text(
             "SELECT EXISTS (SELECT 1 FROM brain.ingest_outbox "
             "WHERE chunk_id = :cid AND op = 'delete' AND id > :oid)"
+        ),
+        {"cid": chunk_id, "oid": after_outbox_id},
+    )
+    return bool(result.scalar_one())
+
+
+async def later_upsert_exists(
+    conn: AsyncConnection, *, chunk_id: uuid.UUID, after_outbox_id: int
+) -> bool:
+    """True when an ``upsert`` op for this chunk was enqueued AFTER the given
+    outbox row — the symmetric guard to :func:`later_delete_exists`. Auto-restore
+    (TITAN-BRN-020) is the first producer of an upsert AFTER a delete: archiving
+    enqueues a delete, then an access re-enqueues an upsert. If the delete is
+    processed AFTER that upsert (parallel embedders), an unguarded delete would
+    remove the freshly re-embedded point, leaving the restored record invisible;
+    the later upsert owns the final state (point present), so the delete no-ops."""
+    result = await conn.execute(
+        text(
+            "SELECT EXISTS (SELECT 1 FROM brain.ingest_outbox "
+            "WHERE chunk_id = :cid AND op = 'upsert' AND id > :oid)"
         ),
         {"cid": chunk_id, "oid": after_outbox_id},
     )
@@ -332,7 +393,7 @@ async def chunks_for_rebuild(
         text(
             "SELECT c.id AS chunk_id, c.record_id, c.seq, c.text, "
             "       r.scope, r.kind, r.project_id, r.source_agent, r.created_at, "
-            "       r.decay_score, r.status, r.metadata "
+            "       r.decay_score, r.status, r.demoted, r.metadata "
             "FROM brain.memory_chunks c JOIN brain.memory_records r ON r.id = c.record_id "
             "WHERE c.id = ANY(CAST(:ids AS uuid[])) AND r.status = 'active' ORDER BY c.id"
         ),
@@ -351,18 +412,21 @@ async def lexical_search(
     scopes: Sequence[str],
     kinds: Sequence[str] | None,
     limit: int,
+    deep_search: bool = False,
 ) -> Sequence[Row[Any]]:
     """The lexical leg (§6.1, ADR-05-03): PostgreSQL FTS over the STORED tsv via
     websearch_to_tsquery + ts_rank_cd — catches exact identifiers (error codes,
     function names) that dense vectors miss. Scope-filtered in SQL: org + the
-    caller's project only, never other projects (TITAN-BRN-003)."""
+    caller's project only, never other projects (TITAN-BRN-003). Demoted records
+    (§9.2) are excluded from default retrieval; ``deep_search`` includes them."""
     kind_clause = "AND r.kind = ANY(:kinds) " if kinds else ""
+    demote_clause = "" if deep_search else "AND NOT r.demoted "
     result = await conn.execute(
         text(
             "SELECT r.id AS record_id, ts_rank_cd(r.tsv, q) AS rank "
             "FROM brain.memory_records r, websearch_to_tsquery('english', :query) q "
             "WHERE r.tsv @@ q AND r.status = 'active' AND r.scope = ANY(:scopes) "
-            f"{kind_clause}"
+            f"{kind_clause}{demote_clause}"
             "ORDER BY rank DESC, r.id LIMIT :limit"
         ),
         {"query": query, "scopes": list(scopes), "kinds": list(kinds or []), "limit": limit},
@@ -371,21 +435,28 @@ async def lexical_search(
 
 
 async def hydrate_chunks(
-    conn: AsyncConnection, chunk_ids: Sequence[uuid.UUID], *, scopes: Sequence[str]
+    conn: AsyncConnection,
+    chunk_ids: Sequence[uuid.UUID],
+    *,
+    scopes: Sequence[str],
+    deep_search: bool = False,
 ) -> Sequence[Row[Any]]:
     """Canonical text + ranking fields for candidate chunks (PostgreSQL is the
     source of truth; Qdrant only nominated ids — ADR-05-01). Re-asserts scope
     (defense in depth vs a stale/poisoned index — TITAN-BRN-003) and drops
-    non-active records (§6.1 status filter)."""
+    non-active records (§6.1 status filter). Demoted records (§9.2) are dropped
+    here too — the authoritative default-retrieval exclusion, so a stale Qdrant
+    payload can never resurface a demoted record; ``deep_search`` includes them."""
     if not chunk_ids:
         return []
+    demote_clause = "" if deep_search else "AND NOT r.demoted "
     result = await conn.execute(
         text(
             "SELECT c.id AS chunk_id, c.record_id, c.seq, c.text, c.token_count, "
             "       r.kind, r.scope, r.title, r.importance, r.decay_score, r.created_at "
             "FROM brain.memory_chunks c JOIN brain.memory_records r ON r.id = c.record_id "
             "WHERE c.id = ANY(CAST(:ids AS uuid[])) AND r.status = 'active' "
-            "  AND r.scope = ANY(:scopes)"
+            f"  AND r.scope = ANY(:scopes) {demote_clause}"
         ),
         {"ids": list(chunk_ids), "scopes": list(scopes)},
     )
@@ -919,3 +990,238 @@ async def traverse_kg(
         {"reached": reached, "ets": list(edge_types or [])},
     )
     return nodes, edges_result.all()
+
+
+# --- §9 decay + curation (TITAN-BRN-018/019/020) -----------------------------
+
+# The §9.1 half-life (days) per kind, and the protected-class predicate
+# (TITAN-BRN-019): a record is exempt from auto-pruning when it is a decision
+# record, a lesson, a KB document, or backs a KG node that has an active edge.
+_HALF_LIFE_SQL = "CASE r.kind WHEN 'episodic' THEN 30 WHEN 'semantic' THEN 120 ELSE 365 END"
+_PROTECTED_SQL = (
+    "(r.metadata ->> 'record_subtype' IN ('lesson', 'decision') "
+    " OR r.metadata ? 'kb_slug' "
+    " OR r.metadata ->> 'message_type' = 'DecisionLog' "
+    " OR r.id IN (SELECT n.record_id FROM brain.kg_nodes n "
+    "             JOIN brain.kg_edges e ON (e.src = n.id OR e.dst = n.id) "
+    "             WHERE e.valid_to IS NULL AND n.record_id IS NOT NULL))"
+)
+DEMOTE_THRESHOLD = 0.35
+ARCHIVE_THRESHOLD = 0.15
+ARCHIVE_DAYS = 30
+COMPACT_AGE_DAYS = 180
+
+
+async def recompute_decay_scores(conn: AsyncConnection) -> int:
+    """§9.1: recompute decay_score for every ACTIVE record and advance the
+    archive clock. Done in SQL (exp/least over the whole active set) so the
+    nightly job is one round-trip, not N. Returns how many records were scored.
+
+    decay = 0.5·exp(−Δdays/H(kind)) + 0.3·min(1, access_count/20) + 0.2·importance
+    where Δdays runs from last_accessed_at (created_at if never accessed)."""
+    result = await conn.execute(
+        text(
+            "UPDATE brain.memory_records r SET decay_score = "
+            "  0.5 * exp( - (EXTRACT(EPOCH FROM (now() - COALESCE(r.last_accessed_at, "
+            "     r.created_at))) / 86400.0) "
+            f"     / ({_HALF_LIFE_SQL}) ) "
+            "  + 0.3 * least(1.0, r.access_count / 20.0) + 0.2 * r.importance "
+            "WHERE r.status = 'active'"
+        )
+    )
+    scored = int(result.rowcount)
+    # The 30-consecutive-days-below-threshold Archive clock (§9.2): stamp when
+    # decay first drops below ARCHIVE_THRESHOLD, clear it when decay recovers.
+    await conn.execute(
+        text(
+            "UPDATE brain.memory_records SET low_decay_since = "
+            f"  CASE WHEN decay_score < {ARCHIVE_THRESHOLD} "
+            "       THEN COALESCE(low_decay_since, now()) ELSE NULL END "
+            "WHERE status = 'active'"
+        )
+    )
+    return scored
+
+
+async def archive_candidates(conn: AsyncConnection) -> list[uuid.UUID]:
+    """Active, unprotected records below the archive threshold for ≥ 30 days."""
+    result = await conn.execute(
+        text(
+            "SELECT r.id FROM brain.memory_records r "
+            f"WHERE r.status = 'active' AND r.decay_score < {ARCHIVE_THRESHOLD} "
+            "  AND r.low_decay_since IS NOT NULL "
+            f"  AND r.low_decay_since <= now() - make_interval(days => {ARCHIVE_DAYS}) "
+            f"  AND ({_PROTECTED_SQL}) IS NOT TRUE ORDER BY r.id"
+        )
+    )
+    return [row.id for row in result.all()]
+
+
+async def demote_candidates(
+    conn: AsyncConnection, archive_ids: Sequence[uuid.UUID]
+) -> list[uuid.UUID]:
+    """Active, not-yet-demoted, unprotected records below the demote threshold —
+    EXCLUDING those being archived this run (archive is the stronger tier)."""
+    result = await conn.execute(
+        text(
+            "SELECT r.id FROM brain.memory_records r "
+            f"WHERE r.status = 'active' AND NOT r.demoted AND r.decay_score < {DEMOTE_THRESHOLD} "
+            f"  AND ({_PROTECTED_SQL}) IS NOT TRUE "
+            "  AND NOT (r.id = ANY(CAST(:archive_ids AS uuid[]))) ORDER BY r.id"
+        ),
+        {"archive_ids": list(archive_ids)},
+    )
+    return [row.id for row in result.all()]
+
+
+async def compact_candidates(conn: AsyncConnection) -> list[uuid.UUID]:
+    """Archived episodic records older than 180 days, not yet compacted (§9.2)."""
+    result = await conn.execute(
+        text(
+            "SELECT r.id FROM brain.memory_records r "
+            "WHERE r.status = 'archived' AND r.kind = 'episodic' "
+            f"  AND r.created_at < now() - make_interval(days => {COMPACT_AGE_DAYS}) "
+            f"  AND ({_PROTECTED_SQL}) IS NOT TRUE "
+            "  AND NOT EXISTS (SELECT 1 FROM brain.memory_bodies_cold c WHERE c.record_id = r.id) "
+            "ORDER BY r.id"
+        )
+    )
+    return [row.id for row in result.all()]
+
+
+async def mark_demoted(conn: AsyncConnection, ids: Sequence[uuid.UUID]) -> None:
+    if not ids:
+        return
+    await conn.execute(
+        text("UPDATE brain.memory_records SET demoted = true WHERE id = ANY(CAST(:ids AS uuid[]))"),
+        {"ids": list(ids)},
+    )
+
+
+async def mark_archived(conn: AsyncConnection, ids: Sequence[uuid.UUID]) -> None:
+    """Archive: status→archived and enqueue a ``delete`` per chunk so the §5.1
+    pipeline drops the vectors from Qdrant (the canonical text stays in PG)."""
+    if not ids:
+        return
+    await conn.execute(
+        text(
+            "UPDATE brain.memory_records SET status = 'archived' "
+            "WHERE id = ANY(CAST(:ids AS uuid[]))"
+        ),
+        {"ids": list(ids)},
+    )
+    rows = await conn.execute(
+        text("SELECT id FROM brain.memory_chunks WHERE record_id = ANY(CAST(:ids AS uuid[]))"),
+        {"ids": list(ids)},
+    )
+    for (chunk_id,) in rows:
+        await insert_outbox(conn, chunk_id=chunk_id, op="delete", collection="titan_memory")
+
+
+_REFLECTION_KEYS = (
+    "goal",
+    "what_worked",
+    "what_surprised",
+    "do_differently",
+    "org_should_remember",
+)
+
+
+async def has_valid_reflection(conn: AsyncConnection, task_id: uuid.UUID) -> bool:
+    """The §12 done-block hook (TITAN-BRN-025): does the task have a
+    schema-conformant reflection record? True only when an episodic
+    ``record_subtype='reflection'`` record for the task carries all five rubric
+    fields (each non-empty)."""
+    keys_present = " AND ".join(
+        f"metadata ->> '{key}' IS NOT NULL AND length(metadata ->> '{key}') > 0"
+        for key in _REFLECTION_KEYS
+    )
+    result = await conn.execute(
+        text(
+            "SELECT EXISTS (SELECT 1 FROM brain.memory_records "
+            "WHERE source_task_id = :tid AND metadata ->> 'record_subtype' = 'reflection' "
+            f"  AND {keys_present})"
+        ),
+        {"tid": task_id},
+    )
+    return bool(result.scalar_one())
+
+
+async def reflections_for_tasks(
+    conn: AsyncConnection, task_ids: Sequence[uuid.UUID], *, scope: str
+) -> Sequence[Row[Any]]:
+    """Reflection records for a set of tasks — the sprint retrospective's input.
+    Scope-constrained (TITAN-BRN-003): a task id that belongs to ANOTHER project
+    cannot pull that project's reflection into this sprint's summary, even if the
+    caller passes it."""
+    if not task_ids:
+        return []
+    result = await conn.execute(
+        text(
+            "SELECT id, source_task_id, title, body_md, metadata FROM brain.memory_records "
+            "WHERE source_task_id = ANY(CAST(:ids AS uuid[])) AND scope = :scope "
+            "  AND metadata ->> 'record_subtype' = 'reflection' ORDER BY created_at"
+        ),
+        {"ids": list(task_ids), "scope": scope},
+    )
+    return result.all()
+
+
+async def decision_records_for_project(
+    conn: AsyncConnection, project_id: uuid.UUID, *, limit: int = 200
+) -> Sequence[Row[Any]]:
+    """The project's decision records — the pattern miner's primary input (§11.1):
+    active episodic records that are ADRs / DecisionLog write-backs."""
+    result = await conn.execute(
+        text(
+            "SELECT id, title, body_md FROM brain.memory_records "
+            "WHERE project_id = :pid AND status = 'active' "
+            "  AND (metadata ->> 'record_subtype' = 'decision' "
+            "       OR metadata ->> 'message_type' = 'DecisionLog') "
+            "ORDER BY created_at DESC LIMIT :limit"
+        ),
+        {"pid": project_id, "limit": limit},
+    )
+    return result.all()
+
+
+async def scope_near_duplicate_projects(
+    conn: AsyncConnection, *, title: str, exclude_scope: str
+) -> int:
+    """TITAN-BRN-024 promotion signal (a): how many DISTINCT project scopes hold a
+    lexically near-identical record (same title) OTHER than the source. A count
+    ≥ 2 means the lesson/pattern recurred independently and is promotion-worthy.
+    Lexical title match is the deterministic MVP proxy for cross-scope
+    near-duplicate detection (the embedding version is §11.1's job)."""
+    result = await conn.execute(
+        text(
+            "SELECT count(DISTINCT scope) FROM brain.memory_records "
+            "WHERE lower(title) = lower(:title) AND scope <> :exclude "
+            "  AND scope LIKE 'project:%' AND status = 'active'"
+        ),
+        {"title": title, "exclude": exclude_scope},
+    )
+    return int(result.scalar_one())
+
+
+async def compact_records(conn: AsyncConnection, ids: Sequence[uuid.UUID]) -> None:
+    """Compact: move the full body to the cold store and replace the live body
+    with its summary line (§9.2, partially reversible). The generated tsv follows
+    the shortened body automatically."""
+    if not ids:
+        return
+    await conn.execute(
+        text(
+            "INSERT INTO brain.memory_bodies_cold (record_id, body_md) "
+            "SELECT id, body_md FROM brain.memory_records WHERE id = ANY(CAST(:ids AS uuid[])) "
+            "ON CONFLICT (record_id) DO NOTHING"
+        ),
+        {"ids": list(ids)},
+    )
+    await conn.execute(
+        text(
+            "UPDATE brain.memory_records SET body_md = '[compacted] ' || title "
+            "WHERE id = ANY(CAST(:ids AS uuid[]))"
+        ),
+        {"ids": list(ids)},
+    )

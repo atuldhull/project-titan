@@ -79,6 +79,9 @@ class RetrievalQuery:
     kinds: tuple[str, ...] = ()
     k: int = FUSED_TOP_K
     budget_tokens: int = 4000
+    # §9.2: default retrieval excludes DEMOTED records; deep_search includes them
+    # (the Memory Explorer / a query that explicitly asks for deep memory).
+    deep_search: bool = False
 
     @property
     def scopes(self) -> tuple[str, ...]:
@@ -269,7 +272,9 @@ async def retrieve(
             chosen = chunk_id if chunk_id is not None else seq0.get(record_id)
             if chosen is not None:
                 chunk_ids.append(chosen)
-        rows = await repo.hydrate_chunks(conn, chunk_ids, scopes=query.scopes)
+        rows = await repo.hydrate_chunks(
+            conn, chunk_ids, scopes=query.scopes, deep_search=query.deep_search
+        )
 
     order = {chunk_id: i for i, chunk_id in enumerate(chunk_ids)}
     rows = sorted(rows, key=lambda r: order.get(r.chunk_id, len(order)))
@@ -351,6 +356,7 @@ async def _lexical_leg(engine: AsyncEngine, query: RetrievalQuery, text_query: s
             scopes=query.scopes,
             kinds=list(query.kinds) or None,
             limit=LEXICAL_TOP_K,
+            deep_search=query.deep_search,
         )
 
 

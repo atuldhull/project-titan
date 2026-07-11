@@ -193,6 +193,7 @@ class MemoryEmbedder:
                 return  # replay of already-confirmed work — idempotent no-op
             chunk = None
             superseded = False
+            delete_superseded = False
             if row.op != "delete":
                 chunk = await repo.chunk_for_embedding(conn, row.chunk_id)
                 # Op-order guard: the outbox (canonical, ordered) may already
@@ -203,8 +204,17 @@ class MemoryEmbedder:
                 superseded = await repo.later_delete_exists(
                     conn, chunk_id=row.chunk_id, after_outbox_id=outbox_id
                 )
+            else:
+                # Symmetric guard: a LATER upsert (auto-restore after archive,
+                # TITAN-BRN-020) owns the final state (point present). Deleting
+                # now would remove the freshly re-embedded point and leave the
+                # restored record invisible — so this delete no-ops.
+                delete_superseded = await repo.later_upsert_exists(
+                    conn, chunk_id=row.chunk_id, after_outbox_id=outbox_id
+                )
         if row.op == "delete":
-            await self._qdrant.delete_points(collection, [str(row.chunk_id)])
+            if not delete_superseded:
+                await self._qdrant.delete_points(collection, [str(row.chunk_id)])
             async with self._engine.begin() as conn:
                 await repo.mark_outbox_processed(conn, outbox_id)
             _observe_lag(row.enqueued_at)
@@ -277,6 +287,9 @@ def build_point(chunk: Row[Any], vector: list[float]) -> dict[str, Any]:
         "decay_score": float(chunk.decay_score),
         # §6.1 filters by status; not in the §4.4 INDEX list, so payload-only.
         "status": chunk.status,
+        # §9.2 Demote flag — payload-only, so a deep-search dense pre-filter and
+        # rebuild carry it; default-retrieval exclusion is authoritative in PG.
+        "demoted": bool(chunk.demoted),
     }
     if chunk.project_id is not None:
         payload["project_id"] = str(chunk.project_id)
