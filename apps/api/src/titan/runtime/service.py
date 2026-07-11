@@ -161,7 +161,9 @@ def build_runtime(
             engine,
             memory_service.WorkingMemory(redis),
             memory_service.SummaryFolder(gateway, alias),
-            NoopKgSink(),
+            # Phase 39: the §13 step-11 KG hook now writes real graph nodes/edges
+            # (best-effort, idempotent) instead of the Phase-38 typed no-op.
+            memory_service.GraphKgSink(engine),
         )
     return AgentRuntime(
         engine=engine,

@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, FastAPI, Query, Request
 
 from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import (
+    PermissionResolver,
     Requires,
     RequiresAuth,
     forbidden,
@@ -29,6 +30,12 @@ from titan.identity.service import Principal
 from titan.memory import service
 from titan.memory.service import (
     EmbeddingsClient,
+    KbApprovalResult,
+    KbDocumentDetail,
+    KbProposalIn,
+    KbProposalOut,
+    KgQueryRequest,
+    KgQueryResult,
     MemoryEventBatch,
     MemoryMetricsOut,
     MemoryPacketOut,
@@ -157,6 +164,110 @@ async def rebuild_index(request: Request, principal: _AdminMemory) -> RebuildRep
     qdrant = QdrantIndex(cast(httpx.AsyncClient, state.http))
     embeddings = cast(EmbeddingsClient, state.llm_gateway)
     return await service.rebuild_index(state.engine, qdrant, embeddings)
+
+
+# --- Knowledge Base write workflow (§10.3, TITAN-BRN-021) --------------------
+
+
+async def _require_kb(resolver: PermissionResolver, principal: Principal, permission: str) -> None:
+    """KB authority is org-wide for humans, project-derived for agents (an
+    agent's operator bundle applies only to its bound project, TITAN-BCK-021).
+    A proposal/approval is a governed org action, so an agent qualifies when its
+    bound project grants the permission — mirroring the memory:write rule."""
+    if principal.kind == "agent":
+        project_id = await resolver.bound_project()
+        granted = await resolver.project_permissions(project_id) if project_id else set()
+        if not permission_granted(permission, granted):
+            raise forbidden(permission)
+    elif not await resolver.has(permission):
+        raise forbidden(permission)
+
+
+@router.post("/kb/proposals", response_model=KbProposalOut, status_code=201)
+async def create_kb_proposal(
+    request: Request, body: KbProposalIn, principal: _Authenticated
+) -> KbProposalOut:
+    """Submit a KB proposal (§10.3 step 1): a diff + rationale for a new doc or a
+    new version. Never mutates a KB table — it queues a ``pending`` proposal with
+    its type-based routing and a semantic near-duplicate conflict check. Requires
+    ``kb:propose``. ``proposed_by`` is the authenticated principal, not spoofable
+    body input (provenance, TITAN-BRN-021)."""
+    resolver = get_resolver(request)
+    await _require_kb(resolver, principal, "kb:propose")
+    state = request.app.state
+    return await service.create_proposal(
+        state.engine,
+        QdrantIndex(cast(httpx.AsyncClient, state.http)),
+        cast(EmbeddingsClient, state.llm_gateway),
+        body,
+        proposed_by=_actor(principal),
+    )
+
+
+@router.post("/kb/proposals/{proposal_id}/approve", response_model=KbApprovalResult)
+async def approve_kb_proposal(
+    request: Request, proposal_id: uuid.UUID, principal: _Authenticated
+) -> KbApprovalResult:
+    """Approve a pending proposal (§10.3 step 3): the new version becomes current,
+    is materialised into ``titan_kb`` through the §5.1 pipeline, and KG provenance
+    is written. Requires ``kb:approve`` (the Code-Reviewer approval authority);
+    protected types (coding_standard/decision_record) additionally require a
+    HUMAN approver — the §10.3 human sign-off — enforced in the service."""
+    resolver = get_resolver(request)
+    await _require_kb(resolver, principal, "kb:approve")
+    return await service.approve_proposal(
+        request.app.state.engine,
+        proposal_id,
+        approver=_actor(principal),
+        approver_is_human=principal.kind == "user",
+    )
+
+
+@router.get("/kb/documents/{slug}", response_model=KbDocumentDetail)
+async def get_kb_document(request: Request, slug: str, principal: _ReadMemory) -> KbDocumentDetail:
+    """A KB document with its full version history (§10.2) — older versions stay
+    queryable even though only the current one is chunked into titan_kb."""
+    detail = await service.get_document_detail(request.app.state.engine, slug)
+    if detail is None:
+        raise not_found("KB document")
+    return detail
+
+
+def _kb_direct_write_forbidden() -> ProblemException:
+    return ProblemException(
+        status=403,
+        title="Forbidden",
+        detail=(
+            "The Knowledge Base is append-only through the proposal→approval "
+            "workflow (TITAN-BRN-021); POST /kb/proposals then approve. Direct "
+            "KB mutation is not permitted."
+        ),
+        problem_type=problem_type("forbidden"),
+    )
+
+
+@router.post("/kb/documents")
+async def create_kb_document_directly(principal: _Authenticated) -> None:
+    """Direct KB writes are forbidden — always 403 (TITAN-BRN-021). Present so the
+    invariant is explicit and testable, even for an owner (``*``)."""
+    raise _kb_direct_write_forbidden()
+
+
+@router.put("/kb/documents/{slug}")
+async def update_kb_document_directly(slug: str, principal: _Authenticated) -> None:
+    """Direct KB writes are forbidden — always 403 (TITAN-BRN-021)."""
+    raise _kb_direct_write_forbidden()
+
+
+# --- Knowledge graph traversal (§7.1) ----------------------------------------
+
+
+@router.post("/memory/kg/query", response_model=KgQueryResult)
+async def query_kg(request: Request, body: KgQueryRequest, principal: _ReadMemory) -> KgQueryResult:
+    """Typed graph traversal (start nodes, edge-type filter, depth ≤ 3) via a
+    recursive CTE (§7.1). Scope-isolated: org + the caller's own project only
+    (TITAN-BRN-003)."""
+    return await service.kg_query(request.app.state.engine, body)
 
 
 def mount(app: FastAPI) -> None:

@@ -41,6 +41,10 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "memory:write",
         # rebuild-index and other memory maintenance (TITAN-BRN-004, Phase 35).
         "memory:admin",
+        # Propose + approve KB changes, including the human sign-off on protected
+        # doc types (coding_standard/decision_record) — Vol 5 §10.3, Phase 39.
+        "kb:propose",
+        "kb:approve",
         "*:read",
     ],
     "maintainer": [
@@ -54,6 +58,9 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "message:write",
         # Vol 8 §4.2: Maintainer resolves approval-workflow ("A") actions.
         "tool_approval:write",
+        # Propose + approve KB changes (human sign-off on protected types), §10.3.
+        "kb:propose",
+        "kb:approve",
         "*:read",
     ],
     # The machine/agent bundle (TITAN-BCK-021): task flow + the sandbox
@@ -65,6 +72,10 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "message:write",
         # Agents write durable memory through the Memory Service (Vol 5, Phase 33).
         "memory:write",
+        # Agents PROPOSE KB changes and a Code-Reviewer agent APPROVES non-protected
+        # types (§10.3); the human sign-off on protected types blocks agent approval.
+        "kb:propose",
+        "kb:approve",
         "workspace:read",
         "workspace:write",
         "terminal:run",

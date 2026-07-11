@@ -56,9 +56,11 @@ def test_rebuild_reconciles_by_point_id_set_difference(api: dict[str, Any]) -> N
         server.seed_point("titan_memory", stray, deterministic_vector("stray"))
         report = await memory.rebuild_index(engine, index, stub)
         async with engine.connect() as conn:
-            # The canonical set is ACTIVE records' chunks (Phase 37): other
-            # tests on the shared DB may leave superseded residue, which
-            # rebuild rightly treats as strays, not corpus.
+            # The titan_memory canonical set is ACTIVE, NON-KB records' chunks
+            # (Phase 37 + Phase 39 partition): other tests on the shared DB may
+            # leave superseded residue (rebuild treats it as strays) OR active KB
+            # records (whose chunks belong to titan_kb, not titan_memory) — both
+            # must be excluded from this titan_memory equality.
             pg_ids = {
                 str(row.id)
                 for row in (
@@ -66,7 +68,7 @@ def test_rebuild_reconciles_by_point_id_set_difference(api: dict[str, Any]) -> N
                         text(
                             "SELECT c.id FROM brain.memory_chunks c "
                             "JOIN brain.memory_records r ON r.id = c.record_id "
-                            "WHERE r.status = 'active'"
+                            "WHERE r.status = 'active' AND NOT (r.metadata ? 'kb_slug')"
                         )
                     )
                 ).all()
@@ -114,22 +116,28 @@ def test_rebuild_is_idempotent_second_run_is_a_no_op(api: dict[str, Any]) -> Non
 
 
 def test_rebuild_purges_derived_only_collections(api: dict[str, Any]) -> None:
-    """titan_kb / titan_kg_labels have no canonical tables yet — rebuild
-    reconciles them to empty, keeping 'derivable from PostgreSQL' true for
-    EVERY collection."""
+    """titan_kg_labels has no canonical table (entity resolution is out of MVP
+    scope), so rebuild reconciles it to empty. titan_kb IS reconciled from
+    PostgreSQL now (Phase 39): a stray with no backing KB chunk is still a stray
+    to delete, keeping 'derivable from PostgreSQL' true for EVERY collection."""
     engine: AsyncEngine = api["engine"]
     server = FakeQdrantServer()
+    kb_stray = str(uuid.uuid4())
 
     async def scenario() -> Any:
         index = QdrantIndex(server.client())
         await index.ensure_collections()
-        server.seed_point("titan_kb", str(uuid.uuid4()), deterministic_vector("kb-stray"))
+        server.seed_point("titan_kb", kb_stray, deterministic_vector("kb-stray"))
         server.seed_point("titan_kg_labels", str(uuid.uuid4()), deterministic_vector("kg-stray"))
-        return await memory.rebuild_index(engine, index, StubEmbeddings())
+        report = await memory.rebuild_index(engine, index, StubEmbeddings())
+        kb_ids = await index.list_point_ids("titan_kb")
+        return report, kb_ids
 
-    report = run_async(scenario)
-    assert report.collections["titan_kb"].strays_deleted == 1
-    assert report.collections["titan_kb"].points == 0
+    report, kb_ids = run_async(scenario)
+    # The unbacked titan_kb point is deleted as a stray (exact count is tolerant
+    # of KB records other tests may have left on the shared session DB).
+    assert kb_stray not in kb_ids
+    assert report.collections["titan_kb"].strays_deleted >= 1
     assert report.collections["titan_kg_labels"].strays_deleted == 1
     assert report.collections["titan_kg_labels"].points == 0
 

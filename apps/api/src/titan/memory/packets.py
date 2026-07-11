@@ -62,6 +62,10 @@ class PacketRequest(BaseModel):
     kinds: list[str] = Field(default_factory=list)
     k: int = Field(default=retrieval.FUSED_TOP_K, ge=1, le=50)
     budget_tokens: int = Field(default=4000, ge=256, le=32_000)
+    # TITAN-BRN-022: KB documents forced into the packet by slug, independent of
+    # similarity ranking (e.g. the code-review step always pins its
+    # coding_standard docs). Pinned chunks are NEVER evicted by ranking.
+    pins: list[str] = Field(default_factory=list, max_length=20)
     assembled_for: AssembledFor | None = None
 
     @field_validator("scope")
@@ -93,6 +97,9 @@ class PacketCitation(BaseModel):
     chunk_id: uuid.UUID
     score: float
     compressed: bool = False
+    # TITAN-BRN-022: this chunk was pinned by slug, not ranked — it is present
+    # deterministically and was never subject to eviction.
+    pinned: bool = False
 
 
 class PacketSections(BaseModel):
@@ -137,6 +144,9 @@ def packet_cache_key(request: PacketRequest) -> str:
             ",".join(sorted(request.kinds)),
             str(request.k),
             str(request.budget_tokens),
+            # Pins change the packet CONTENT (they force docs in), so they are
+            # part of the cache key — order-independent (a set of slugs).
+            "pins:" + ",".join(sorted(request.pins)),
         ]
     )
     digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:32]
@@ -208,6 +218,14 @@ async def _assemble_packet(
 
     identity = await _identity_context(engine, request.scope)
     identity_tokens = count_tokens(identity)
+    # TITAN-BRN-022 — pin-by-slug: the current version's KB chunks, read straight
+    # from PostgreSQL (deterministic, no ranking, available even before the
+    # chunks finish embedding). Charged right after identity_context and never
+    # evicted; a pinned chunk that ALSO ranks is not double-counted.
+    pinned = await _pinned_chunks(engine, request)
+    pinned_ids = {row.chunk_id for row in pinned}
+    pinned_tokens = sum(int(row.token_count) for row in pinned)
+    span.set_attribute("titan.memory.pinned", len(pinned))
     stats = retrieval.RetrievalStats()
     ranked = await retrieval.retrieve(
         engine,
@@ -228,12 +246,22 @@ async def _assemble_packet(
     span.set_attribute("titan.memory.fused", stats.fused)
     span.set_attribute("titan.memory.hydrated", stats.hydrated)
     span.set_attribute("titan.memory.rerank_ms", round(stats.rerank_ms, 2))
-    # identity_context is charged FIRST and never evicted (§6.2 rule c).
-    kept = retrieval.fill_budget(ranked, request.budget_tokens, reserved=identity_tokens)
+    # A pinned chunk that also came back from ranking must not appear twice.
+    ranked = [chunk for chunk in ranked if chunk.chunk_id not in pinned_ids]
+    # identity_context AND pins are charged FIRST and never evicted (§6.2 rule c,
+    # TITAN-BRN-022); ranking fills only what budget remains after them.
+    kept = retrieval.fill_budget(
+        ranked, request.budget_tokens, reserved=identity_tokens + pinned_tokens
+    )
 
     sections = PacketSections(identity_context=identity)
     citations: list[PacketCitation] = []
-    used = identity_tokens
+    used = identity_tokens + pinned_tokens
+    for row in pinned:
+        _section_for(sections, str(row.kind)).append(str(row.text))
+        citations.append(
+            PacketCitation(record_id=row.record_id, chunk_id=row.chunk_id, score=1.0, pinned=True)
+        )
     for chunk in kept:
         _section_for(sections, chunk.kind).append(chunk.text)
         citations.append(
@@ -277,6 +305,18 @@ async def _assemble_packet(
     except Exception:
         logger.exception("memory.packet_cache_write_failed")
     return packet
+
+
+async def _pinned_chunks(engine: AsyncEngine, request: PacketRequest) -> list[Any]:
+    """The current KB chunks for the request's pinned slugs (TITAN-BRN-022),
+    scope-isolated to org + the caller's project (TITAN-BRN-003). Empty when
+    nothing is pinned or a slug has no active version."""
+    if not request.pins:
+        return []
+    scopes = ("org",) if request.scope == "org" else ("org", request.scope)
+    async with engine.connect() as conn:
+        rows = await repo.kb_current_chunks_for_slugs(conn, request.pins, scopes=scopes)
+    return list(rows)
 
 
 def _section_for(sections: PacketSections, kind: str) -> list[str]:

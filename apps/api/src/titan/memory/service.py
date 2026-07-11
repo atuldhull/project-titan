@@ -19,7 +19,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncConnection
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from titan.db import uuid7
 from titan.gateway.dto import JsonbDict
@@ -43,6 +43,34 @@ from titan.memory.ingest import (
     run_embedder,
     run_ingest_reaper,
     run_ingest_relay,
+)
+from titan.memory.kb import (
+    DOC_TYPES,
+    PROTECTED_DOC_TYPES,
+    KbApprovalResult,
+    KbDocumentDetail,
+    KbProposalIn,
+    KbProposalOut,
+    NearDuplicate,
+    approve_proposal,
+    create_proposal,
+    get_document_detail,
+)
+from titan.memory.kg import (
+    EDGE_TYPES,
+    MAX_TRAVERSAL_DEPTH,
+    NODE_TYPES,
+    GraphKgSink,
+    KgEdgeOut,
+    KgNodeOut,
+    KgNodeRef,
+    KgQueryRequest,
+    KgQueryResult,
+    record_component,
+    record_decision,
+    record_lesson,
+    supersede_decision,
+    traverse,
 )
 from titan.memory.packets import (
     PACKET_CACHE_TTL_SECONDS,
@@ -460,6 +488,16 @@ async def existing_wm_client_keys(conn: AsyncConnection, keys: list[str]) -> set
     return await repo.existing_wm_client_keys(conn, keys)
 
 
+# --- knowledge graph traversal (§7.1, POST /memory/kg/query) -----------------
+
+
+async def kg_query(engine: AsyncEngine, request: KgQueryRequest) -> KgQueryResult:
+    """Typed graph traversal, depth ≤ 3, scope-isolated (TITAN-BRN-003). Opens a
+    read connection; the recursive-CTE walk lives in the KG module."""
+    async with engine.connect() as conn:
+        return await traverse(conn, request)
+
+
 __all__ = [
     "AssembledFor",
     "COLLECTION_SPECS",
@@ -467,13 +505,26 @@ __all__ = [
     "CollectionRebuild",
     "ContentType",
     "CrossEncoderReranker",
+    "DOC_TYPES",
+    "EDGE_TYPES",
     "EMBEDDERS_GROUP",
     "EmbeddingsClient",
+    "GraphKgSink",
     "INGEST_DLQ",
     "IngestRelay",
+    "KbApprovalResult",
+    "KbDocumentDetail",
+    "KbProposalIn",
+    "KbProposalOut",
+    "KgEdgeOut",
+    "KgNodeOut",
+    "KgNodeRef",
+    "KgQueryRequest",
+    "KgQueryResult",
     "LagMetrics",
     "LedgerAction",
     "LlmListwiseReranker",
+    "MAX_TRAVERSAL_DEPTH",
     "MemoryChunkOut",
     "MemoryEmbedder",
     "MemoryEvent",
@@ -485,7 +536,10 @@ __all__ = [
     "MemoryRecordDetail",
     "MemoryRecordOut",
     "MemoryWriteResult",
+    "NODE_TYPES",
+    "NearDuplicate",
     "PACKET_CACHE_TTL_SECONDS",
+    "PROTECTED_DOC_TYPES",
     "PacketCitation",
     "PacketRequest",
     "PacketSections",
@@ -500,24 +554,33 @@ __all__ = [
     "WM_TTL_SECONDS",
     "WorkingMemory",
     "WrittenRecord",
+    "approve_proposal",
     "assemble_packet",
     "build_reranker",
     "cheapest_chat_alias",
     "checkpoint_working_summary",
     "count_tokens",
+    "create_proposal",
     "existing_wm_client_keys",
+    "get_document_detail",
     "get_record_detail",
+    "kg_query",
     "load_working_summary_checkpoint",
     "memory_metrics",
     "packet_cache_key",
     "parse_scope",
     "pending_wm_events",
     "rebuild_index",
+    "record_component",
+    "record_decision",
+    "record_lesson",
     "retrieve",
     "run_embedder",
     "run_ingest_reaper",
     "run_ingest_relay",
     "shape_queries",
+    "supersede_decision",
     "token_cost",
+    "traverse",
     "write_events",
 ]

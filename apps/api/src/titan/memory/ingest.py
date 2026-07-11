@@ -114,6 +114,10 @@ class IngestRelay:
                         "outbox_id": int(row.id),
                         "chunk_id": str(row.chunk_id),
                         "op": row.op,
+                        # The target collection travels WITH the row so a KB
+                        # chunk lands in titan_kb and a delete still knows its
+                        # collection after the chunk/record is gone (Phase 39).
+                        "collection": row.collection,
                     },
                     actor=_ACTOR,
                     event_id=stable_event_id(int(row.id)),
@@ -180,6 +184,9 @@ class MemoryEmbedder:
         # write transaction after — never a DB connection held across gateway or
         # Qdrant I/O, and no per-query reconnect storms on unpooled engines.
         outbox_id = int(payload["outbox_id"])
+        # The chunk's target collection rides with the delivery (Phase 39); the
+        # constructor default covers pre-column deliveries (legacy/replays).
+        collection = str(payload.get("collection") or self._collection)
         async with self._engine.connect() as conn:
             row = await repo.outbox_row(conn, outbox_id)
             if row is None or row.processed_at is not None:
@@ -197,7 +204,7 @@ class MemoryEmbedder:
                     conn, chunk_id=row.chunk_id, after_outbox_id=outbox_id
                 )
         if row.op == "delete":
-            await self._qdrant.delete_points(self._collection, [str(row.chunk_id)])
+            await self._qdrant.delete_points(collection, [str(row.chunk_id)])
             async with self._engine.begin() as conn:
                 await repo.mark_outbox_processed(conn, outbox_id)
             _observe_lag(row.enqueued_at)
@@ -207,14 +214,14 @@ class MemoryEmbedder:
             # already have upserted the point after the delete op ran (its
             # Qdrant delete no-op'd on the not-yet-existing point). Deleting
             # here makes every redelivery converge to the deleted end state.
-            await self._qdrant.delete_points(self._collection, [str(row.chunk_id)])
+            await self._qdrant.delete_points(collection, [str(row.chunk_id)])
             async with self._engine.begin() as conn:
                 await repo.mark_outbox_processed(conn, outbox_id)
             return
         if chunk is None:
             # The record (and its chunks) vanished between enqueue and now —
             # nothing to embed; drop any stale point defensively and complete.
-            await self._qdrant.delete_points(self._collection, [str(row.chunk_id)])
+            await self._qdrant.delete_points(collection, [str(row.chunk_id)])
             async with self._engine.begin() as conn:
                 await repo.mark_outbox_processed(conn, outbox_id)
             return
@@ -228,7 +235,7 @@ class MemoryEmbedder:
             )
         )
         point = build_point(chunk, response.embeddings[0].embedding)
-        await self._qdrant.upsert_points(self._collection, [point])
+        await self._qdrant.upsert_points(collection, [point])
         # Re-check INSIDE the success transaction: a delete enqueued while we
         # were embedding may have been processed concurrently (its Qdrant delete
         # could precede our upsert). Undo our own write so the end state
@@ -245,7 +252,7 @@ class MemoryEmbedder:
                     embed_model=response.model_id,
                 )
         if superseded:
-            await self._qdrant.delete_points(self._collection, [str(row.chunk_id)])
+            await self._qdrant.delete_points(collection, [str(row.chunk_id)])
             async with self._engine.begin() as conn:
                 await repo.mark_outbox_processed(conn, outbox_id)
             return
@@ -255,20 +262,29 @@ class MemoryEmbedder:
 def build_point(chunk: Row[Any], vector: list[float]) -> dict[str, Any]:
     """A Qdrant point for one chunk: id == chunk id (ADR-05-01), named ``dense``
     vector, payload = exactly the §4.4 indexed fields (built from the RECORD —
-    Qdrant is a derived index, canonical text stays in PostgreSQL)."""
+    Qdrant is a derived index, canonical text stays in PostgreSQL). A KB chunk
+    (its record carries a ``kb_slug``) additionally gets the §4.4 titan_kb index
+    fields (doc_type, version, language) so the same point serves both the
+    retrieval leg (scope/kind/record_id) and the KB collection's schema."""
+    metadata = _metadata_dict(chunk.metadata)
     payload: dict[str, Any] = {
         "scope": chunk.scope,
         "kind": chunk.kind,
         "record_id": str(chunk.record_id),
         "source_agent": chunk.source_agent,
         "created_at": chunk.created_at.isoformat(),
-        "tags": _tags(chunk.metadata),
+        "tags": _tags_of(metadata),
         "decay_score": float(chunk.decay_score),
         # §6.1 filters by status; not in the §4.4 INDEX list, so payload-only.
         "status": chunk.status,
     }
     if chunk.project_id is not None:
         payload["project_id"] = str(chunk.project_id)
+    if metadata.get("kb"):
+        payload["doc_type"] = str(metadata.get("doc_type", ""))
+        payload["version"] = str(metadata.get("kb_version", ""))
+        if metadata.get("language"):
+            payload["language"] = str(metadata["language"])
     return {
         "id": str(chunk.chunk_id),
         "vector": {VECTOR_NAME: vector},
@@ -276,11 +292,17 @@ def build_point(chunk: Row[Any], vector: list[float]) -> dict[str, Any]:
     }
 
 
-def _tags(metadata: Any) -> list[str]:
-    """The record's tags[] from its metadata JSONB — tolerant of absence and of
-    asyncpg returning jsonb as str or dict."""
+def _metadata_dict(metadata: Any) -> dict[str, Any]:
+    """A record's metadata JSONB as a dict — tolerant of asyncpg returning jsonb
+    as str or dict, and of a non-object value."""
     data = json.loads(metadata) if isinstance(metadata, str) else metadata
-    tags = data.get("tags") if isinstance(data, dict) else None
+    return data if isinstance(data, dict) else {}
+
+
+def _tags_of(metadata: dict[str, Any]) -> list[str]:
+    """The record's tags[] from its (already-parsed) metadata — tolerant of
+    absence and of a non-list value."""
+    tags = metadata.get("tags")
     if not isinstance(tags, list):
         return []
     return [str(tag) for tag in tags]

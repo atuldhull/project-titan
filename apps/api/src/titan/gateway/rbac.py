@@ -146,6 +146,15 @@ class PermissionResolver:
                 self._agent_project = found[0] if found is not None else None
         return self._agent_project  # type: ignore[no-any-return]
 
+    async def bound_project(self) -> uuid.UUID | None:
+        """The agent's bound project (the only scope its operator bundle applies
+        to, TITAN-BCK-021); None for a user principal or an unbound agent. Lets a
+        handler authorize an agent for an org-wide-but-governed action (e.g. a KB
+        proposal) by its project-derived authority."""
+        if self._is_agent:
+            return await self._bound_project()
+        return None
+
     async def project_permissions(self, project_id: uuid.UUID) -> set[str]:
         if project_id not in self._project_perms:
             if self._is_agent:

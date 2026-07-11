@@ -4,7 +4,7 @@ Core over an AsyncConnection; only ``service.py`` crosses the module boundary
 
 import uuid
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -117,10 +117,20 @@ async def list_chunks(conn: AsyncConnection, record_id: uuid.UUID) -> Sequence[R
 # --- ingest outbox ---------------------------------------------------------
 
 
-async def insert_outbox(conn: AsyncConnection, *, chunk_id: uuid.UUID, op: str) -> None:
+async def insert_outbox(
+    conn: AsyncConnection, *, chunk_id: uuid.UUID, op: str, collection: str = "titan_memory"
+) -> None:
+    """Enqueue one §5.1 embedding op. ``collection`` names the target Qdrant
+    collection so the SAME pipeline embeds KB chunks into ``titan_kb`` and memory
+    chunks into ``titan_memory`` (Phase 39) — the value travels with the row all
+    the way to the embedder, so a delete op still knows its collection even after
+    the chunk/record is gone."""
     await conn.execute(
-        text("INSERT INTO brain.ingest_outbox (chunk_id, op) VALUES (:chunk_id, :op)"),
-        {"chunk_id": chunk_id, "op": op},
+        text(
+            "INSERT INTO brain.ingest_outbox (chunk_id, op, collection) "
+            "VALUES (:chunk_id, :op, :collection)"
+        ),
+        {"chunk_id": chunk_id, "op": op, "collection": collection},
     )
 
 
@@ -135,7 +145,7 @@ async def drainable_outbox(
     locked with SKIP LOCKED so concurrent relays never double-publish."""
     result = await conn.execute(
         text(
-            "SELECT id, chunk_id, op, enqueued_at FROM brain.ingest_outbox "
+            "SELECT id, chunk_id, op, collection, enqueued_at FROM brain.ingest_outbox "
             "WHERE processed_at IS NULL AND dead_at IS NULL AND (published_at IS NULL "
             "  OR published_at < now() - make_interval(secs => :stale)) "
             "ORDER BY id LIMIT :batch FOR UPDATE SKIP LOCKED"
@@ -164,7 +174,7 @@ async def mark_outbox_published(conn: AsyncConnection, outbox_id: int) -> None:
 async def outbox_row(conn: AsyncConnection, outbox_id: int) -> Row[Any] | None:
     result = await conn.execute(
         text(
-            "SELECT id, chunk_id, op, enqueued_at, published_at, processed_at "
+            "SELECT id, chunk_id, op, collection, enqueued_at, published_at, processed_at "
             "FROM brain.ingest_outbox WHERE id = :id"
         ),
         {"id": outbox_id},
@@ -245,20 +255,54 @@ async def mark_chunks_embedded(
     )
 
 
-async def all_chunk_ids(conn: AsyncConnection) -> set[uuid.UUID]:
+async def active_chunk_ids(conn: AsyncConnection, *, kb: bool | None = None) -> set[uuid.UUID]:
     """The CANONICAL chunk-id set for TITAN-BRN-004 reconciliation: chunks of
     ACTIVE records only. Non-active records must have no points — the live
     pipeline deletes them on supersede (Phase 35) and §9.2 archiving drops
     vectors — so a rebuild that re-created them would diverge from the
-    live-converged index; their leftover points are strays to delete."""
+    live-converged index; their leftover points are strays to delete.
+
+    ``kb`` partitions by target collection (Phase 39): ``kb=False`` → the
+    ``titan_memory`` canonical set (records WITHOUT a ``kb_slug`` marker),
+    ``kb=True`` → the ``titan_kb`` canonical set (materialised KB records),
+    ``None`` → both. A KB chunk in titan_memory (or vice versa) would be a
+    mis-embedded stray, so rebuild reconciles each collection against its own
+    partition."""
+    clause = ""
+    if kb is True:
+        clause = "AND r.metadata ? 'kb_slug' "
+    elif kb is False:
+        clause = "AND NOT (r.metadata ? 'kb_slug') "
     result = await conn.execute(
         text(
             "SELECT c.id FROM brain.memory_chunks c "
             "JOIN brain.memory_records r ON r.id = c.record_id "
-            "WHERE r.status = 'active'"
+            f"WHERE r.status = 'active' {clause}"
         )
     )
     return {row.id for row in result.all()}
+
+
+async def supersede_record(
+    conn: AsyncConnection, *, record_id: uuid.UUID, superseded_by: uuid.UUID, collection: str
+) -> None:
+    """Retire a record's current version (§10.2: only the approved current KB
+    version stays in ``titan_kb``): mark it superseded and enqueue a delete op
+    per chunk so the live pipeline drops its points from ``collection``. The
+    body stays in PostgreSQL (queryable history) — only the derived vectors go."""
+    await conn.execute(
+        text(
+            "UPDATE brain.memory_records SET status = 'superseded', superseded_by = :sb "
+            "WHERE id = :id"
+        ),
+        {"id": record_id, "sb": superseded_by},
+    )
+    chunk_rows = await conn.execute(
+        text("SELECT id FROM brain.memory_chunks WHERE record_id = :rid"),
+        {"rid": record_id},
+    )
+    for (chunk_id,) in chunk_rows:
+        await insert_outbox(conn, chunk_id=chunk_id, op="delete", collection=collection)
 
 
 async def quarantined_chunk_ids(conn: AsyncConnection) -> set[uuid.UUID]:
@@ -474,3 +518,404 @@ async def existing_wm_client_keys(conn: AsyncConnection, keys: Sequence[str]) ->
         {"keys": list(keys)},
     )
     return {row.ck for row in result.all()}
+
+
+# --- Knowledge Base (§10.2/§10.3) --------------------------------------------
+
+_KB_DOC_COLS = "id, doc_type, slug, title, current_version, status, tags, created_at"
+_KB_VERSION_COLS = (
+    "id, document_id, version, body_md, change_note, proposed_by, approved_by, "
+    "record_id, created_at"
+)
+_KB_PROPOSAL_COLS = (
+    "id, document_id, doc_type, slug, title, body_md, change_note, rationale, tags, "
+    "proposed_by, status, requires_human, near_duplicates, decided_by, decided_at, "
+    "resulting_version, created_at"
+)
+
+
+async def get_kb_document_by_slug(conn: AsyncConnection, slug: str) -> Row[Any] | None:
+    result = await conn.execute(
+        text(f"SELECT {_KB_DOC_COLS} FROM brain.kb_documents WHERE slug = :slug"),
+        {"slug": slug},
+    )
+    return result.one_or_none()
+
+
+async def get_kb_document(conn: AsyncConnection, document_id: uuid.UUID) -> Row[Any] | None:
+    result = await conn.execute(
+        text(f"SELECT {_KB_DOC_COLS} FROM brain.kb_documents WHERE id = :id"),
+        {"id": document_id},
+    )
+    return result.one_or_none()
+
+
+async def insert_kb_document(
+    conn: AsyncConnection,
+    *,
+    doc_type: str,
+    slug: str,
+    title: str,
+    tags: list[str],
+) -> Row[Any]:
+    result = await conn.execute(
+        text(
+            "INSERT INTO brain.kb_documents (doc_type, slug, title, current_version, tags) "
+            "VALUES (:doc_type, :slug, :title, 1, :tags) "
+            f"RETURNING {_KB_DOC_COLS}"
+        ),
+        {"doc_type": doc_type, "slug": slug, "title": title, "tags": tags},
+    )
+    return result.one()
+
+
+async def bump_kb_document(
+    conn: AsyncConnection,
+    document_id: uuid.UUID,
+    *,
+    version: int,
+    title: str,
+    tags: list[str],
+) -> None:
+    """Advance the document's current pointer to a freshly-approved version."""
+    await conn.execute(
+        text(
+            "UPDATE brain.kb_documents SET current_version = :v, title = :title, tags = :tags "
+            "WHERE id = :id"
+        ),
+        {"id": document_id, "v": version, "title": title, "tags": tags},
+    )
+
+
+async def insert_kb_version(
+    conn: AsyncConnection,
+    *,
+    document_id: uuid.UUID,
+    version: int,
+    body_md: str,
+    change_note: str,
+    proposed_by: str,
+    approved_by: str,
+    record_id: uuid.UUID | None,
+) -> Row[Any]:
+    result = await conn.execute(
+        text(
+            "INSERT INTO brain.kb_versions "
+            "(document_id, version, body_md, change_note, proposed_by, approved_by, record_id) "
+            "VALUES (:doc, :v, :body, :note, :prop, :appr, :rec) "
+            f"RETURNING {_KB_VERSION_COLS}"
+        ),
+        {
+            "doc": document_id,
+            "v": version,
+            "body": body_md,
+            "note": change_note,
+            "prop": proposed_by,
+            "appr": approved_by,
+            "rec": record_id,
+        },
+    )
+    return result.one()
+
+
+async def current_kb_version(conn: AsyncConnection, document_id: uuid.UUID) -> Row[Any] | None:
+    """The document's current (highest-approved) version row — its ``record_id``
+    is the memory_record to supersede when a new version is approved."""
+    qualified = ", ".join(f"v.{col}" for col in _KB_VERSION_COLS.split(", "))
+    result = await conn.execute(
+        text(
+            f"SELECT {qualified} FROM brain.kb_versions v "
+            "JOIN brain.kb_documents d ON d.id = v.document_id "
+            "WHERE v.document_id = :doc AND v.version = d.current_version"
+        ),
+        {"doc": document_id},
+    )
+    return result.one_or_none()
+
+
+async def list_kb_versions(conn: AsyncConnection, document_id: uuid.UUID) -> Sequence[Row[Any]]:
+    """Every version of a document, newest first — the Memory Explorer history
+    (older versions remain queryable even though only the current is in
+    titan_kb, §10.2)."""
+    result = await conn.execute(
+        text(
+            f"SELECT {_KB_VERSION_COLS} FROM brain.kb_versions "
+            "WHERE document_id = :doc ORDER BY version DESC"
+        ),
+        {"doc": document_id},
+    )
+    return result.all()
+
+
+async def insert_kb_proposal(
+    conn: AsyncConnection,
+    *,
+    document_id: uuid.UUID | None,
+    doc_type: str,
+    slug: str,
+    title: str,
+    body_md: str,
+    change_note: str,
+    rationale: str,
+    tags: list[str],
+    proposed_by: str,
+    requires_human: bool,
+    near_duplicates: str,
+) -> Row[Any]:
+    result = await conn.execute(
+        text(
+            "INSERT INTO brain.kb_proposals "
+            "(document_id, doc_type, slug, title, body_md, change_note, rationale, tags, "
+            " proposed_by, requires_human, near_duplicates) "
+            "VALUES (:doc, :doc_type, :slug, :title, :body, :note, :rationale, :tags, "
+            " :prop, :rh, CAST(:nd AS jsonb)) "
+            f"RETURNING {_KB_PROPOSAL_COLS}"
+        ),
+        {
+            "doc": document_id,
+            "doc_type": doc_type,
+            "slug": slug,
+            "title": title,
+            "body": body_md,
+            "note": change_note,
+            "rationale": rationale,
+            "tags": tags,
+            "prop": proposed_by,
+            "rh": requires_human,
+            "nd": near_duplicates,
+        },
+    )
+    return result.one()
+
+
+async def get_kb_proposal(conn: AsyncConnection, proposal_id: uuid.UUID) -> Row[Any] | None:
+    result = await conn.execute(
+        text(f"SELECT {_KB_PROPOSAL_COLS} FROM brain.kb_proposals WHERE id = :id"),
+        {"id": proposal_id},
+    )
+    return result.one_or_none()
+
+
+async def decide_kb_proposal(
+    conn: AsyncConnection,
+    proposal_id: uuid.UUID,
+    *,
+    status: str,
+    decided_by: str,
+    resulting_version: int | None,
+) -> bool:
+    """Record the approval/rejection decision — but ONLY on a still-``pending``
+    proposal, so two concurrent approvals of the same proposal cannot both
+    materialise a version. Returns True when THIS call won the transition."""
+    result = await conn.execute(
+        text(
+            "UPDATE brain.kb_proposals SET status = :status, decided_by = :by, "
+            "decided_at = now(), resulting_version = :rv "
+            "WHERE id = :id AND status = 'pending'"
+        ),
+        {"id": proposal_id, "status": status, "by": decided_by, "rv": resulting_version},
+    )
+    return bool(result.rowcount)
+
+
+async def kb_slugs_for_records(
+    conn: AsyncConnection, record_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    """record_id → its KB slug, for the near-duplicate conflict check (§10.3):
+    map the records a semantic search surfaced back to their document slugs."""
+    if not record_ids:
+        return {}
+    result = await conn.execute(
+        text(
+            "SELECT id, metadata ->> 'kb_slug' AS slug FROM brain.memory_records "
+            "WHERE id = ANY(CAST(:ids AS uuid[])) AND metadata ? 'kb_slug'"
+        ),
+        {"ids": list(record_ids)},
+    )
+    return {row.id: row.slug for row in result.all()}
+
+
+async def kb_current_chunks_for_slugs(
+    conn: AsyncConnection, slugs: Sequence[str], *, scopes: Sequence[str]
+) -> Sequence[Row[Any]]:
+    """Chunks of the CURRENT (active) KB record for each slug — the pin-by-slug
+    read (TITAN-BRN-022): deterministic, no Qdrant, scope-isolated. The
+    ``metadata ? 'kb_slug'`` predicate lets the planner use the partial index
+    ix_memory_records_kb_slug."""
+    if not slugs:
+        return []
+    result = await conn.execute(
+        text(
+            "SELECT c.id AS chunk_id, c.record_id, c.seq, c.text, c.token_count, "
+            "       r.kind, r.title, r.importance, r.decay_score, r.metadata ->> 'kb_slug' AS slug "
+            "FROM brain.memory_chunks c JOIN brain.memory_records r ON r.id = c.record_id "
+            "WHERE r.status = 'active' AND r.metadata ? 'kb_slug' "
+            "  AND r.metadata ->> 'kb_slug' = ANY(:slugs) AND r.scope = ANY(:scopes) "
+            "ORDER BY r.metadata ->> 'kb_slug', c.seq"
+        ),
+        {"slugs": list(slugs), "scopes": list(scopes)},
+    )
+    return result.all()
+
+
+# --- Knowledge Graph (§7.1, ADR-05-04) ---------------------------------------
+
+_KG_NODE_COLS = "id, node_type, scope, name, properties, record_id, created_at"
+
+
+async def ensure_kg_node(
+    conn: AsyncConnection,
+    *,
+    node_type: str,
+    scope: str,
+    name: str,
+    properties: str,
+    record_id: uuid.UUID | None = None,
+) -> uuid.UUID:
+    """Idempotent node upsert on the UNIQUE (scope, node_type, name) key — the
+    deterministic entity dedup (importing the same name twice in a scope yields
+    ONE node, TITAN-BRN-014's exact-match half). Properties MERGE (existing ||
+    new, new wins) so re-imports enrich rather than clobber; ``record_id`` is set
+    only when currently null (the first prose binding wins)."""
+    result = await conn.execute(
+        text(
+            "INSERT INTO brain.kg_nodes (node_type, scope, name, properties, record_id) "
+            "VALUES (:nt, :scope, :name, CAST(:props AS jsonb), :rec) "
+            "ON CONFLICT (scope, node_type, name) DO UPDATE SET "
+            "  properties = brain.kg_nodes.properties || EXCLUDED.properties, "
+            "  record_id = COALESCE(brain.kg_nodes.record_id, EXCLUDED.record_id) "
+            "RETURNING id"
+        ),
+        {"nt": node_type, "scope": scope, "name": name, "props": properties, "rec": record_id},
+    )
+    return cast(uuid.UUID, result.scalar_one())
+
+
+async def get_kg_node_id(
+    conn: AsyncConnection, *, scope: str, node_type: str, name: str
+) -> uuid.UUID | None:
+    """Resolve a node's id by its natural key (scope, node_type, name)."""
+    result = await conn.execute(
+        text(
+            "SELECT id FROM brain.kg_nodes "
+            "WHERE scope = :scope AND node_type = :nt AND name = :name"
+        ),
+        {"scope": scope, "nt": node_type, "name": name},
+    )
+    return result.scalar_one_or_none()
+
+
+async def add_kg_edge(
+    conn: AsyncConnection,
+    *,
+    src: uuid.UUID,
+    dst: uuid.UUID,
+    edge_type: str,
+    properties: str,
+) -> uuid.UUID | None:
+    """Add a CURRENT edge, idempotently: a no-op when an active (valid_to IS
+    NULL) edge of the same (src, dst, edge_type) already exists. Returns the new
+    edge id, or None when one already existed. Deterministic — the structured
+    writers can be replayed without duplicating edges.
+
+    Idempotency is enforced by the PARTIAL UNIQUE index ux_kg_edges_active
+    (src, dst, edge_type) WHERE valid_to IS NULL — safe by construction, so two
+    concurrent transactions cannot both insert the same active edge (the ``ON
+    CONFLICT DO NOTHING`` makes the loser a clean no-op rather than a 23505).
+    History rows (valid_to set) are outside the partial index, so a supersede
+    that stamps valid_to then re-adds a fresh active edge never conflicts."""
+    result = await conn.execute(
+        text(
+            "INSERT INTO brain.kg_edges (src, dst, edge_type, properties) "
+            "VALUES (:src, :dst, :et, CAST(:props AS jsonb)) "
+            "ON CONFLICT (src, dst, edge_type) WHERE valid_to IS NULL DO NOTHING "
+            "RETURNING id"
+        ),
+        {"src": src, "dst": dst, "et": edge_type, "props": properties},
+    )
+    return result.scalar_one_or_none()
+
+
+async def expire_kg_edges_from(
+    conn: AsyncConnection, *, src: uuid.UUID, edge_types: Sequence[str] | None = None
+) -> int:
+    """Stamp ``valid_to`` on the active edges OUT of ``src`` (a superseded
+    decision keeps its edges as history, §7.3). Returns how many were expired."""
+    clause = "AND edge_type = ANY(:ets) " if edge_types else ""
+    result = await conn.execute(
+        text(
+            "UPDATE brain.kg_edges SET valid_to = now() "
+            f"WHERE src = :src AND valid_to IS NULL {clause}"
+        ),
+        {"src": src, "ets": list(edge_types or [])},
+    )
+    return int(result.rowcount)
+
+
+async def traverse_kg(
+    conn: AsyncConnection,
+    *,
+    start_ids: Sequence[uuid.UUID],
+    edge_types: Sequence[str] | None,
+    scopes: Sequence[str],
+    max_depth: int,
+    direction: str,
+) -> tuple[Sequence[Row[Any]], Sequence[Row[Any]]]:
+    """Typed graph traversal via a recursive CTE HARD-CAPPED at ``max_depth``
+    (≤3, §7.1). Follows only CURRENT edges (valid_to IS NULL) whose type is in
+    ``edge_types`` (all types when None), staying inside ``scopes`` (org + the
+    caller's project — TITAN-BRN-003). ``direction`` is 'out' (src→dst), 'in'
+    (dst→src), or 'both' (undirected — "what is connected"). Returns
+    (reached nodes with min depth, induced current edges among them)."""
+    if not start_ids:
+        return [], []
+    if direction == "out":
+        neigh, this_end = "e.src = w.id", "e.dst"
+    elif direction == "in":
+        neigh, this_end = "e.dst = w.id", "e.src"
+    else:  # both — undirected neighbour on either end
+        neigh = "(e.src = w.id OR e.dst = w.id)"
+        this_end = "CASE WHEN e.src = w.id THEN e.dst ELSE e.src END"
+    type_clause = "AND e.edge_type = ANY(:ets) " if edge_types else ""
+    plain_type_clause = "AND edge_type = ANY(:ets) " if edge_types else ""
+    # UNION (set semantics) collapses cycle re-visits; depth < max_depth caps the
+    # walk. MIN(depth) per node is taken in the outer aggregation.
+    nodes_result = await conn.execute(
+        text(
+            "WITH RECURSIVE walk(id, depth) AS ("
+            "  SELECT n.id, 0 FROM brain.kg_nodes n "
+            "  WHERE n.id = ANY(:starts) AND n.scope = ANY(:scopes) "
+            "  UNION "
+            "  SELECT nxt.id, w.depth + 1 "
+            "  FROM walk w "
+            f"  JOIN brain.kg_edges e ON {neigh} AND e.valid_to IS NULL {type_clause}"
+            f"  JOIN brain.kg_nodes nxt ON nxt.id = ({this_end}) AND nxt.scope = ANY(:scopes) "
+            "  WHERE w.depth < :maxd"
+            ") "
+            f"SELECT n.{', n.'.join(_KG_NODE_COLS.split(', '))}, MIN(w.depth) AS depth "
+            "FROM walk w JOIN brain.kg_nodes n ON n.id = w.id "
+            "GROUP BY n.id, n.node_type, n.scope, n.name, n.properties, n.record_id, n.created_at "
+            "ORDER BY MIN(w.depth), n.name"
+        ),
+        {
+            "starts": list(start_ids),
+            "scopes": list(scopes),
+            "maxd": max_depth,
+            "ets": list(edge_types or []),
+        },
+    )
+    nodes = nodes_result.all()
+    reached = [row.id for row in nodes]
+    if not reached:
+        return nodes, []
+    edges_result = await conn.execute(
+        text(
+            "SELECT id, src, dst, edge_type, properties, valid_from, valid_to "
+            "FROM brain.kg_edges "
+            "WHERE valid_to IS NULL AND src = ANY(:reached) AND dst = ANY(:reached) "
+            f"{plain_type_clause}"
+            "ORDER BY edge_type, src"
+        ),
+        {"reached": reached, "ets": list(edge_types or [])},
+    )
+    return nodes, edges_result.all()
