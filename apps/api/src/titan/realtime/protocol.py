@@ -37,6 +37,8 @@ SYS_NOTICE = "sys.notice"
 # Vol 6 §2.5 / §2.1 (Phase 41): the Kanban card-move and pipeline stage frames.
 TASK_KANBAN = "task.kanban"
 PIPELINE_UPDATED = "pipeline.updated"
+# Vol 6 §2.2 (Phase 42): a handoff gate evaluation (the §2.2 outcome / failure event).
+HANDOFF_EVALUATED = "handoff.evaluated"
 
 SERVER_EVENT_TYPES: frozenset[str] = frozenset(
     {
@@ -52,6 +54,7 @@ SERVER_EVENT_TYPES: frozenset[str] = frozenset(
         SYS_NOTICE,
         TASK_KANBAN,
         PIPELINE_UPDATED,
+        HANDOFF_EVALUATED,
     }
 )
 
@@ -209,6 +212,7 @@ __all__ = [
     "AUTHENTICATED",
     "DECISION_RECORDED",
     "ERROR",
+    "HANDOFF_EVALUATED",
     "MESSAGE_CREATED",
     "PING",
     "PIPELINE_UPDATED",

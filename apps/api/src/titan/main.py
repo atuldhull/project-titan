@@ -31,6 +31,7 @@ from titan.gateway.security import (
     SecurityHeadersMiddleware,
 )
 from titan.gateway.slots import AuthenticationSlot, RateLimitSlot, RBACSlot
+from titan.handoffs import router as handoffs_router
 from titan.identity import router as identity_router
 from titan.identity.tokens import KeyRing
 from titan.llm import router as llm_router
@@ -314,7 +315,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(metrics_router)
     identity_router.mount(app)  # /auth/* + fills the authentication slot
     projects_router.mount(app)  # /projects, /milestones, /sprints, board/graph
-    tasks_router.mount(app)  # /tasks, /projects/{id}/tasks, dependencies
+    tasks_router.mount(app)  # /tasks, /projects/{id}/tasks, dependencies, pipeline
+    handoffs_router.mount(app)  # /projects/{id}/handoffs/* — artifacts + gate ledger
     agents_router.mount(app)  # /agents registry + :pause/:resume
     messaging_router.mount(app)  # /messages, /decisions, /notifications
     runs_router.mount(app)  # /runs, /tasks/{id}/runs, artifacts

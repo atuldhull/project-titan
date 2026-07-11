@@ -125,6 +125,25 @@ def test_kanban_event_fans_to_project_channel() -> None:
     run_async(scenario)
 
 
+def test_handoff_event_fans_to_project_channel() -> None:
+    async def scenario() -> None:
+        redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+        fanout = WsFanout(redis, org="titan")
+        handoff = {
+            "project_id": _PID,
+            "stage": "ceo_vision",
+            "verdict": "fail",
+            "reasons": ["x"],
+            "attempt": 1,
+        }
+        published = await _collect(fanout, redis, {"type": "handoff.evaluated", "handoff": handoff})
+        frame = published[channels.project_channel(_PID)]
+        assert frame["type"] == "handoff.evaluated" and frame["payload"]["verdict"] == "fail"
+        await redis.aclose()
+
+    run_async(scenario)
+
+
 # ============================================================================
 # Integration tests (real schema + api fixture).
 # ============================================================================

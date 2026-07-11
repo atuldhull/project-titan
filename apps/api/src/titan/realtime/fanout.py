@@ -175,6 +175,15 @@ async def _pipeline(fanout: WsFanout, payload: dict[str, Any], ts: str) -> None:
     )
 
 
+async def _handoff(fanout: WsFanout, payload: dict[str, Any], ts: str) -> None:
+    # Vol 6 §2.2 (TITAN-WFL-003/004): a handoff gate outcome (the "failure event" a
+    # field-level error report attaches to). Metadata only — never artifact content.
+    handoff = payload["handoff"]
+    await fanout._publish_project(
+        str(handoff["project_id"]), protocol.HANDOFF_EVALUATED, handoff, ts, buffered=True
+    )
+
+
 async def _agent_status(fanout: WsFanout, payload: dict[str, Any], ts: str) -> None:
     await fanout._publish_agents(
         {k: payload.get(k) for k in ("agent_id", "state", "current_task_id")}, ts
@@ -206,6 +215,7 @@ _HANDLERS: dict[str, Any] = {
     protocol.AGENT_STATUS: _agent_status,
     protocol.TASK_KANBAN: _kanban,
     protocol.PIPELINE_UPDATED: _pipeline,
+    protocol.HANDOFF_EVALUATED: _handoff,
     "notification.created": _notification,
     protocol.SYS_NOTICE: _sys_notice,
 }

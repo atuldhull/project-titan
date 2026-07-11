@@ -245,7 +245,9 @@ async def graph_edges(conn: AsyncConnection, project_id: uuid.UUID) -> Sequence[
 
 # --- delivery pipeline state machine (Vol 6 §2.1, TITAN-WFL-001) ------------
 
-_PIPELINE_COLS = "project_id, current_stage, iteration, status, created_at, updated_at, version"
+_PIPELINE_COLS = (
+    "project_id, current_stage, iteration, status, retry_budget, created_at, updated_at, version"
+)
 
 
 async def ensure_pipeline_state(
@@ -277,6 +279,21 @@ async def ensure_pipeline_state(
 async def get_pipeline_state(conn: AsyncConnection, project_id: uuid.UUID) -> Row[Any] | None:
     result = await conn.execute(
         text(f"SELECT {_PIPELINE_COLS} FROM pipeline_states WHERE project_id = :pid"),
+        {"pid": project_id},
+    )
+    return result.one_or_none()
+
+
+async def lock_pipeline_state(conn: AsyncConnection, project_id: uuid.UUID) -> Row[Any] | None:
+    """``SELECT … FOR UPDATE`` the project's pipeline row so the caller's whole
+    transaction is serialized per project. The handoff executor holds this for its
+    validate → store → gate → advance/retry/escalate unit, which makes the retry
+    budget + escalation exactly-once and forecloses the stage-skip / duplicate
+    artifact-version races a concurrent submission would otherwise open under READ
+    COMMITTED. Returns the (now locked) row, or None if the pipeline doesn't exist
+    yet (the caller ensures it first)."""
+    result = await conn.execute(
+        text(f"SELECT {_PIPELINE_COLS} FROM pipeline_states WHERE project_id = :pid FOR UPDATE"),
         {"pid": project_id},
     )
     return result.one_or_none()

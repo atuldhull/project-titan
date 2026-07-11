@@ -93,6 +93,8 @@ class PipelineState(ConventionsMixin, Base):
     iteration: Mapped[int] = mapped_column(nullable=False, server_default=text("0"))
     # running | needs_human | released
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'running'"))
+    # TITAN-WFL-005 per-project gate retry budget (Phase 42; default 3).
+    retry_budget: Mapped[int] = mapped_column(nullable=False, server_default=text("3"))
 
 
 class PipelineStageEvent(Base):

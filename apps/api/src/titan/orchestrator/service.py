@@ -602,6 +602,7 @@ class PipelineOut(BaseModel):
     current_stage: str
     iteration: int
     status: str
+    retry_budget: int
     version: int
     created_at: datetime
     updated_at: datetime
@@ -728,6 +729,21 @@ async def ensure_pipeline(
             conn, out, change={"event": "enter", "stage": out.current_stage}, actor=actor
         )
     return out
+
+
+async def ensure_and_lock_pipeline(
+    conn: AsyncConnection, project_id: uuid.UUID, *, actor: str = "system"
+) -> PipelineOut:
+    """Ensure the pipeline exists, then ``SELECT … FOR UPDATE`` its row so the
+    caller's whole transaction is serialized per project. The handoff executor
+    holds this lock for its validate → store → gate → advance/retry/escalate unit,
+    making the TITAN-WFL-005 retry budget + escalation exactly-once and closing the
+    stage-skip / duplicate-version races that concurrent submissions would open
+    under READ COMMITTED. Returns the freshest state under the lock."""
+    await ensure_pipeline(conn, project_id, actor=actor)
+    row = await repo.lock_pipeline_state(conn, project_id)
+    assert row is not None  # ensure_pipeline just created-or-confirmed the row
+    return _pipeline_out(row)
 
 
 async def get_pipeline(conn: AsyncConnection, project_id: uuid.UUID) -> PipelineView:
@@ -1024,6 +1040,64 @@ async def resume_pipeline_budget(
     return out
 
 
+async def advance_stage(
+    conn: AsyncConnection,
+    project_id: uuid.UUID,
+    *,
+    actor: str,
+    detail: dict[str, Any] | None = None,
+) -> PipelineOut:
+    """Advance the pipeline from its current stage to the immediate successor —
+    the handoff executor's on-gate-pass move (Phase 42, TITAN-WFL-001). Conn-based
+    so the executor keeps the advance ATOMIC with its artifact + gate-ledger
+    writes. The caller has already validated the artifact and passed the gate, so
+    this only enforces running + non-terminal; the successor is always legal by
+    construction (no skip is possible)."""
+    out = await ensure_pipeline(conn, project_id)
+    if out.status != "running":
+        raise _conflict(f"Pipeline is {out.status}, not running — cannot advance the stage.")
+    successor = pipeline.next_stage(out.current_stage)
+    if successor is None:
+        raise _conflict(
+            f"Pipeline is at the terminal stage {out.current_stage}; nothing to advance."
+        )
+    return await _do_advance(
+        conn,
+        project_id,
+        out=out,
+        target_stage=successor,
+        completion_event="stage_complete",
+        detail=detail or {},
+        actor=actor,
+    )
+
+
+async def escalate_pipeline(
+    conn: AsyncConnection, project_id: uuid.UUID, *, actor: str, reason: str
+) -> PipelineOut:
+    """Pause the pipeline and mark the project NEEDS_HUMAN (TITAN-WFL-005): once a
+    stage's gate retry budget is exhausted, no further stage work proceeds until a
+    human intervenes. Logs a needs_human ledger row + emits the event. Idempotent
+    (re-escalating an already-paused pipeline just re-affirms the status)."""
+    out = await ensure_pipeline(conn, project_id)
+    row = await repo.set_pipeline_status(conn, project_id, status="needs_human")
+    if row is not None:
+        out = _pipeline_out(row)
+    await _record_stage_event(
+        conn,
+        project_id,
+        stage=out.current_stage,
+        event="needs_human",
+        iteration=out.iteration,
+        actor=actor,
+        detail={"reason": reason},
+    )
+    await _emit_pipeline(
+        conn, out, change={"event": "needs_human", "stage": out.current_stage}, actor=actor
+    )
+    return out
+
+
 async def reconcile_pipelines(conn: AsyncConnection) -> int:
     """Seed a pipeline for every non-archived project that lacks one (idempotent);
     returns how many were seeded. A (re)started orchestrator runs this to pick up
@@ -1156,11 +1230,14 @@ __all__ = [
     "add_dependency",
     "add_task_dependency",
     "advance_pipeline",
+    "advance_stage",
     "apply_transition",
     "board_for_project",
     "claim_and_assign",
     "create_task",
+    "ensure_and_lock_pipeline",
     "ensure_pipeline",
+    "escalate_pipeline",
     "get_pipeline",
     "get_task",
     "graph_for_project",
