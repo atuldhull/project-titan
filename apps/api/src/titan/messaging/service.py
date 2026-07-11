@@ -39,6 +39,7 @@ from titan.messaging.bus import (
 )
 from titan.messaging.bus import send as send_agent_message
 from titan.messaging.protocol import (
+    KIND_TO_TYPE,
     AgentMessage,
     ArchitectureDiscussionPayload,
     BugReportPayload,
@@ -440,8 +441,6 @@ async def mark_all_notifications_read(conn: AsyncConnection, user_id: uuid.UUID)
 
 __all__ = [
     "ACK_TIMEOUTS_MS",
-    "MESSAGE_KINDS",
-    "RUNTIME_GROUP",
     "AgentMessage",
     "ArchitectureDiscussionPayload",
     "BugReportPayload",
@@ -450,6 +449,8 @@ __all__ = [
     "DecisionLogPayload",
     "DecisionOut",
     "ExpiredDiscussion",
+    "KIND_TO_TYPE",
+    "MESSAGE_KINDS",
     "MeetingSummaryPayload",
     "MessageCreate",
     "MessageKind",
@@ -458,6 +459,7 @@ __all__ = [
     "NotificationOut",
     "Priority",
     "ProgressReportPayload",
+    "RUNTIME_GROUP",
     "ReviewRequestPayload",
     "TaskAssignmentPayload",
     "Verdict",

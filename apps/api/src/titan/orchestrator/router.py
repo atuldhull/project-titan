@@ -159,6 +159,8 @@ async def transition_task(
             actor_agent_id=body.actor_agent_id,
             actor_user_id=actor_user_id,
             comment=body.comment,
+            # The TITAN-BRN-002 gate on `approve` reads wm:{task_id}:events.
+            redis=request.app.state.redis,
         )
     set_etag(response, updated.version)
     return updated

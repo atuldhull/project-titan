@@ -45,14 +45,34 @@ DEFAULT_OVERLAP_TOKENS = 64
 # arithmetic would silently measure in different units.
 _TOKEN_RE = re.compile(r"\w+|[^\w\s]")
 
+# One deliberate divergence between WINDOWING and COST (Phase 38): a ``\w+``
+# run longer than this is not one linguistic token — hex dumps, base64,
+# minified blobs. Real BPE bills them at ~len/4, and counting them as 1 would
+# let a single 400k-char run bypass every token budget in the system
+# (TITAN-BRN-015: packet fill, prompt slots, tool-result clamps). Ordinary
+# words and code identifiers stay under the threshold, so chunk boundaries,
+# stored token counts, and eval baselines for real text are UNCHANGED;
+# windowing still slices by span so chunk shapes never depend on run length.
+LONG_RUN_CHARS = 48
+_LONG_RUN_DIVISOR = 4
+
 
 def _token_spans(text: str) -> list[tuple[int, int]]:
     return [(m.start(), m.end()) for m in _TOKEN_RE.finditer(text)]
 
 
+def token_cost(start: int, end: int) -> int:
+    """The billed cost of one token span: 1, or ~len/4 for abnormal runs."""
+    length = end - start
+    if length <= LONG_RUN_CHARS:
+        return 1
+    return -(-length // _LONG_RUN_DIVISOR)  # ceil(length / 4)
+
+
 def count_tokens(text: str) -> int:
-    """Word/punctuation token count — the deterministic default estimator (§5.2)."""
-    return len(_token_spans(text))
+    """Deterministic token estimate (§5.2): one per word/punctuation span, with
+    abnormally long unbroken runs billed at ~len/4 (the BPE reality)."""
+    return sum(token_cost(start, end) for start, end in _token_spans(text))
 
 
 def tail_tokens(text: str, n: int) -> str:

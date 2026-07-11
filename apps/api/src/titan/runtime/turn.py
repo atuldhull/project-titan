@@ -65,6 +65,7 @@ from titan.llm.service import (
     ToolResultPart,
     ToolUsePart,
 )
+from titan.memory.service import count_tokens as _COUNT_TOKENS
 from titan.messaging.service import (
     AgentMessage,
     MessageOut,
@@ -75,6 +76,7 @@ from titan.messaging.service import (
 )
 from titan.runtime import metrics
 from titan.runtime.binding import GatewayBinding, LlmClient
+from titan.runtime.budget import ContextBudget, fit_text, fit_turns
 from titan.runtime.grants import (
     AGENT_ROLE,
     SecurityEvent,
@@ -83,7 +85,7 @@ from titan.runtime.grants import (
     is_granted,
     log_security_event,
 )
-from titan.runtime.memory import MemoryProvider, MemoryRequest
+from titan.runtime.memory import MemoryProvider, MemoryRequest, WorkingMemoryCoordinator
 from titan.runtime.output import AgentTurnOutput, TurnOutputError, parse_turn_output
 from titan.runtime.recovery import (
     RUNG_ESCALATE,
@@ -192,6 +194,9 @@ class AgentRuntime:
     llm: LlmClient
     binding: GatewayBinding
     memory: MemoryProvider
+    # Phase 38 (§13 steps 4, 9–13): working-memory hydration + write-back.
+    # None = a runtime without Redis (unit rigs); task-scoped memory is skipped.
+    coordinator: WorkingMemoryCoordinator | None = None
     # Roles holding a §7.4 blocking veto (``{"security"}`` by default) — when one of
     # them emits a veto verdict, the runtime records the pipeline veto (TITAN-AGT-018).
     vetoing_roles: frozenset[str] = frozenset()
@@ -205,22 +210,42 @@ class AgentRuntime:
 # --- hydration helpers -----------------------------------------------------
 
 
-def _render_thread_context(thread: list[MessageOut], trigger: AgentMessage) -> str:
-    """Render the thread transcript + the triggering message into the prompt's
-    task/thread slot (§8 slot 7). This is prompt INPUT — it never reaches a log
-    or span. The trigger is shown explicitly and excluded from the transcript so
-    it is not duplicated."""
+def _thread_lines(thread: list[MessageOut], trigger: AgentMessage) -> list[str]:
+    """The prior thread turns as one line each (oldest first) — the §8.1
+    recent-verbatim slot's raw material. Prompt INPUT only — never a log or
+    span. The trigger is excluded (it gets its own instruction block)."""
     lines: list[str] = []
-    prior = [m for m in thread if m.id != trigger.message_id]
-    if prior:
-        lines.append("Conversation so far (oldest first):")
-        for m in prior:
-            sender = m.from_agent or (str(m.sender_user_id) if m.sender_user_id else "user")
-            lines.append(f"- [{m.kind}] {sender} -> {m.to_agent or '-'}: {json.dumps(m.body)}")
-        lines.append("")
-    lines.append(f"Act now on this {trigger.type} from {trigger.from_agent}:")
-    lines.append(json.dumps(trigger.payload))
-    return "\n".join(lines)
+    for m in thread:
+        if m.id == trigger.message_id:
+            continue
+        sender = m.from_agent or (str(m.sender_user_id) if m.sender_user_id else "user")
+        lines.append(f"- [{m.kind}] {sender} -> {m.to_agent or '-'}: {json.dumps(m.body)}")
+    return lines
+
+
+def _render_trigger(trigger: AgentMessage) -> str:
+    """The §8.1 task-instruction slot: the triggering message, explicitly."""
+    return (
+        f"Act now on this {trigger.type} from {trigger.from_agent}:\n{json.dumps(trigger.payload)}"
+    )
+
+
+def _compose_task_context(kept_lines: list[str], instruction: str) -> str:
+    """Reassemble the task/thread slot from the budget-fitted pieces."""
+    if not kept_lines:
+        return instruction
+    return "\n".join(["Conversation so far (oldest first):", *kept_lines, "", instruction])
+
+
+def _memory_query(trigger: AgentMessage) -> str:
+    """A compact retrieval query for the turn's Memory Packet (§13 step 1):
+    the message type plus its top-level text values — enough signal for the
+    hybrid legs without shipping the whole payload."""
+    parts: list[str] = [trigger.type]
+    for value in trigger.payload.values():
+        if isinstance(value, str) and value.strip():
+            parts.append(value.strip())
+    return " ".join(parts)[:300]
 
 
 def _tool_result_content(envelope: ToolResultEnvelope) -> tuple[str, bool]:
@@ -231,6 +256,110 @@ def _tool_result_content(envelope: ToolResultEnvelope) -> tuple[str, bool]:
             body["stderr_tail"] = envelope.stderr_tail
         return json.dumps(body), False
     return (envelope.message or envelope.code or "tool error"), True
+
+
+_EVICTED_STUB = "[tool result evicted to fit the context budget — re-run the tool if needed]"
+_ROUND_EVICTED_NOTE = "[earlier tool rounds were evicted to fit the context budget]"
+_TEXT_STUB_TOKENS = 32
+
+
+def _part_cost(part: ContentPart) -> int:
+    if isinstance(part, TextPart):
+        return _COUNT_TOKENS(part.text) + 4
+    if isinstance(part, ToolUsePart):
+        return _COUNT_TOKENS(part.name) + _COUNT_TOKENS(json.dumps(part.input)) + 8
+    if isinstance(part, ToolResultPart):
+        return _COUNT_TOKENS(part.content) + 8
+    return 16  # unknown part types get a flat conservative charge
+
+
+def _message_cost(message: Message) -> int:
+    if isinstance(message.content, str):
+        return _COUNT_TOKENS(message.content) + 4
+    return sum(_part_cost(part) for part in message.content) + 4
+
+
+def _convo_cost(convo: list[Message]) -> int:
+    return sum(_message_cost(message) for message in convo)
+
+
+def _clamp_convo(convo: list[Message], loop_budget: int) -> None:
+    """TITAN-BRN-015 sweep before EVERY gateway call: the WHOLE conversation —
+    seed message, assistant text, tool_use argument JSON, tool results,
+    critique pairs — may total at most ``loop_budget`` tokens. A degradation
+    ladder runs oldest-first until the bound holds, each rung explicit to the
+    model (stubs and notes, never silent disappearance):
+
+      1. tool RESULT contents shrink to an eviction stub;
+      2. assistant text and tool_use argument JSON shrink to stubs;
+      3. whole oldest tool rounds (assistant tool_use + its tool results) are
+         DROPPED, leaving one 'earlier rounds evicted' note.
+
+    The seed user message (index 0) and the trailing user message (our
+    critique feedback) are never dropped — they are ours and small. After
+    rung 3 the conversation converges to a few hundred tokens, so the bound
+    holds for every realistic ``loop_budget``."""
+    if _convo_cost(convo) <= loop_budget:
+        return
+    stub_cost = _COUNT_TOKENS(_EVICTED_STUB)
+    # Rung 1 — tool results, oldest first.
+    for message in convo:
+        if not isinstance(message.content, list):
+            continue
+        for part in message.content:
+            if isinstance(part, ToolResultPart) and _COUNT_TOKENS(part.content) > stub_cost:
+                part.content = _EVICTED_STUB
+                if _convo_cost(convo) <= loop_budget:
+                    return
+    # Rung 2 — assistant text + tool_use arguments, oldest first. Assistant
+    # messages come in two shapes: a LIST of parts (the tool-use path) and a
+    # BARE STRING (the self-critique path appends the model's invalid output as
+    # plain text so it can see its mistake — TITAN-AGT-023). Both can be large
+    # and BOTH must be compressible, or two near-max invalid outputs would eat
+    # into the response reserve (TITAN-BRN-015).
+    for message in convo:
+        if message.role != "assistant":
+            continue
+        if isinstance(message.content, str):
+            if _COUNT_TOKENS(message.content) > _TEXT_STUB_TOKENS:
+                message.content = fit_text(message.content, _TEXT_STUB_TOKENS)
+                if _convo_cost(convo) <= loop_budget:
+                    return
+            continue
+        for part in message.content:
+            if isinstance(part, TextPart) and _COUNT_TOKENS(part.text) > _TEXT_STUB_TOKENS:
+                part.text = fit_text(part.text, _TEXT_STUB_TOKENS)
+            elif isinstance(part, ToolUsePart) and _COUNT_TOKENS(json.dumps(part.input)) > 16:
+                part.input = {"_evicted": "arguments trimmed to fit the context budget"}
+            else:
+                continue
+            if _convo_cost(convo) <= loop_budget:
+                return
+    # Rung 3 — drop whole oldest tool rounds (assistant tool_use + the tool
+    # message answering it), replaced once by an explicit note.
+    note_inserted = any(
+        isinstance(m.content, str) and m.content == _ROUND_EVICTED_NOTE for m in convo
+    )
+    while _convo_cost(convo) > loop_budget:
+        drop_index = next(
+            (
+                i
+                for i in range(1, len(convo) - 1)  # never the seed, never the tail
+                if convo[i].role == "assistant"
+                and isinstance(convo[i].content, list)
+                and any(isinstance(p, ToolUsePart) for p in convo[i].content)
+            ),
+            None,
+        )
+        if drop_index is None:
+            return  # nothing left to drop; the residue is a few small messages
+        end = drop_index + 1
+        if end < len(convo) and convo[end].role == "tool":
+            end += 1
+        del convo[drop_index:end]
+        if not note_inserted:
+            convo.insert(drop_index, Message(role="user", content=_ROUND_EVICTED_NOTE))
+            note_inserted = True
 
 
 # --- the turn --------------------------------------------------------------
@@ -348,6 +477,18 @@ async def _execute(
         # blocked ProgressReport was a rung-3 escalation, not a plain completion —
         # otherwise the replay would count a failure as a success (KPI corruption).
         result.outcome, result.escalation_target = await _replayed_outcome(runtime, already)
+        # A crash between the prior attempt's queue and flush leaves Memory
+        # Events pending in wm:{task}:events; heal the crash window: re-derive
+        # this turn's events from its COMMITTED messages (deterministic
+        # client keys make it idempotent) and drain the queue, so the
+        # TITAN-BRN-002 completion gate is not held hostage by a dead process.
+        if trigger.task_id is not None and runtime.coordinator is not None:
+            await runtime.coordinator.replay_write_back(
+                project_id=project_id,
+                agent_id=agent_id,
+                task_id=trigger.task_id,
+                emitted_ids=already,
+            )
         return result
 
     # Rung 4: this agent is a supervisor handling a subordinate's blocked report;
@@ -365,27 +506,76 @@ async def _execute(
     # failure escalates immediately rather than retrying an irreversible op.
     skip = ladder.skips_retries(turn_operation_label(trigger))
 
-    # Step 3 — hydrate.
+    # Step 3 — hydrate, inside the §8.1 per-call budget (TITAN-BRN-015): every
+    # slot is bounded from the model's context window, so assembly can NEVER
+    # issue an overflowing prompt — it compresses or evicts instead of failing.
     thread_id = trigger.thread_id or trigger.correlation_id
     async with runtime.engine.connect() as conn:
         thread = await messages_in_thread(conn, project_id, thread_id)
+    budget = ContextBudget.for_window(runtime.binding.context_window(agent_id))
+    # Half the recent-verbatim slot renders the thread transcript; the other
+    # half is headroom for the tool-use loop's results (clamped as they land).
+    thread_budget = budget.recent_turns // 2
+    tool_budget = budget.recent_turns - thread_budget
+    instruction = fit_text(_render_trigger(trigger), budget.task_instruction)
+    kept_lines, evicted_lines = fit_turns(_thread_lines(thread, trigger), thread_budget)
+
+    # §8.2: evicted turns are FOLDED into the rolling summary (utility-tier
+    # model, checkpointed to PostgreSQL), never silently dropped. The
+    # checkpoint's watermark (folded_through) slices off what earlier turns
+    # already folded, so nothing is folded twice. Task-less triggers (and a
+    # degraded hydrate) cannot fold — the transcript then carries an explicit
+    # omission note instead of silence (the turns remain in the messages rows).
+    summary_text = ""
+    evictions_covered = False
+    if trigger.task_id is not None and runtime.coordinator is not None:
+        state = await runtime.coordinator.hydrate(trigger.task_id)
+        summary = state.summary
+        new_to_fold = evicted_lines[state.folded_through :]
+        if new_to_fold and state.healthy:
+            summary = await runtime.coordinator.fold(
+                trigger.task_id, state, new_to_fold, folded_through=len(evicted_lines)
+            )
+            evictions_covered = True
+        else:
+            # Either everything evicted is already inside the summary (the
+            # watermark covers it) or a degraded hydrate blocked folding.
+            evictions_covered = state.folded_through >= len(evicted_lines)
+        summary_text = fit_text(summary.render(), budget.working_summary)
+    if evicted_lines and not evictions_covered:
+        kept_lines.insert(0, f"[{len(evicted_lines)} older turns omitted to fit the budget]")
+
+    # §13 step 1 / TITAN-BRN-009: exactly ONE Memory Packet per agent call.
     packet = await runtime.memory.assemble(
         MemoryRequest(
             agent_id=agent_id,
             project_id=project_id,
             task_id=trigger.task_id,
             call_seq=len(thread),
-            budget_tokens=definition.model_policy.max_output_tokens,
+            query=_memory_query(trigger),
+            budget_tokens=budget.packet_request_tokens,
         )
     )
     result.packet_id = packet.packet_id
+    memory_text = packet.render()
+    if summary_text:
+        working_block = f"Working summary:\n{summary_text}"
+        memory_text = f"{memory_text}\n\n{working_block}" if memory_text else working_block
     system = compose_system_prompt(
         runtime.composer,
         definition,
-        task_context=_render_thread_context(thread, trigger),
-        memory=packet.render(),
+        task_context=_compose_task_context(kept_lines, instruction),
+        memory=memory_text,
     )
+    # TITAN-BRN-015 backstop: the prompt side is system + the conversation +
+    # the granted tool schemas. The conversation (seed, assistant turns,
+    # tool_use JSON, tool results, critique pairs) is bounded to
+    # ``tool_budget`` by _clamp_convo before EVERY gateway call, and the tool
+    # schemas are measured here — so clamping system to what REMAINS makes the
+    # ceiling a hard law, whatever a role prompt or slot accounting drifts to.
     tool_defs = granted_tool_defs(runtime.tool_registry, definition.tool_grants)
+    schema_cost = sum(_COUNT_TOKENS(json.dumps(tool.model_dump(mode="json"))) for tool in tool_defs)
+    system = fit_text(system, max(256, budget.prompt_ceiling - tool_budget - schema_cost))
     caller = ToolCaller(
         agent_id=f"agent.{agent_id}",
         role=AGENT_ROLE.get(agent_id, ""),
@@ -420,6 +610,12 @@ async def _execute(
             tool_defs,
             caller,
             result,
+            # §8.1: the response reserve caps the completion; the tool headroom
+            # bounds what the tool-use loop may add to the prompt side.
+            max_output_tokens=min(
+                definition.model_policy.max_output_tokens, budget.response_reserve
+            ),
+            tool_budget=tool_budget,
         )
     except Exception as exc:  # noqa: BLE001
         if not is_transient(exc):
@@ -435,6 +631,21 @@ async def _execute(
             runtime, project_id, agent_id, trigger, output
         )
         result.outcome = "completed"
+        # §13 steps 9–13 — write-back completes before the call returns: scratch
+        # append, Memory-Event derivation + transactional flush (ledger rows),
+        # the KG hook. Exception-guarded inside: the committed turn never fails
+        # here; unflushed events stay queued and hold the completion gate.
+        if trigger.task_id is not None and runtime.coordinator is not None:
+            await runtime.coordinator.finish_turn(
+                project_id=project_id,
+                agent_id=agent_id,
+                task_id=trigger.task_id,
+                call_seq=len(thread),
+                note=output.note,
+                messages=output.messages,
+                message_ids=result.emitted_message_ids,
+                entry_id=trigger.message_id.hex[:8],
+            )
         return result
 
     # Rungs 1–2 exhausted → rung 3 escalation (or a fail-open log).
@@ -485,10 +696,18 @@ async def _agent_loop(
     tool_defs: list[ToolDef],
     caller: ToolCaller,
     result: TurnResult,
+    *,
+    max_output_tokens: int,
+    tool_budget: int,
 ) -> AgentTurnOutput | None:
     """Drive the LLM: execute granted tool calls and react (bounded), and validate
     the final structured output with rung-1 transient retry + rung-2 self-critique.
-    Returns the validated output, or None with ``result.failure_reason`` set."""
+    Returns the validated output, or None with ``result.failure_reason`` set.
+
+    ``tool_budget`` bounds what the tool-use loop may ADD to the prompt side
+    (TITAN-BRN-015): each tool result is clamped as it lands, and the whole
+    conversation is swept before every gateway call — an adversarially long
+    tool output can never push the prompt past the context ceiling."""
     # Every iteration either RETURNS or advances a bounded counter (tool_iters up
     # to max_tool_iterations, critiques up to max_self_critique), so the loop
     # terminates — no arbitrary call cap, no unreachable terminal.
@@ -496,12 +715,13 @@ async def _agent_loop(
     tool_iters = 0
     critiques = 0
     while True:
+        _clamp_convo(convo, tool_budget)
         request = runtime.binding.build_request(
             agent_id,
             system=system,
             messages=convo,
             tools=tool_defs,
-            max_output_tokens=definition.model_policy.max_output_tokens,
+            max_output_tokens=max_output_tokens,
             project_id=str(project_id),
             task_id=str(trigger.task_id) if trigger.task_id else None,
         )
@@ -529,6 +749,7 @@ async def _agent_loop(
                 response,
                 convo,
                 result,
+                tool_budget=tool_budget,
             )
             continue
 
@@ -614,6 +835,8 @@ async def _run_tool_calls(
     response: ChatResponse,
     convo: list[Message],
     result: TurnResult,
+    *,
+    tool_budget: int,
 ) -> None:
     """Enforce grants and execute one round of the model's tool calls, appending
     the assistant tool_use turn and each tool_result to the conversation."""
@@ -655,6 +878,9 @@ async def _run_tool_calls(
         )
         envelope = await runtime.tool_bus.invoke(call, caller, policy=ProjectToolPolicy())
         content, is_error = _tool_result_content(envelope)
+        # TITAN-BRN-015: clamp EACH result as it lands (half the tool headroom
+        # per result); the pre-request sweep bounds their running total.
+        content = fit_text(content, max(64, tool_budget // 2))
         result.tool_calls.append(ToolCallRecord(tc.name, "granted", envelope.status))
         result_parts.append(ToolResultPart(tool_use_id=tc.id, content=content, is_error=is_error))
     convo.append(Message(role="tool", content=result_parts))

@@ -79,6 +79,9 @@ class GatewayBinding:
         default_factory=lambda: dict(ANTHROPIC_TIER_ALIAS)
     )
     provider_alias: Mapping[str, str] = field(default_factory=lambda: dict(PROVIDER_ALIAS))
+    # alias -> context window (tokens), from config/models.yaml — what the §8.1
+    # budget allocator sizes every slot from (populated by build_runtime).
+    context_windows: Mapping[str, int] = field(default_factory=dict)
 
     def selection(self, agent_id: str) -> ModelSelection:
         """The model-policy decision for this agent this turn (tier, provider,
@@ -99,6 +102,17 @@ class GatewayBinding:
                 f"alias in config/models.yaml"
             )
         return alias
+
+    def context_window(self, agent_id: str) -> int | None:
+        """The resolved model's context window for this agent's turns (§8.1),
+        or None when unknown (the budget allocator falls back to its default).
+        A provider→alias config mismatch is NOT raised here — budget sizing
+        must never block a turn; ``build_request`` raises it loudly instead."""
+        try:
+            alias = self.alias_for(self.selection(agent_id))
+        except ModelBindingError:
+            return None
+        return self.context_windows.get(alias)
 
     def build_request(
         self,

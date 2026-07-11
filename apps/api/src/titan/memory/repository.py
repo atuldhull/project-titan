@@ -415,3 +415,62 @@ async def ledger_for_record(conn: AsyncConnection, record_id: uuid.UUID) -> Sequ
         {"rid": record_id},
     )
     return result.all()
+
+
+async def upsert_working_summary(
+    conn: AsyncConnection,
+    task_id: uuid.UUID,
+    *,
+    summary: str,
+    fold_count: int,
+    folded_through: int,
+) -> None:
+    """Checkpoint one task's rolling summary (TITAN-BRN-016). MONOTONIC: a
+    stale writer (a turn that hydrated before a concurrent fold, or one that
+    could not read the checkpoint and started from scratch) can never REGRESS
+    the accumulated checkpoint — updates apply only at equal-or-higher
+    fold_count."""
+    await conn.execute(
+        text(
+            "INSERT INTO brain.working_summaries "
+            "(task_id, summary, fold_count, folded_through, updated_at) "
+            "VALUES (:tid, CAST(:summary AS jsonb), :folds, :through, now()) "
+            "ON CONFLICT (task_id) DO UPDATE SET summary = EXCLUDED.summary, "
+            "fold_count = EXCLUDED.fold_count, folded_through = EXCLUDED.folded_through, "
+            "updated_at = now() "
+            "WHERE EXCLUDED.fold_count >= brain.working_summaries.fold_count"
+        ),
+        {"tid": task_id, "summary": summary, "folds": fold_count, "through": folded_through},
+    )
+
+
+async def load_working_summary(conn: AsyncConnection, task_id: uuid.UUID) -> Row[Any] | None:
+    """The checkpointed summary (summary jsonb, fold_count, folded_through) —
+    the recovery path when Redis lost `wm:{task_id}:summary`."""
+    result = await conn.execute(
+        text(
+            "SELECT summary, fold_count, folded_through "
+            "FROM brain.working_summaries WHERE task_id = :tid"
+        ),
+        {"tid": task_id},
+    )
+    return result.one_or_none()
+
+
+async def existing_wm_client_keys(conn: AsyncConnection, keys: Sequence[str]) -> set[str]:
+    """Which write-back client keys are ALREADY durable — the flush's
+    at-least-once dedup. The ``metadata ? 'wm_client_key'`` predicate is
+    REQUIRED for the planner to use the PARTIAL index
+    ix_memory_records_wm_client_key: Postgres cannot prove the ``->>`` equality
+    implies the ``?`` key-exists predicate, so without it the lookup seq-scans
+    the ever-growing records table on the hot per-turn flush path."""
+    if not keys:
+        return set()
+    result = await conn.execute(
+        text(
+            "SELECT metadata ->> 'wm_client_key' AS ck FROM brain.memory_records "
+            "WHERE metadata ? 'wm_client_key' AND metadata ->> 'wm_client_key' = ANY(:keys)"
+        ),
+        {"keys": list(keys)},
+    )
+    return {row.ck for row in result.all()}

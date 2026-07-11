@@ -229,10 +229,20 @@ def test_budget_fill_stops_at_85_percent_and_identity_is_non_evictable(
     roomy, tight = run_async(scenario)
     assert roomy.token_cost <= int(roomy.budget_tokens * 0.85)
     assert len(roomy.citations) >= 1
-    # A 256-token budget cannot fit any ~330-token chunk — but identity survives.
-    assert tight.citations == []
+    # A 256-token budget cannot fit any ~330-token chunk — identity survives,
+    # and (§8.2 compression-on-retrieval, Phase 38) the evicted chunks are NOT
+    # silently dropped: each shrinks to its record's summary line, marked
+    # compressed, still inside the 85 % fill limit.
     assert tight.sections.identity_context != ""
     assert tight.token_cost <= int(tight.budget_tokens * 0.85)
+    assert tight.citations, "evicted chunks must surface as compressed citations"
+    assert all(c.compressed for c in tight.citations)
+    compressed_lines = [
+        line
+        for section in (tight.sections.procedural, tight.sections.semantic, tight.sections.episodic)
+        for line in section
+    ]
+    assert compressed_lines and all(line.startswith("[compressed]") for line in compressed_lines)
 
 
 # --- TITAN-BRN-012: the packet cache ----------------------------------------------

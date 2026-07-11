@@ -25,7 +25,14 @@ from titan.db import uuid7
 from titan.gateway.dto import JsonbDict
 from titan.gateway.problems import ProblemException, problem_type
 from titan.memory import repository as repo
-from titan.memory.chunker import CONTENT_TYPES, ChunkContext, ContentType, get_chunker
+from titan.memory.chunker import (
+    CONTENT_TYPES,
+    ChunkContext,
+    ContentType,
+    count_tokens,
+    get_chunker,
+    token_cost,
+)
 from titan.memory.ingest import (
     EMBEDDERS_GROUP,
     INGEST_DLQ,
@@ -59,6 +66,13 @@ from titan.memory.retrieval import (
     RetrievalQuery,
     retrieve,
     shape_queries,
+)
+from titan.memory.working import (
+    WM_TTL_SECONDS,
+    RollingSummary,
+    SummaryFolder,
+    WorkingMemory,
+    pending_wm_events,
 )
 
 MemoryKind = Literal["episodic", "semantic", "procedural"]
@@ -222,6 +236,21 @@ async def write_events(
     written: list[WrittenRecord] = []
     try:
         for event in batch.events:
+            # TITAN-BRN-024: agents never write org-scope records directly —
+            # org promotion is the curation workflow's multi-signal decision.
+            # Enforced here (the in-process runtime write-back path) and again
+            # at the HTTP surface, so no caller shape can slip an org write
+            # through on agent authority.
+            if actor_agent.startswith("agent.") and event.scope == "org":
+                raise ProblemException(
+                    status=403,
+                    title="Forbidden",
+                    detail=(
+                        "Agent credentials cannot write org-scope memory records "
+                        "(TITAN-BRN-024); write project scope and let curation promote."
+                    ),
+                    problem_type=problem_type("forbidden"),
+                )
             record_id = uuid7()
             await repo.insert_record(
                 conn,
@@ -315,18 +344,134 @@ async def get_record_detail(
     )
 
 
+# --- §14 GET /memory/metrics -------------------------------------------------
+
+
+class CacheMetrics(BaseModel):
+    hits: float
+    misses: float
+    hit_rate: float
+
+
+class LagMetrics(BaseModel):
+    count: float
+    p50_seconds: float | None
+    p95_seconds: float | None
+
+
+class MemoryMetricsOut(BaseModel):
+    """The §14 metrics summary: what an operator needs at a glance, computed
+    from the SAME Prometheus series /metrics exports (single source of truth).
+    Counts and seconds only — never memory content (TITAN-OPS-016)."""
+
+    packet_cache: CacheMetrics
+    ingest_lag: LagMetrics
+
+
+def memory_metrics() -> MemoryMetricsOut:
+    from prometheus_client import REGISTRY  # noqa: PLC0415 — read-side only
+
+    def sample(name: str, labels: dict[str, str] | None = None) -> float:
+        return REGISTRY.get_sample_value(name, labels or {}) or 0.0
+
+    hits = sample("titan_memory_packet_cache_total", {"result": "hit"})
+    misses = sample("titan_memory_packet_cache_total", {"result": "miss"})
+    total = hits + misses
+
+    # Histogram quantiles from cumulative buckets (linear interpolation — the
+    # standard histogram_quantile estimate, adequate for an operator summary).
+    buckets: list[tuple[float, float]] = []
+    for metric in REGISTRY.collect():
+        if metric.name == "titan_memory_ingest_lag_seconds":
+            for s in metric.samples:
+                if s.name.endswith("_bucket"):
+                    upper = float("inf") if s.labels["le"] == "+Inf" else float(s.labels["le"])
+                    buckets.append((upper, s.value))
+    buckets.sort(key=lambda b: b[0])
+    count = buckets[-1][1] if buckets else 0.0
+
+    def quantile(q: float) -> float | None:
+        if not buckets or count == 0:
+            return None
+        target = q * count
+        previous_upper, previous_count = 0.0, 0.0
+        for upper, cumulative in buckets:
+            if cumulative >= target:
+                if upper == float("inf"):
+                    return previous_upper
+                span = cumulative - previous_count
+                if span <= 0:
+                    return upper
+                return previous_upper + (upper - previous_upper) * (
+                    (target - previous_count) / span
+                )
+            previous_upper, previous_count = upper, cumulative
+        return previous_upper
+
+    return MemoryMetricsOut(
+        packet_cache=CacheMetrics(
+            hits=hits, misses=misses, hit_rate=(hits / total) if total else 0.0
+        ),
+        ingest_lag=LagMetrics(count=count, p50_seconds=quantile(0.5), p95_seconds=quantile(0.95)),
+    )
+
+
+# --- working-memory checkpoints (§8.2, TITAN-BRN-016) ------------------------
+
+
+async def checkpoint_working_summary(
+    conn: AsyncConnection,
+    task_id: uuid.UUID,
+    summary: RollingSummary,
+    *,
+    fold_count: int,
+    folded_through: int,
+) -> None:
+    """Persist one fold's result to ``brain.working_summaries`` — the bound on
+    what a Redis loss can cost (TITAN-BRN-002/-016). Monotonic on fold_count:
+    a stale or from-scratch writer can never regress the checkpoint."""
+    await repo.upsert_working_summary(
+        conn,
+        task_id,
+        summary=summary.model_dump_json(),
+        fold_count=fold_count,
+        folded_through=folded_through,
+    )
+
+
+async def load_working_summary_checkpoint(
+    conn: AsyncConnection, task_id: uuid.UUID
+) -> tuple[RollingSummary, int, int] | None:
+    """The checkpointed (summary, fold_count, folded_through), or None. A
+    schema-skewed stored blob (old deploy) counts as absent rather than
+    crashing hydration."""
+    row = await repo.load_working_summary(conn, task_id)
+    if row is None:
+        return None
+    try:
+        raw = row.summary if isinstance(row.summary, dict) else json.loads(row.summary)
+        return RollingSummary.model_validate(raw), int(row.fold_count), int(row.folded_through)
+    except Exception:
+        return None
+
+
+async def existing_wm_client_keys(conn: AsyncConnection, keys: list[str]) -> set[str]:
+    """Which write-back client keys are already durable (flush dedup)."""
+    return await repo.existing_wm_client_keys(conn, keys)
+
+
 __all__ = [
-    "COLLECTION_SPECS",
-    "EMBEDDERS_GROUP",
-    "INGEST_DLQ",
-    "PACKET_CACHE_TTL_SECONDS",
-    "STREAM_MEMORY_INGEST",
     "AssembledFor",
+    "COLLECTION_SPECS",
+    "CacheMetrics",
     "CollectionRebuild",
     "ContentType",
     "CrossEncoderReranker",
+    "EMBEDDERS_GROUP",
     "EmbeddingsClient",
+    "INGEST_DLQ",
     "IngestRelay",
+    "LagMetrics",
     "LedgerAction",
     "LlmListwiseReranker",
     "MemoryChunkOut",
@@ -335,10 +480,12 @@ __all__ = [
     "MemoryEventBatch",
     "MemoryKind",
     "MemoryLedgerEntry",
+    "MemoryMetricsOut",
     "MemoryPacketOut",
     "MemoryRecordDetail",
     "MemoryRecordOut",
     "MemoryWriteResult",
+    "PACKET_CACHE_TTL_SECONDS",
     "PacketCitation",
     "PacketRequest",
     "PacketSections",
@@ -347,18 +494,30 @@ __all__ = [
     "RebuildReport",
     "Reranker",
     "RetrievalQuery",
+    "RollingSummary",
+    "STREAM_MEMORY_INGEST",
+    "SummaryFolder",
+    "WM_TTL_SECONDS",
+    "WorkingMemory",
     "WrittenRecord",
     "assemble_packet",
     "build_reranker",
     "cheapest_chat_alias",
+    "checkpoint_working_summary",
+    "count_tokens",
+    "existing_wm_client_keys",
     "get_record_detail",
+    "load_working_summary_checkpoint",
+    "memory_metrics",
     "packet_cache_key",
     "parse_scope",
+    "pending_wm_events",
     "rebuild_index",
     "retrieve",
     "run_embedder",
     "run_ingest_reaper",
     "run_ingest_relay",
     "shape_queries",
+    "token_cost",
     "write_events",
 ]

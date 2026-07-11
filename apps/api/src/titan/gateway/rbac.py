@@ -17,7 +17,7 @@ never leaked.
 
 import uuid
 from collections.abc import Awaitable, Callable
-from typing import Annotated
+from typing import Annotated, Any
 
 import structlog
 from fastapi import Depends, Request
@@ -97,12 +97,15 @@ class PermissionResolver:
     project_id is None, so it is fail-closed: no project permissions anywhere.
     """
 
+    _UNRESOLVED = object()  # sentinel: agent→project binding not yet looked up
+
     def __init__(self, engine: AsyncEngine, principal: Principal) -> None:
         self._engine = engine
         self._principal = principal
         self._is_agent = principal.kind == "agent"
         self._org_perms: set[str] | None = None
         self._project_perms: dict[uuid.UUID, set[str]] = {}
+        self._agent_project: Any = self._UNRESOLVED
 
     async def _bundle(self, role_names: list[str]) -> set[str]:
         if not role_names:
@@ -125,11 +128,29 @@ class PermissionResolver:
             self._org_perms = await self._bundle(self._principal.roles)
         return self._org_perms
 
+    async def _bound_project(self) -> uuid.UUID | None:
+        """The agent's bound project: the principal's explicit binding when
+        present, else the agents row (Phase 26) looked up ONCE per request.
+        Fail-closed: no row / no binding → None → no project permissions."""
+        if self._principal.project_id is not None:
+            return self._principal.project_id
+        if self._agent_project is self._UNRESOLVED:
+            self._agent_project = None
+            if self._principal.agent_id is not None:
+                async with self._engine.connect() as conn:
+                    row = await conn.execute(
+                        text("SELECT project_id FROM agents WHERE id = :aid"),
+                        {"aid": self._principal.agent_id},
+                    )
+                    found = row.one_or_none()
+                self._agent_project = found[0] if found is not None else None
+        return self._agent_project  # type: ignore[no-any-return]
+
     async def project_permissions(self, project_id: uuid.UUID) -> set[str]:
         if project_id not in self._project_perms:
             if self._is_agent:
                 # Operator bundle applies only to the agent's bound project.
-                if self._principal.project_id == project_id:
+                if await self._bound_project() == project_id:
                     self._project_perms[project_id] = await self._bundle(self._principal.roles)
                 else:
                     self._project_perms[project_id] = set()

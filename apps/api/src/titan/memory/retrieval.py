@@ -19,6 +19,7 @@ low-RAM mode and the only one inside TITAN-BRN-010's ≤400 ms off budget).
 import asyncio
 import json
 import re
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -87,7 +88,9 @@ class RetrievalQuery:
 
 @dataclass
 class RankedChunk:
-    """One retrieval candidate after hydration + ranking."""
+    """One retrieval candidate after hydration + ranking. ``title`` is the
+    parent record's summary line — what §8.2's compression-on-retrieval shows
+    when the full chunk no longer fits the packet budget."""
 
     chunk_id: uuid.UUID
     record_id: uuid.UUID
@@ -96,8 +99,22 @@ class RankedChunk:
     token_count: int
     importance: float
     decay_score: float
+    title: str = ""
     rerank_norm: float = 0.0
     final_score: float = 0.0
+
+
+@dataclass
+class RetrievalStats:
+    """Per-leg observability facts for one retrieval (§14: packet-assembly
+    spans carry candidate counts per leg and rerank latency). Metadata only —
+    counts and milliseconds, never text (TITAN-OPS-016)."""
+
+    dense_candidates: int = 0
+    lexical_candidates: int = 0
+    fused: int = 0
+    hydrated: int = 0
+    rerank_ms: float = 0.0
 
 
 def shape_queries(query: str) -> list[str]:
@@ -207,9 +224,12 @@ async def retrieve(
     embeddings: EmbeddingsClient,
     reranker: Reranker,
     query: RetrievalQuery,
+    *,
+    stats: RetrievalStats | None = None,
 ) -> list[RankedChunk]:
     """Stages 1–5 of §6.1; returns budget-unbounded ranked chunks (the packet
-    assembler applies the 85 % fill after charging identity_context)."""
+    assembler applies the 85 % fill after charging identity_context). Pass
+    ``stats`` to capture per-leg counts + rerank latency for the assembly span."""
     sub_queries = shape_queries(query.query)
     if not sub_queries:
         return []
@@ -228,9 +248,14 @@ async def retrieve(
     lexical_lists: list[list[tuple[uuid.UUID, uuid.UUID | None]]] = [
         [(row.record_id, None) for row in rows] for rows in lexical_row_lists
     ]
+    if stats is not None:
+        stats.dense_candidates = sum(len(hits) for hits in dense_lists)
+        stats.lexical_candidates = sum(len(hits) for hits in lexical_lists)
 
     # -- stage 3: RRF fusion, dedupe by record_id, keep top-k -------------------
     fused = rrf_fuse([*dense_lists, *lexical_lists])[: query.k]
+    if stats is not None:
+        stats.fused = len(fused)
     if not fused:
         return []
 
@@ -257,6 +282,7 @@ async def retrieve(
             token_count=int(row.token_count),
             importance=float(row.importance),
             decay_score=float(row.decay_score),
+            title=str(row.title),
         )
         for row in rows
     ]
@@ -268,11 +294,16 @@ async def retrieve(
     # retrieval: degrade to the fused order (descending positional scores).
     # The NORMALISED query (sub_queries[0]) goes to the reranker so every stage
     # is a function of exactly the packet-cache-key material.
+    if stats is not None:
+        stats.hydrated = len(chunks)
+    rerank_started = time.perf_counter()
     try:
         raw_scores = await reranker.scores(sub_queries[0], [c.text for c in chunks])
     except Exception:
         logger.exception("memory.rerank_failed_degrading_to_fusion_order")
         raw_scores = [float(len(chunks) - i) for i in range(len(chunks))]
+    if stats is not None:
+        stats.rerank_ms = (time.perf_counter() - rerank_started) * 1000.0
     if len(raw_scores) != len(chunks):
         logger.warning("memory.rerank_score_mismatch", expected=len(chunks), got=len(raw_scores))
         raw_scores = [float(len(chunks) - i) for i in range(len(chunks))]
@@ -483,6 +514,7 @@ __all__ = [
     "RankedChunk",
     "Reranker",
     "RetrievalQuery",
+    "RetrievalStats",
     "fill_budget",
     "final_order",
     "identifier_terms",

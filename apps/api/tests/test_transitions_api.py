@@ -341,13 +341,22 @@ def test_concurrent_sibling_completion_promotes_shared_dependent(api: dict[str, 
     engine = api["engine"]
     rid = uuid.UUID(reviewer)
 
+    wm_redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+
     async def approve(task_id: str) -> Any:
         async with engine.begin() as conn:
             task = await orch.get_task(conn, uuid.UUID(task_id))
             transition = orch.transitions.resolve(task.status, "approve")
             assert transition is not None
             return await orch.apply_transition(
-                conn, task, transition, actor_agent_id=rid, actor_user_id=None, comment=None
+                conn,
+                task,
+                transition,
+                actor_agent_id=rid,
+                actor_user_id=None,
+                comment=None,
+                # approve consults the TITAN-BRN-002 wm:{task}:events gate.
+                redis=wm_redis,
             )
 
     async def race() -> Any:

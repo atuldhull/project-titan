@@ -24,6 +24,7 @@ from titan.gateway.dto import RejectNullFields
 from titan.gateway.pagination import Keyset, Page
 from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import not_found
+from titan.memory import service as memory
 from titan.messaging import service as messaging
 from titan.orchestrator import locks, transitions
 from titan.orchestrator import repository as repo
@@ -342,6 +343,7 @@ async def apply_transition(
     actor_agent_id: uuid.UUID | None,
     actor_user_id: uuid.UUID | None,
     comment: str | None,
+    redis: Redis | None = None,
 ) -> TaskOut:
     """Execute one resolved transition atomically: guarded status move + the
     per-action side effects (assignee, review distinctness, reopen run,
@@ -349,9 +351,29 @@ async def apply_transition(
 
     The caller (router or scheduler) has already resolved ``transition`` and
     checked ``required_permission``. Raises :class:`TransitionConflict` if the
-    task left ``transition.from_status`` under us (the guard moved 0 rows)."""
+    task left ``transition.from_status`` under us (the guard moved 0 rows).
+
+    ``redis`` is REQUIRED for ``approve`` (the move into ``done``): the
+    TITAN-BRN-002 gate must consult ``wm:{task_id}:events`` — completing a
+    task while Memory Events sit unflushed in working memory would make Redis
+    the sole copy of something durable. Approve with ``redis=None`` fails
+    LOUDLY (config error), never silently skips the gate; the non-approve
+    internal callers (assign/start/submit_review) never consult it."""
     action = transition.action
     columns: dict[str, object] = {}
+
+    if action == "approve":
+        if redis is None:
+            raise RuntimeError(
+                "approve requires a redis client for the TITAN-BRN-002 "
+                "pending-working-memory-events gate"
+            )
+        pending = await memory.pending_wm_events(redis, task.id)
+        if pending:
+            raise _conflict(
+                f"Cannot complete: {pending} working-memory event(s) for this task "
+                "are not yet flushed to durable memory (TITAN-BRN-002)."
+            )
 
     # Serialize dependency-sensitive transitions on the global graph lock so
     # concurrent completions can't write-skew (two sibling blockers both missing

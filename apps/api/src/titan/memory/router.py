@@ -16,12 +16,21 @@ from typing import Annotated, cast
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, Query, Request
 
-from titan.gateway.rbac import Requires, not_found
+from titan.gateway.problems import ProblemException, problem_type
+from titan.gateway.rbac import (
+    Requires,
+    RequiresAuth,
+    forbidden,
+    get_resolver,
+    not_found,
+    permission_granted,
+)
 from titan.identity.service import Principal
 from titan.memory import service
 from titan.memory.service import (
     EmbeddingsClient,
     MemoryEventBatch,
+    MemoryMetricsOut,
     MemoryPacketOut,
     MemoryRecordDetail,
     MemoryWriteResult,
@@ -33,7 +42,7 @@ from titan.memory.service import (
 
 router = APIRouter(prefix="/api/v1", tags=["memory"])
 
-_WriteMemory = Annotated[Principal, Depends(Requires("memory:write"))]
+_Authenticated = Annotated[Principal, Depends(RequiresAuth())]
 _ReadMemory = Annotated[Principal, Depends(Requires("memory:read"))]
 _AdminMemory = Annotated[Principal, Depends(Requires("memory:admin"))]
 
@@ -50,12 +59,38 @@ def _actor(principal: Principal) -> str:
 async def write_memory_events(
     request: Request,
     body: MemoryEventBatch,
-    principal: _WriteMemory,
+    principal: _Authenticated,
 ) -> MemoryWriteResult:
     """Write a batch of Memory Events in ONE transaction — a failure anywhere
     rolls back the whole batch (§5.1). ``source_agent`` records WHICH agent role
     authored the memory (application data); the ledger's actor is the
-    authenticated principal, never spoofable body input (TITAN-BRN-005)."""
+    authenticated principal, never spoofable body input (TITAN-BRN-005).
+
+    Authorization is scope-aware (TITAN-BRN-024): a human/service principal
+    needs org-level ``memory:write`` as before; an AGENT principal may write
+    ONLY project-scoped events into a project where its role bundle grants
+    ``memory:write`` (its bound project) — an org-scope event from agent
+    credentials is a flat 403, because org promotion belongs to the curation
+    workflow's multi-signal rule, never to a single agent."""
+    resolver = get_resolver(request)
+    if principal.kind == "agent":
+        for event in body.events:
+            if event.scope == "org":
+                raise ProblemException(
+                    status=403,
+                    title="Forbidden",
+                    detail=(
+                        "Agent credentials cannot write org-scope memory records (TITAN-BRN-024)."
+                    ),
+                    problem_type=problem_type("forbidden"),
+                )
+            project_id = service.parse_scope(event.scope)
+            assert project_id is not None  # noqa: S101 — scope validator guarantees it
+            granted = await resolver.project_permissions(project_id)
+            if not permission_granted("memory:write", granted):
+                raise forbidden("memory:write")
+    elif not await resolver.has("memory:write"):
+        raise forbidden("memory:write")
     async with request.app.state.engine.begin() as conn:
         return await service.write_events(
             conn, body, source_agent=body.source_agent, actor_agent=_actor(principal)
@@ -101,6 +136,15 @@ async def assemble_memory_packet(
         cast(Reranker, state.memory_reranker),
         body,
     )
+
+
+@router.get("/memory/metrics", response_model=MemoryMetricsOut)
+async def memory_metrics(principal: _ReadMemory) -> MemoryMetricsOut:
+    """Retrieval-quality and ingestion-lag metrics (§14) — the same series the
+    Prometheus ``/metrics`` endpoint exports, summarised for dashboards and
+    operators: packet-cache hit rate (TITAN-BRN-012) and ingest-lag quantiles
+    (TITAN-BRN-007). Metadata only — counts and seconds, never content."""
+    return service.memory_metrics()
 
 
 @router.post("/memory/admin/rebuild-index", response_model=RebuildReport)

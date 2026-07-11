@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
+from opentelemetry import trace
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -32,6 +33,7 @@ from titan.memory.qdrant import QdrantIndex
 from titan.observability.metrics import MEMORY_PACKET_CACHE
 
 logger = structlog.get_logger("titan.memory")
+_TRACER = trace.get_tracer("titan.memory")
 
 PACKET_CACHE_TTL_SECONDS = 300  # §4.5 rc:{scope}:{query_hash}
 _KINDS = ("episodic", "semantic", "procedural")
@@ -80,13 +82,17 @@ class PacketRequest(BaseModel):
 
 
 class PacketCitation(BaseModel):
-    """Provenance for one included chunk (§6.2 rule a)."""
+    """Provenance for one included chunk (§6.2 rule a). ``compressed`` marks a
+    chunk whose full text no longer fit the budget and was replaced by its
+    parent record's summary line (§8.2 mechanism 3) — the agent knows more
+    detail is one retrieval away, and nothing was dropped silently."""
 
     model_config = ConfigDict(extra="forbid")
 
     record_id: uuid.UUID
     chunk_id: uuid.UUID
     score: float
+    compressed: bool = False
 
 
 class PacketSections(BaseModel):
@@ -149,7 +155,29 @@ async def assemble_packet(
     request: PacketRequest,
 ) -> MemoryPacketOut:
     """§6.1 stage 6: run retrieval and assemble the cited packet, via the
-    300 s Redis cache (TITAN-BRN-012)."""
+    300 s Redis cache (TITAN-BRN-012). The assembly span carries the §14
+    observability facts — packet_id, per-leg candidate counts, rerank latency
+    — metadata only, never packet text (TITAN-OPS-016)."""
+    with _TRACER.start_as_current_span("memory.packet_assembly") as span:
+        packet = await _assemble_packet(engine, redis, qdrant, embeddings, reranker, request, span)
+        span.set_attribute("titan.memory.packet_id", str(packet.packet_id))
+        span.set_attribute("titan.memory.token_cost", packet.token_cost)
+        span.set_attribute(
+            "titan.memory.compressed_citations",
+            sum(1 for c in packet.citations if c.compressed),
+        )
+        return packet
+
+
+async def _assemble_packet(
+    engine: AsyncEngine,
+    redis: Any,
+    qdrant: QdrantIndex,
+    embeddings: EmbeddingsClient,
+    reranker: retrieval.Reranker,
+    request: PacketRequest,
+    span: Any,
+) -> MemoryPacketOut:
     key = packet_cache_key(request)
     try:
         cached = await redis.get(key)
@@ -161,21 +189,26 @@ async def assemble_packet(
     if cached is not None:
         try:
             packet = MemoryPacketOut.model_validate_json(cached)
-        except Exception:
+        except Exception as exc:
             # A corrupt or schema-skewed entry (rolling deploy, manual SET) must
             # behave like a miss, not 500 every request until the TTL expires.
-            logger.exception("memory.packet_cache_entry_invalid")
+            # No exc_info: a pydantic error embeds input_value — cached PACKET
+            # CONTENT — and logs carry metadata only (TITAN-OPS-016).
+            logger.warning("memory.packet_cache_entry_invalid", error=type(exc).__name__)
             with contextlib.suppress(Exception):
                 await redis.delete(key)
             cached = None
         else:
             MEMORY_PACKET_CACHE.labels(result="hit").inc()
+            span.set_attribute("titan.memory.cache", "hit")
             packet.assembled_for = request.assembled_for  # attribution is per-caller
             return packet
     MEMORY_PACKET_CACHE.labels(result="miss").inc()
+    span.set_attribute("titan.memory.cache", "miss")
 
     identity = await _identity_context(engine, request.scope)
     identity_tokens = count_tokens(identity)
+    stats = retrieval.RetrievalStats()
     ranked = await retrieval.retrieve(
         engine,
         qdrant,
@@ -188,30 +221,53 @@ async def assemble_packet(
             k=request.k,
             budget_tokens=request.budget_tokens,
         ),
+        stats=stats,
     )
+    span.set_attribute("titan.memory.dense_candidates", stats.dense_candidates)
+    span.set_attribute("titan.memory.lexical_candidates", stats.lexical_candidates)
+    span.set_attribute("titan.memory.fused", stats.fused)
+    span.set_attribute("titan.memory.hydrated", stats.hydrated)
+    span.set_attribute("titan.memory.rerank_ms", round(stats.rerank_ms, 2))
     # identity_context is charged FIRST and never evicted (§6.2 rule c).
     kept = retrieval.fill_budget(ranked, request.budget_tokens, reserved=identity_tokens)
 
     sections = PacketSections(identity_context=identity)
+    citations: list[PacketCitation] = []
+    used = identity_tokens
     for chunk in kept:
-        if chunk.kind == "procedural":
-            sections.procedural.append(chunk.text)
-        elif chunk.kind == "semantic":
-            sections.semantic.append(chunk.text)
-        else:
-            sections.episodic.append(chunk.text)
-    packet = MemoryPacketOut(
-        assembled_for=request.assembled_for,
-        sections=sections,
-        citations=[
+        _section_for(sections, chunk.kind).append(chunk.text)
+        citations.append(
             PacketCitation(
                 record_id=chunk.record_id,
                 chunk_id=chunk.chunk_id,
                 score=round(chunk.final_score, 6),
             )
-            for chunk in kept
-        ],
-        token_cost=identity_tokens + sum(chunk.token_count for chunk in kept),
+        )
+        used += chunk.token_count
+    # §8.2 mechanism 3 — compression-on-retrieval: ranked chunks the budget
+    # evicted are NOT silently dropped; each becomes its parent record's
+    # summary line, marked compressed, while the 85 % fill limit still holds.
+    limit = int(request.budget_tokens * retrieval.BUDGET_FILL_RATIO)
+    for chunk in ranked[len(kept) :]:
+        line = f"[compressed] {chunk.title} (record {chunk.record_id} — retrieve for detail)"
+        cost = count_tokens(line)
+        if used + cost > limit:
+            break
+        _section_for(sections, chunk.kind).append(line)
+        citations.append(
+            PacketCitation(
+                record_id=chunk.record_id,
+                chunk_id=chunk.chunk_id,
+                score=round(chunk.final_score, 6),
+                compressed=True,
+            )
+        )
+        used += cost
+    packet = MemoryPacketOut(
+        assembled_for=request.assembled_for,
+        sections=sections,
+        citations=citations,
+        token_cost=used,
         budget_tokens=request.budget_tokens,
     )
     # Cache WITHOUT attribution; each hit re-attaches its own assembled_for.
@@ -221,6 +277,14 @@ async def assemble_packet(
     except Exception:
         logger.exception("memory.packet_cache_write_failed")
     return packet
+
+
+def _section_for(sections: PacketSections, kind: str) -> list[str]:
+    if kind == "procedural":
+        return sections.procedural
+    if kind == "semantic":
+        return sections.semantic
+    return sections.episodic
 
 
 async def _identity_context(engine: AsyncEngine, scope: str) -> str:

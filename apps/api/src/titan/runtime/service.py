@@ -13,7 +13,10 @@ composes the OTHER modules strictly through their ``.service`` boundaries
 """
 
 import uuid
+from pathlib import Path
+from typing import Any
 
+import structlog
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -24,7 +27,8 @@ from titan.agents.service import (
 )
 from titan.conflict.service import vetoing_roles as _vetoing_roles
 from titan.events.service import QueueBus
-from titan.llm.service import build_gateway
+from titan.llm.service import ConfigLoader, build_gateway
+from titan.memory import service as memory_service
 from titan.runtime.binding import (
     ANTHROPIC_TIER_ALIAS,
     PROVIDER_ALIAS,
@@ -41,11 +45,16 @@ from titan.runtime.grants import (
 )
 from titan.runtime.memory import (
     Citation,
+    KgEdgeEvent,
+    KgEventSink,
     MemoryPacket,
     MemoryPacketSections,
     MemoryProvider,
     MemoryRequest,
+    NoopKgSink,
     NullMemoryProvider,
+    PacketMemoryProvider,
+    WorkingMemoryCoordinator,
 )
 from titan.runtime.metrics import declare_kpis
 from titan.runtime.output import (
@@ -82,6 +91,8 @@ from titan.runtime.worker import RuntimeWorker
 from titan.settings import Settings
 from titan.tools.service import ToolBus, build_bus, build_registry
 
+logger = structlog.get_logger("titan.runtime")
+
 
 def build_runtime(
     settings: Settings,
@@ -91,15 +102,20 @@ def build_runtime(
     llm: LlmClient | None = None,
     memory: MemoryProvider | None = None,
     tool_bus: ToolBus | None = None,
+    http: Any | None = None,
+    reranker: Any | None = None,
 ) -> AgentRuntime:
     """Wire the shared Agent Runtime from settings + live infrastructure.
 
     Loads the cached roster (Phase 26), the prompt composer (Phase 28), and the
     model-policy binding (Phase 28); builds the Tool Registry + Tool Bus
     (Phase 18) and the LLM gateway (Phase 15). Pass ``llm`` to substitute a
-    scripted/mock provider (tests) and ``memory`` to inject real retrieval when
-    the memory phases land. The caller owns the gateway's lifetime: when this
-    builds it, close it with ``runtime.llm.aclose()`` on shutdown.
+    scripted/mock provider (tests). When ``redis`` + ``http`` (Qdrant) +
+    ``reranker`` are supplied, the runtime gets the REAL memory wiring
+    (Phase 38, §13): the Phase-36 packet provider and the working-memory
+    coordinator; otherwise the null provider keeps turns valid with empty
+    packets. The caller owns the gateway's lifetime: when this builds it,
+    close it with ``runtime.llm.aclose()`` on shutdown.
     """
     registry = load_roster(settings)
     # Publish each agent's declared KPIs to Prometheus so the series exist for
@@ -108,7 +124,19 @@ def build_runtime(
         declare_kpis(f"agent.{definition.agent_id}", definition.kpis)
     composer = build_prompt_composer(settings)
     policy = load_model_policy(settings)
-    binding = GatewayBinding(policy, settings.model_policy_profile)
+    # alias -> context window for the §8.1 budget allocator; a missing/broken
+    # models.yaml degrades to the allocator's default window, never a crash.
+    windows: dict[str, int] = {}
+    try:
+        config = ConfigLoader(Path(settings.models_config_path)).get()
+        windows = {
+            alias: model.context_window
+            for alias, model in config.model_aliases.items()
+            if model.context_window
+        }
+    except Exception:
+        logger.warning("runtime.context_windows_unavailable", exc_info=True)
+    binding = GatewayBinding(policy, settings.model_policy_profile, context_windows=windows)
     tool_registry = build_registry()
     bus = (
         tool_bus if tool_bus is not None else build_bus(engine, registry=tool_registry, redis=redis)
@@ -116,6 +144,25 @@ def build_runtime(
     gateway: LlmClient = (
         llm if llm is not None else build_gateway(settings, engine=engine, redis=redis)
     )
+    if memory is None and redis is not None and http is not None and reranker is not None:
+        memory = PacketMemoryProvider(
+            engine, redis, memory_service.QdrantIndex(http), gateway, reranker
+        )
+    coordinator: WorkingMemoryCoordinator | None = None
+    if redis is not None:
+        # The summary fold routes to the cheapest configured chat model
+        # (utility tier — TITAN-BRN-017); unreadable config -> gateway default.
+        alias: str | None = None
+        try:
+            alias = memory_service.cheapest_chat_alias(settings.models_config_path)
+        except Exception:
+            logger.warning("runtime.summary_alias_unavailable")
+        coordinator = WorkingMemoryCoordinator(
+            engine,
+            memory_service.WorkingMemory(redis),
+            memory_service.SummaryFolder(gateway, alias),
+            NoopKgSink(),
+        )
     return AgentRuntime(
         engine=engine,
         registry=registry,
@@ -125,6 +172,7 @@ def build_runtime(
         llm=gateway,
         binding=binding,
         memory=memory if memory is not None else NullMemoryProvider(),
+        coordinator=coordinator,
         # Data-driven from the roster: exactly the roles whose AgentDefinition holds
         # a blocking veto (Security by default, §7.4) — never a hard-coded id.
         vetoing_roles=_vetoing_roles(registry),
@@ -160,7 +208,12 @@ __all__ = [
     "MemoryPacketSections",
     "MemoryProvider",
     "MemoryRequest",
+    "NoopKgSink",
+    "KgEventSink",
+    "KgEdgeEvent",
     "NullMemoryProvider",
+    "WorkingMemoryCoordinator",
+    "PacketMemoryProvider",
     "OutboundMessage",
     "RuntimeWorker",
     "SecurityEvent",

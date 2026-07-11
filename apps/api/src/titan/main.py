@@ -190,6 +190,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 redis=application.state.redis,
                 llm=application.state.llm_gateway,
                 tool_bus=application.state.tool_bus,
+                # Phase 38 (§13): the real packet provider + working-memory
+                # coordinator ride on the same Qdrant client and reranker the
+                # packet endpoint uses — one retrieval stack, two entrances.
+                http=application.state.http,
+                reranker=application.state.memory_reranker,
             )
             watchdog = runtime_service.build_watchdog(
                 agent_runtime, events_service.build_bus(application.state.redis)
