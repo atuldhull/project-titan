@@ -17,6 +17,7 @@ import contextlib
 
 import structlog
 from prometheus_client import start_http_server
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from titan import clients
 from titan.events import service as events
@@ -25,6 +26,7 @@ from titan.events.outbox import OutboxDrainer
 from titan.llm.service import build_gateway
 from titan.memory import service as memory
 from titan.observability.logging import configure_logging
+from titan.orchestrator import service as orchestrator
 from titan.realtime import service as realtime
 from titan.runs.coordinator import (
     run_execute_reaper,
@@ -39,6 +41,33 @@ from titan.settings import get_settings
 logger = structlog.get_logger("titan.worker")
 
 METRICS_PORT = 9100
+
+# How often the orchestrator seeds pipelines for projects created while it was
+# down. In-flight pipelines resume structurally (their cursor lives in Postgres),
+# so this only needs to be brisk enough to satisfy the "replacement resumes within
+# 30 seconds" DoD for projects with no pipeline yet.
+PIPELINE_RECONCILE_INTERVAL_S = 15.0
+
+
+async def _sleep_or_stop(stop: asyncio.Event, seconds: float) -> None:  # pragma: no cover
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(stop.wait(), timeout=seconds)
+
+
+async def run_pipeline_reconciler(  # pragma: no cover — live-verified loop
+    engine: AsyncEngine, *, stop: asyncio.Event
+) -> None:
+    """Seed pipelines for un-seeded projects on a fixed cadence (TITAN-WFL-001).
+    Self-healing: a transient DB error is logged and retried, never propagated."""
+    while not stop.is_set():
+        try:
+            async with engine.begin() as conn:
+                seeded = await orchestrator.reconcile_pipelines(conn)
+            if seeded:
+                logger.info("pipeline.reconciled", seeded=seeded)
+        except Exception:
+            logger.exception("pipeline.reconciler_error")
+        await _sleep_or_stop(stop, PIPELINE_RECONCILE_INTERVAL_S)
 
 
 async def run() -> None:  # pragma: no cover — live-verified orchestration loop
@@ -79,6 +108,7 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
             "memory-ingest-relay",
             "memory-embedder",
             "memory-ingest-reaper",
+            "pipeline-reconciler",
         ],
         worker_concurrency=settings.worker_concurrency,
         metrics_port=METRICS_PORT,
@@ -121,6 +151,7 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
         asyncio.create_task(memory.run_ingest_relay(ingest_relay, stop=stop)),
         asyncio.create_task(memory.run_embedder(embedder, bus, consumer_name, stop=stop)),
         asyncio.create_task(memory.run_ingest_reaper(embedder, bus, consumer_name, stop=stop)),
+        asyncio.create_task(run_pipeline_reconciler(engine, stop=stop)),
     ]
     try:
         # return_exceptions: a loop that somehow escapes its own guard cannot

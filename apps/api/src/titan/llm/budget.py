@@ -37,6 +37,13 @@ _IMAGE_TOKENS = 512  # conservative per-image input allowance for the estimate
 Reserved = list[tuple[str, uuid.UUID]]
 
 
+def spend_key(scope: str, scope_id: uuid.UUID) -> str:
+    """The Redis rolling-spend counter key for a budget scope. Shared so that
+    raising a budget (clearing the hold) can also reset this counter — otherwise
+    a stale at-cap counter would make the next reservation re-breach and re-hold."""
+    return f"llm:spend:{scope}:{scope_id}"
+
+
 def estimate_input_tokens(req: ChatRequest) -> int:
     """A cheap, provider-neutral prompt-size estimate (~4 chars/token). Counts
     message content AND tool-definition schemas (both are billed input); an image
@@ -80,7 +87,7 @@ class BudgetManager:
 
     @staticmethod
     def _key(scope: str, scope_id: uuid.UUID) -> str:
-        return f"llm:spend:{scope}:{scope_id}"
+        return spend_key(scope, scope_id)
 
     @staticmethod
     def _caps(

@@ -9,8 +9,13 @@ no I/O — so the exhaustive (state, action) matrix is trivially unit-testable.
 
 from dataclasses import dataclass
 
-# The 9 task statuses (§8.1). `cancelled` is fully terminal; `done` is terminal
-# except for `reopen`; the rest are in-flight.
+# The task statuses. The Vol 3 §8.1 engineering states (backlog … cancelled) are
+# the fine-grained machine; Phase 41 maps the Vol 6 §2.5 delivery states onto the
+# SAME single machine, adding the five §2.5-only states (blocked, in_loop, merged,
+# failed, escalated) as new values here rather than building a second mechanism.
+# `wfl_lane()` projects every physical status onto its §2.5 Kanban lane.
+# `cancelled` is fully terminal; `done` is terminal except for `reopen`;
+# `escalated` awaits human action; the rest are in-flight.
 STATES: tuple[str, ...] = (
     "backlog",
     "ready",
@@ -21,10 +26,17 @@ STATES: tuple[str, ...] = (
     "done",
     "reopened",
     "cancelled",
+    # Vol 6 §2.5 delivery states (this phase):
+    "blocked",
+    "in_loop",
+    "merged",
+    "failed",
+    "escalated",
 )
 
 # States a task may be cancelled from — every non-terminal state (§8.1
-# "any non-terminal state -- cancel --> cancelled"). Not `done`/`cancelled`.
+# "any non-terminal state -- cancel --> cancelled"). Not `done`/`cancelled`;
+# `failed`/`escalated` route to human handling (§2.5), never a silent cancel.
 _CANCELLABLE: tuple[str, ...] = (
     "backlog",
     "ready",
@@ -33,6 +45,9 @@ _CANCELLABLE: tuple[str, ...] = (
     "in_review",
     "changes_requested",
     "reopened",
+    "blocked",
+    "in_loop",
+    "merged",
 )
 
 
@@ -70,6 +85,24 @@ _TABLE: list[Transition] = [
     Transition("resubmit", "changes_requested", "in_review", "task:transition", "progress_report"),
     # Reopen a completed task (new run attempt; task:reopen).
     Transition("reopen", "done", "reopened", "task:reopen", "bug_report"),
+    # -- Vol 6 §2.5 delivery edges (Phase 41), added to the SAME machine -------
+    # READY <-> BLOCKED: a ready task whose blocker regressed parks in blocked
+    # and returns to ready when unblocked (never skips assignment/single-owner).
+    Transition("block", "ready", "blocked", "task:transition", "progress_report"),
+    Transition("unblock", "blocked", "ready", "task:transition", "progress_report"),
+    # IN_PROGRESS -> IN_LOOP -> MERGED -> DONE: the self-improvement loop path.
+    Transition("enter_loop", "in_progress", "in_loop", "task:transition", "progress_report"),
+    Transition("merge", "in_loop", "merged", "task:transition", "progress_report"),
+    # MERGED -> DONE via `complete`: the §2.5 done-entry that requires the parent
+    # story's acceptance criteria to pass (enforced in the service, TITAN-WFL-009).
+    Transition("complete", "merged", "done", "task:transition", "review_request"),
+    # IN_PROGRESS -> FAILED -> ESCALATED and IN_LOOP -> ESCALATED (§2.5).
+    Transition("fail", "in_progress", "failed", "task:transition", "progress_report"),
+    Transition("escalate", "failed", "escalated", "task:transition", "progress_report"),
+    Transition("escalate", "in_loop", "escalated", "task:transition", "progress_report"),
+    # REOPENED -> READY (§2.5): a reopened task re-enters the ready pool. (The
+    # engineering machine also allows reopened -> in_progress via `start`.)
+    Transition("requeue", "reopened", "ready", "task:transition", "progress_report"),
 ]
 # Cancel from every non-terminal state.
 _TABLE += [
@@ -86,3 +119,41 @@ ACTIONS: tuple[str, ...] = tuple(sorted({t.action for t in _TABLE}))
 def resolve(from_status: str, action: str) -> Transition | None:
     """The legal transition for ``(from_status, action)``, or None if illegal."""
     return TRANSITIONS.get((from_status, action))
+
+
+# --- Vol 6 §2.5 Kanban lane projection -------------------------------------
+
+# The pseudo-state a task on an active budget hold reports (TITAN-INT-064). It is
+# an ORTHOGONAL overlay, NOT a physical status: the task keeps its real status so
+# raising the budget resumes it exactly where it paused (§ point 4).
+BUDGET_HOLD_LANE = "BUDGET_HOLD"
+
+# Every physical status → its Vol 6 §2.5 lane. The fine-grained engineering states
+# fold onto the coarser delivery lanes (assigned/in_progress → IN_PROGRESS;
+# in_review/changes_requested/in_loop → IN_LOOP). `cancelled` has no §2.5 lane —
+# it is a deliberate terminal reported as CANCELLED.
+_WFL_LANE: dict[str, str] = {
+    "backlog": "BACKLOG",
+    "ready": "READY",
+    "blocked": "BLOCKED",
+    "assigned": "IN_PROGRESS",
+    "in_progress": "IN_PROGRESS",
+    "in_review": "IN_LOOP",
+    "changes_requested": "IN_LOOP",
+    "in_loop": "IN_LOOP",
+    "merged": "MERGED",
+    "done": "DONE",
+    "reopened": "REOPENED",
+    "failed": "FAILED",
+    "escalated": "ESCALATED",
+    "cancelled": "CANCELLED",
+}
+
+
+def wfl_lane(status: str, *, budget_hold: bool = False) -> str:
+    """Project a physical task ``status`` onto its Vol 6 §2.5 Kanban lane. When
+    ``budget_hold`` is set the task reports ``BUDGET_HOLD`` regardless of its
+    (preserved, resumable) underlying status."""
+    if budget_hold:
+        return BUDGET_HOLD_LANE
+    return _WFL_LANE.get(status, status.upper())

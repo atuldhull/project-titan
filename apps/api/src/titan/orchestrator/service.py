@@ -8,13 +8,14 @@ and ORM models stay private to the package. Pydantic v2 DTOs — never
 SQLAlchemy models — cross this boundary.
 """
 
+import json
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 from redis.asyncio import Redis
-from sqlalchemy import text
+from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from titan.agents import service as agents
@@ -24,26 +25,18 @@ from titan.gateway.dto import RejectNullFields
 from titan.gateway.pagination import Keyset, Page
 from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import not_found
+from titan.llm import service as llm
 from titan.memory import service as memory
 from titan.messaging import service as messaging
-from titan.orchestrator import locks, transitions
+from titan.orchestrator import locks, pipeline, transitions
 from titan.orchestrator import repository as repo
 from titan.orchestrator.errors import DependencyCycleError, TransitionConflict, invalid_transition
 from titan.orchestrator.transitions import Transition
 from titan.runs import service as runs
 
-# Canonical §8.1 board column order (backlog → cancelled).
-TASK_STATUSES: tuple[str, ...] = (
-    "backlog",
-    "ready",
-    "assigned",
-    "in_progress",
-    "in_review",
-    "changes_requested",
-    "done",
-    "reopened",
-    "cancelled",
-)
+# Canonical board column order: the §8.1 engineering states followed by the Vol 6
+# §2.5 delivery states added in Phase 41 (one machine — see transitions.STATES).
+TASK_STATUSES: tuple[str, ...] = transitions.STATES
 
 # Fibonacci estimate scale (TITAN-BCK-013): grooming sets 1,2,3,5,8,13.
 EstimatePoints = Literal[1, 2, 3, 5, 8, 13]
@@ -96,6 +89,13 @@ class TaskOut(BaseModel):
     completed_at: datetime | None
     created_at: datetime
     version: int
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def wfl_lane(self) -> str:
+        """The Vol 6 §2.5 Kanban lane for this task's status (TITAN-WFL-009) — a
+        pure projection of the physical status onto the delivery vocabulary."""
+        return transitions.wfl_lane(self.status)
 
 
 class DependencyCreate(BaseModel):
@@ -156,6 +156,43 @@ async def _emit(conn: AsyncConnection, event_type: str, task: TaskOut, actor: st
         conn,
         STREAM_EVENTS_DOMAIN,
         {"type": event_type, "task": task.model_dump(mode="json")},
+        actor=actor,
+    )
+
+
+async def _emit_kanban(
+    conn: AsyncConnection,
+    task: TaskOut,
+    *,
+    from_status: str,
+    to_status: str,
+    action: str,
+    actor: str,
+) -> None:
+    """Emit the Vol 6 §2.5 Kanban event every task state change SHALL produce
+    (TITAN-WFL-009). One outbox row on the domain stream; the Phase-24 fan-out
+    republishes it to ``ws.project.{id}`` as a ``task.kanban`` frame so the Kanban
+    artifact updates live. Carries the §2.5 lane so the board never has to know
+    the fine-grained engineering statuses."""
+    await write_event(
+        conn,
+        STREAM_EVENTS_DOMAIN,
+        {
+            "type": "task.kanban",
+            "kanban": {
+                "task_id": str(task.id),
+                "project_id": str(task.project_id),
+                "title": task.title,
+                "status": task.status,
+                "lane": transitions.wfl_lane(to_status),
+                "from_lane": transitions.wfl_lane(from_status),
+                "action": action,
+                "priority": task.priority,
+                "assignee_agent_id": (
+                    str(task.assignee_agent_id) if task.assignee_agent_id is not None else None
+                ),
+            },
+        },
         actor=actor,
     )
 
@@ -302,6 +339,9 @@ async def _promote_ready_dependents(conn: AsyncConnection, completed_task_id: uu
             continue
         dep = TaskOut.model_validate(row)
         await _emit(conn, "task.ready", dep, "scheduler")
+        await _emit_kanban(
+            conn, dep, from_status="backlog", to_status="ready", action="ready", actor="scheduler"
+        )
         await _enqueue_ready(conn, dep)
 
 
@@ -361,11 +401,16 @@ async def apply_transition(
     internal callers (assign/start/submit_review) never consult it."""
     action = transition.action
     columns: dict[str, object] = {}
+    # Both done-entry actions: the fine-grained engineering `approve` (in_review →
+    # done) and the Vol 6 §2.5 delivery `complete` (merged → done). They share the
+    # done-entry side effects (BRN-002 gate, merge-veto, completed_at, dependent
+    # promotion); `complete` additionally enforces the §2.5 acceptance gate below.
+    is_done_entry = action in ("approve", "complete")
 
-    if action == "approve":
+    if is_done_entry:
         if redis is None:
             raise RuntimeError(
-                "approve requires a redis client for the TITAN-BRN-002 "
+                f"{action} requires a redis client for the TITAN-BRN-002 "
                 "pending-working-memory-events gate"
             )
         pending = await memory.pending_wm_events(redis, task.id)
@@ -375,10 +420,20 @@ async def apply_transition(
                 "are not yet flushed to durable memory (TITAN-BRN-002)."
             )
 
+    # TITAN-WFL-009: `merged -> done` requires the parent story's acceptance
+    # criteria to pass. The concrete evidence is a schema-valid task reflection —
+    # the done-block hook (TITAN-BRN-025). The engineering `approve` path keeps its
+    # own review gate and is unaffected.
+    if action == "complete" and not await memory.task_reflection_exists(conn, task.id):
+        raise _conflict(
+            "Cannot complete: the task's acceptance criteria are not verified — "
+            "no schema-valid reflection on record (TITAN-WFL-009 / TITAN-BRN-025)."
+        )
+
     # Serialize dependency-sensitive transitions on the global graph lock so
     # concurrent completions can't write-skew (two sibling blockers both missing
     # their shared dependent's promotion under READ COMMITTED).
-    if action in ("ready", "approve"):
+    if action == "ready" or is_done_entry:
         await repo.acquire_dependency_graph_lock(conn)
 
     if action == "ready" and not await repo.dependencies_all_done(conn, task.id):
@@ -397,8 +452,8 @@ async def apply_transition(
         if task.assignee_agent_id is not None and actor_agent_id == task.assignee_agent_id:
             raise _conflict("The reviewer must be different from the assignee.")
         columns["reviewer_agent_id"] = actor_agent_id
-    if action == "approve":
-        # §7.4 / TITAN-AGT-018: approve is the merge into `done`. A Security veto
+    if is_done_entry:
+        # §7.4 / TITAN-AGT-018: reaching `done` is the merge. A Security veto
         # blocks it regardless of this (or any) approval — the gate consults ONLY
         # the veto table, so no approval path, not even a CEO release, bypasses it.
         # Lazy import: messaging.service (which conflict.service uses) imports this
@@ -413,7 +468,7 @@ async def apply_transition(
         from_status=transition.from_status,
         to_status=transition.to_status,
         columns=columns,
-        set_completed=(action == "approve"),
+        set_completed=is_done_entry,
         clear_completed=(action == "reopen"),  # reopened is no longer 'done'
     )
     if row is None:
@@ -423,7 +478,7 @@ async def apply_transition(
     if action == "reopen" and updated.assignee_agent_id is not None:
         # TITAN-BCK-016: reopen creates a fresh run attempt (max+1) for retry.
         await runs.create_run(conn, updated.id, runs.RunCreate(agent_id=updated.assignee_agent_id))
-    if action == "approve":
+    if is_done_entry:
         await _promote_ready_dependents(conn, updated.id)
 
     await _write_transition_message(
@@ -434,7 +489,16 @@ async def apply_transition(
         actor_user_id=actor_user_id,
         comment=comment,
     )
-    await _emit(conn, f"task.{action}", updated, str(actor_agent_id or actor_user_id or "system"))
+    event_actor = str(actor_agent_id or actor_user_id or "system")
+    await _emit(conn, f"task.{action}", updated, event_actor)
+    await _emit_kanban(
+        conn,
+        updated,
+        from_status=transition.from_status,
+        to_status=updated.status,
+        action=action,
+        actor=event_actor,
+    )
     if updated.status == "ready":
         await _enqueue_ready(conn, updated)
     return updated
@@ -459,6 +523,12 @@ async def claim_and_assign(
     try:
         async with engine.begin() as conn:
             task = await get_task(conn, task_id)
+            # Budget hold PAUSES the task (§ point 4): at 100% budget no new work
+            # is assigned and no LLM call is made for it. The task keeps its status
+            # (still `ready`), so raising the budget resumes it exactly here.
+            held = await llm.active_budget_hold(conn, project_id=task.project_id, task_id=task.id)
+            if held is not None:
+                return None
             transition = transitions.resolve(task.status, "assign")
             if transition is None:
                 return None  # not in `ready`
@@ -516,6 +586,470 @@ async def handle_run_result(
         actor_user_id=None,
         comment="run succeeded",
     )
+
+
+# --- delivery pipeline state machine (Vol 6 §2.1, TITAN-WFL-001/002) --------
+
+# The ordered 12 stages, re-exported so callers never reach into the private
+# pipeline module.
+PIPELINE_STAGES: tuple[str, ...] = pipeline.STAGES
+
+
+class PipelineOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    project_id: uuid.UUID
+    current_stage: str
+    iteration: int
+    status: str
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def current_stage_label(self) -> str:
+        """Human label for the current stage (dashboard) — a pure projection."""
+        return pipeline.STAGE_LABELS.get(self.current_stage, self.current_stage)
+
+
+class PipelineStageEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    stage: str
+    event: str
+    iteration: int
+    actor: str
+    detail: dict[str, Any]
+    at: datetime
+
+
+class PipelineView(BaseModel):
+    project_id: uuid.UUID
+    pipeline: PipelineOut
+    stages: list[str]
+    history: list[PipelineStageEventOut]
+
+
+class PipelineAdvanceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    #: The stage to advance to. Must be the immediate successor of the current
+    #: stage (TITAN-WFL-002) — any other value is a rejected out-of-order attempt.
+    target_stage: str = Field(min_length=1, max_length=50)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class PipelineNotApplicableRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_stage: str = Field(min_length=1, max_length=50)
+    #: The CEO's logged justification for skipping the current stage (§2.2/§2.5).
+    justification: str = Field(min_length=1, max_length=2000)
+
+
+class PipelineRetryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+def _pipeline_out(row: Row[Any]) -> PipelineOut:
+    return PipelineOut.model_validate(row)
+
+
+async def _record_stage_event(
+    conn: AsyncConnection,
+    project_id: uuid.UUID,
+    *,
+    stage: str,
+    event: str,
+    iteration: int,
+    actor: str,
+    detail: dict[str, Any] | None = None,
+) -> None:
+    await repo.append_stage_event(
+        conn,
+        project_id,
+        stage=stage,
+        event=event,
+        iteration=iteration,
+        actor=actor,
+        detail=json.dumps(detail or {}),
+    )
+
+
+async def _emit_pipeline(
+    conn: AsyncConnection, out: PipelineOut, *, change: dict[str, Any], actor: str
+) -> None:
+    """Emit the pipeline event through the transactional outbox (Phase 10). The
+    Phase-24 fan-out republishes it to ``ws.project.{id}`` as a ``pipeline.updated``
+    frame — the per-project ``pipeline.<project>.stage_complete`` of §2.1, realized
+    on the one domain stream + WS channel (no second transport)."""
+    await write_event(
+        conn,
+        STREAM_EVENTS_DOMAIN,
+        {
+            "type": "pipeline.updated",
+            "pipeline": out.model_dump(mode="json"),
+            "change": change,
+        },
+        actor=actor,
+    )
+
+
+async def ensure_pipeline(
+    conn: AsyncConnection, project_id: uuid.UUID, *, actor: str = "system"
+) -> PipelineOut:
+    """Idempotently initialize the project's pipeline at the first stage. On first
+    creation it logs an ``enter`` ledger row and emits the pipeline event; a
+    subsequent call is a pure read (the cursor already exists)."""
+    existing = await repo.get_pipeline_state(conn, project_id)
+    if existing is not None:
+        return _pipeline_out(existing)
+    row, inserted = await repo.ensure_pipeline_state(
+        conn, project_id, initial_stage=pipeline.INITIAL_STAGE
+    )
+    out = _pipeline_out(row)
+    # A concurrent initializer may have won the INSERT; ONLY the caller that
+    # actually inserted logs the opening 'enter' event + emits it, so the
+    # append-only ledger never carries a duplicate opening row (TITAN-WFL-001).
+    if inserted:
+        await _record_stage_event(
+            conn,
+            project_id,
+            stage=out.current_stage,
+            event="enter",
+            iteration=out.iteration,
+            actor=actor,
+        )
+        await _emit_pipeline(
+            conn, out, change={"event": "enter", "stage": out.current_stage}, actor=actor
+        )
+    return out
+
+
+async def get_pipeline(conn: AsyncConnection, project_id: uuid.UUID) -> PipelineView:
+    """The project's pipeline cursor + full ordered stage history (ledger replay).
+    Auto-initializes on first read so every project has a pipeline."""
+    out = await ensure_pipeline(conn, project_id)
+    history = [
+        PipelineStageEventOut.model_validate(r) for r in await repo.stage_events(conn, project_id)
+    ]
+    return PipelineView(
+        project_id=project_id, pipeline=out, stages=list(pipeline.STAGES), history=history
+    )
+
+
+async def _reject_pipeline(
+    conn: AsyncConnection,
+    out: PipelineOut,
+    *,
+    target_stage: str,
+    actor: str,
+    reason: str,
+) -> ProblemException:
+    """Log a rejected out-of-order transition (TITAN-WFL-002) and return the 409 to
+    raise — state is left unchanged. The ledger + emitted event make the rejection
+    auditable and observable on the dashboard."""
+    await _record_stage_event(
+        conn,
+        out.project_id,
+        stage=out.current_stage,
+        event="rejected",
+        iteration=out.iteration,
+        actor=actor,
+        detail={"target_stage": target_stage, "reason": reason},
+    )
+    await _emit_pipeline(
+        conn,
+        out,
+        change={
+            "event": "rejected",
+            "stage": out.current_stage,
+            "target_stage": target_stage,
+            "reason": reason,
+        },
+        actor=actor,
+    )
+    return _conflict(reason)
+
+
+async def _advance_or_complete(
+    engine: AsyncEngine,
+    project_id: uuid.UUID,
+    *,
+    target_stage: str,
+    actor: str,
+    completion_event: str,
+    detail: dict[str, Any],
+) -> PipelineOut:
+    """Shared body for advance / not-applicable: enforce no-skip + budget hold,
+    then close the current stage with ``completion_event`` (stage_complete or
+    not_applicable) and enter the successor. Terminal successor → released.
+
+    Owns its OWN transaction so a REJECTED / PAUSED outcome still COMMITS its
+    ledger row and event (TITAN-WFL-002 requires the rejection to be logged) and
+    THEN raises the 409 — raising inside the caller's transaction would roll the
+    audit trail back with it. `not running` / raced outcomes have nothing to
+    persist, so they raise inside and roll back."""
+    pending: ProblemException | None = None
+    result: PipelineOut | None = None
+    async with engine.begin() as conn:
+        out = await ensure_pipeline(conn, project_id)
+        if out.status != "running":
+            raise _conflict(
+                f"Pipeline is {out.status}, not running — no stage transition is possible."
+            )
+
+        # Budget hold PAUSES the pipeline: no stage advance spends LLM at 100%.
+        held = await llm.active_budget_hold(conn, project_id=project_id, task_id=None)
+        if held is not None:
+            await _record_stage_event(
+                conn,
+                project_id,
+                stage=out.current_stage,
+                event="budget_hold",
+                iteration=out.iteration,
+                actor=actor,
+                detail={"reason": held},
+            )
+            await _emit_pipeline(
+                conn,
+                out,
+                change={"event": "budget_hold", "stage": out.current_stage, "reason": held},
+                actor=actor,
+            )
+            pending = _conflict(
+                f"Pipeline paused on budget hold: {held}. Raise the budget to resume."
+            )
+        elif pipeline.resolve_advance(out.current_stage, target_stage) is None:
+            pending = await _reject_pipeline(
+                conn,
+                out,
+                target_stage=target_stage,
+                actor=actor,
+                reason=(
+                    f"Illegal pipeline transition {out.current_stage} -> {target_stage}: stages "
+                    "may not be skipped or reordered (TITAN-WFL-002); the only legal target is "
+                    f"{pipeline.next_stage(out.current_stage)}."
+                ),
+            )
+        else:
+            result = await _do_advance(
+                conn,
+                project_id,
+                out=out,
+                target_stage=target_stage,
+                completion_event=completion_event,
+                detail=detail,
+                actor=actor,
+            )
+    if pending is not None:
+        raise pending
+    assert result is not None  # exactly one of pending / result is set on the happy path
+    return result
+
+
+async def _do_advance(
+    conn: AsyncConnection,
+    project_id: uuid.UUID,
+    *,
+    out: PipelineOut,
+    target_stage: str,
+    completion_event: str,
+    detail: dict[str, Any],
+    actor: str,
+) -> PipelineOut:
+    """Apply a resolved (legal, non-paused) advance: guarded stage move + the
+    close-old / enter-new ledger rows + the released terminal + the event."""
+    from_stage = out.current_stage
+    from_iteration = out.iteration
+    row = await repo.advance_pipeline_stage(
+        conn, project_id, from_stage=from_stage, to_stage=target_stage
+    )
+    if row is None:
+        # Another mover advanced this pipeline out of from_stage under us.
+        raise _conflict(
+            f"Pipeline is no longer at stage {from_stage}; the transition was applied concurrently."
+        )
+    await _record_stage_event(
+        conn,
+        project_id,
+        stage=from_stage,
+        event=completion_event,
+        iteration=from_iteration,
+        actor=actor,
+        detail=detail,
+    )
+    advanced = _pipeline_out(row)
+    await _record_stage_event(
+        conn,
+        project_id,
+        stage=advanced.current_stage,
+        event="enter",
+        iteration=advanced.iteration,
+        actor=actor,
+    )
+    change: dict[str, Any] = {
+        "event": completion_event,
+        "stage": from_stage,
+        "next_stage": advanced.current_stage,
+        **detail,
+    }
+    if pipeline.is_terminal(advanced.current_stage):
+        released = await repo.set_pipeline_status(conn, project_id, status="released")
+        if released is not None:
+            advanced = _pipeline_out(released)
+        await _record_stage_event(
+            conn,
+            project_id,
+            stage=advanced.current_stage,
+            event="released",
+            iteration=advanced.iteration,
+            actor=actor,
+        )
+        change["released"] = True
+    await _emit_pipeline(conn, advanced, change=change, actor=actor)
+    return advanced
+
+
+async def advance_pipeline(
+    engine: AsyncEngine,
+    project_id: uuid.UUID,
+    data: PipelineAdvanceRequest,
+    *,
+    actor: str,
+) -> PipelineOut:
+    """Complete the current stage and enter its immediate successor
+    (TITAN-WFL-001). An out-of-order ``target_stage`` is rejected (409) with a
+    logged rejected-transition event and no state change (TITAN-WFL-002).
+
+    Takes the engine (not a connection) so a rejected/paused outcome commits its
+    audit row before the 409 propagates — see :func:`_advance_or_complete`."""
+    detail: dict[str, Any] = {}
+    if data.note is not None:
+        detail["note"] = data.note
+    return await _advance_or_complete(
+        engine,
+        project_id,
+        target_stage=data.target_stage,
+        actor=actor,
+        completion_event="stage_complete",
+        detail=detail,
+    )
+
+
+async def mark_stage_not_applicable(
+    engine: AsyncEngine,
+    project_id: uuid.UUID,
+    data: PipelineNotApplicableRequest,
+    *,
+    actor: str,
+) -> PipelineOut:
+    """The single sanctioned skip (TITAN-WFL-002): the CEO Agent marks the current
+    stage ``NOT_APPLICABLE`` with a logged justification (e.g. a docs-only change
+    skipping DB engineering), which still advances only to the immediate
+    successor — never reorders or jumps. CEO authority is enforced at the route
+    (``pipeline:override``)."""
+    return await _advance_or_complete(
+        engine,
+        project_id,
+        target_stage=data.target_stage,
+        actor=actor,
+        completion_event="not_applicable",
+        detail={"justification": data.justification},
+    )
+
+
+async def retry_pipeline_stage(
+    conn: AsyncConnection,
+    project_id: uuid.UUID,
+    data: PipelineRetryRequest,
+    *,
+    actor: str,
+) -> PipelineOut:
+    """Re-enter the current stage, bumping its iteration count — a gate failure /
+    rework re-entry (§2.2 retry budget). The (stage, iteration) pair is what a
+    restarted orchestrator resumes on, so the counter is persisted."""
+    out = await ensure_pipeline(conn, project_id)
+    if out.status != "running":
+        raise _conflict(f"Pipeline is {out.status}, not running — cannot retry a stage.")
+    row = await repo.bump_pipeline_iteration(conn, project_id, stage=out.current_stage)
+    if row is None:
+        raise _conflict("Pipeline stage moved concurrently; retry not applied.")
+    out = _pipeline_out(row)
+    detail: dict[str, Any] = {}
+    if data.reason is not None:
+        detail["reason"] = data.reason
+    await _record_stage_event(
+        conn,
+        project_id,
+        stage=out.current_stage,
+        event="enter",
+        iteration=out.iteration,
+        actor=actor,
+        detail={"retry": True, **detail},
+    )
+    await _emit_pipeline(
+        conn,
+        out,
+        change={"event": "retry", "stage": out.current_stage, "iteration": out.iteration},
+        actor=actor,
+    )
+    return out
+
+
+async def resume_pipeline_budget(
+    conn: AsyncConnection, project_id: uuid.UUID, *, actor: str, redis: Redis | None = None
+) -> PipelineOut:
+    """Raise the project budget (clear the project hold + reset its rolling-spend
+    counter) so a pipeline paused on budget hold resumes exactly where it paused
+    (§ point 4). Idempotent — clearing an absent hold is a no-op that still logs
+    the resume intent."""
+    out = await ensure_pipeline(conn, project_id)
+    await llm.raise_budget(conn, scope="project", scope_id=project_id, redis=redis)
+    await _record_stage_event(
+        conn,
+        project_id,
+        stage=out.current_stage,
+        event="resumed",
+        iteration=out.iteration,
+        actor=actor,
+    )
+    await _emit_pipeline(
+        conn, out, change={"event": "resumed", "stage": out.current_stage}, actor=actor
+    )
+    return out
+
+
+async def reconcile_pipelines(conn: AsyncConnection) -> int:
+    """Seed a pipeline for every non-archived project that lacks one (idempotent);
+    returns how many were seeded. A (re)started orchestrator runs this to pick up
+    projects created while it was down — the resume of an IN-FLIGHT pipeline is
+    otherwise structural (the current_stage/iteration cursor lives in PostgreSQL,
+    so restarting reads it straight back)."""
+    seeded = 0
+    for project_id in await repo.projects_without_pipeline(conn):
+        await ensure_pipeline(conn, project_id, actor="orchestrator")
+        seeded += 1
+    return seeded
+
+
+async def resume_task_budget(
+    conn: AsyncConnection, task_id: uuid.UUID, *, actor: str, redis: Redis | None = None
+) -> TaskOut:
+    """Raise a task's budget (clear its task-scoped hold + reset its rolling-spend
+    counter) so a task paused on budget hold resumes exactly where it paused
+    (§ point 4). Emits a Kanban event so the board reflects the resume; idempotent
+    when no hold is present."""
+    task = await get_task(conn, task_id)
+    await llm.raise_budget(conn, scope="task", scope_id=task_id, redis=redis)
+    await _emit_kanban(
+        conn, task, from_status=task.status, to_status=task.status, action="resume", actor=actor
+    )
+    return task
 
 
 # --- read-only project aggregates ------------------------------------------
@@ -596,6 +1130,7 @@ async def add_task_dependency(
 
 
 __all__ = [
+    "PIPELINE_STAGES",
     "TASK_STATUSES",
     "Board",
     "BoardCard",
@@ -606,6 +1141,12 @@ __all__ = [
     "Graph",
     "GraphEdge",
     "GraphNode",
+    "PipelineAdvanceRequest",
+    "PipelineNotApplicableRequest",
+    "PipelineOut",
+    "PipelineRetryRequest",
+    "PipelineStageEventOut",
+    "PipelineView",
     "TaskCreate",
     "TaskOut",
     "TaskPatch",
@@ -614,16 +1155,25 @@ __all__ = [
     "TransitionRequest",
     "add_dependency",
     "add_task_dependency",
+    "advance_pipeline",
     "apply_transition",
     "board_for_project",
     "claim_and_assign",
     "create_task",
+    "ensure_pipeline",
+    "get_pipeline",
     "get_task",
     "graph_for_project",
     "handle_run_result",
     "invalid_transition",
     "list_tasks",
+    "mark_stage_not_applicable",
+    "pipeline",
     "ready_pool",
+    "reconcile_pipelines",
+    "resume_pipeline_budget",
+    "resume_task_budget",
+    "retry_pipeline_stage",
     "start_run_task",
     "task_in_project",
     "transitions",

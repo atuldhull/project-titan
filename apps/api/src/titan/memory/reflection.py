@@ -47,6 +47,7 @@ def _unknown_ref_error() -> ProblemException:
         problem_type=problem_type("validation"),
     )
 
+
 REFLECTION_MAX_TOKENS = 350  # ≤ 250-token target with headroom for JSON framing
 _APPLICABILITY = ("project-only", "org-candidate")
 
@@ -321,6 +322,14 @@ async def task_has_reflection(engine: AsyncEngine, task_id: uuid.UUID) -> bool:
     without one (wiring lands with the state-machine phases)."""
     async with engine.connect() as conn:
         return await repo.has_valid_reflection(conn, task_id)
+
+
+async def task_reflection_exists(conn: AsyncConnection, task_id: uuid.UUID) -> bool:
+    """Connection-scoped variant of the done-block hook (TITAN-BRN-025), so the
+    Vol 6 §2.5 task state machine can gate the ``merged -> done`` transition inside
+    its own transaction — reading uncommitted work in the same unit (unlike the
+    engine-based :func:`task_has_reflection`, which opens a fresh connection)."""
+    return await repo.has_valid_reflection(conn, task_id)
 
 
 # --- sprint retrospective (§12 loop 2) ---------------------------------------

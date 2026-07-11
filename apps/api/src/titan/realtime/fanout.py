@@ -154,6 +154,27 @@ async def _sprint(fanout: WsFanout, payload: dict[str, Any], ts: str) -> None:
     )
 
 
+async def _kanban(fanout: WsFanout, payload: dict[str, Any], ts: str) -> None:
+    # Vol 6 §2.5 (TITAN-WFL-009): a task state change surfaced as a Kanban card
+    # move. Carries the §2.5 lane so the board never sees the fine-grained
+    # engineering statuses.
+    card = payload["kanban"]
+    await fanout._publish_project(
+        str(card["project_id"]), protocol.TASK_KANBAN, card, ts, buffered=True
+    )
+
+
+async def _pipeline(fanout: WsFanout, payload: dict[str, Any], ts: str) -> None:
+    # Vol 6 §2.1 (TITAN-WFL-001): a pipeline stage transition, mirrored to the
+    # dashboard per project. The frame carries the current pipeline cursor + the
+    # specific change (stage_complete / rejected / not_applicable / released / …).
+    pipeline_state = payload["pipeline"]
+    frame = {"pipeline": pipeline_state, "change": payload.get("change", {})}
+    await fanout._publish_project(
+        str(pipeline_state["project_id"]), protocol.PIPELINE_UPDATED, frame, ts, buffered=True
+    )
+
+
 async def _agent_status(fanout: WsFanout, payload: dict[str, Any], ts: str) -> None:
     await fanout._publish_agents(
         {k: payload.get(k) for k in ("agent_id", "state", "current_task_id")}, ts
@@ -183,6 +204,8 @@ _HANDLERS: dict[str, Any] = {
     protocol.DECISION_RECORDED: _decision,
     protocol.SPRINT_UPDATED: _sprint,
     protocol.AGENT_STATUS: _agent_status,
+    protocol.TASK_KANBAN: _kanban,
+    protocol.PIPELINE_UPDATED: _pipeline,
     "notification.created": _notification,
     protocol.SYS_NOTICE: _sys_notice,
 }

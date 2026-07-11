@@ -25,6 +25,11 @@ from titan.orchestrator import service
 from titan.orchestrator.service import (
     DependencyCreate,
     DependencyOut,
+    PipelineAdvanceRequest,
+    PipelineNotApplicableRequest,
+    PipelineOut,
+    PipelineRetryRequest,
+    PipelineView,
     TaskCreate,
     TaskOut,
     TaskPatch,
@@ -39,6 +44,17 @@ _CreateInProject = Annotated[
 ]
 _ReadInProject = Annotated[Principal, Depends(Requires("task:read", project_param="project_id"))]
 _Authenticated = Annotated[Principal, Depends(RequiresAuth())]
+# Pipeline guards (Vol 6 §2.1). Reading rides on *:read; advancing needs the
+# explicit pipeline:advance; the NOT_APPLICABLE skip and budget-raise need
+# pipeline:override — the human/CEO authority (agent-role granularity deferred,
+# as with KB approval in Phase 39).
+_ReadPipeline = Annotated[Principal, Depends(Requires("pipeline:read", project_param="project_id"))]
+_AdvancePipeline = Annotated[
+    Principal, Depends(Requires("pipeline:advance", project_param="project_id"))
+]
+_OverridePipeline = Annotated[
+    Principal, Depends(Requires("pipeline:override", project_param="project_id"))
+]
 
 
 async def _authorize_task(request: Request, task: TaskOut, permission: str) -> None:
@@ -161,6 +177,113 @@ async def transition_task(
             comment=body.comment,
             # The TITAN-BRN-002 gate on `approve` reads wm:{task_id}:events.
             redis=request.app.state.redis,
+        )
+    set_etag(response, updated.version)
+    return updated
+
+
+# --- delivery pipeline routes (Vol 6 §2.1, TITAN-WFL-001/002) ---------------
+
+
+@router.get("/projects/{project_id}/pipeline", response_model=PipelineView)
+async def get_pipeline(
+    request: Request, project_id: uuid.UUID, principal: _ReadPipeline
+) -> PipelineView:
+    """The project's pipeline cursor (current stage + iteration) and the full
+    append-only stage history. First read lazily initializes the pipeline."""
+    async with request.app.state.engine.begin() as conn:
+        await projects.get_project(conn, project_id)  # 404 before touching pipeline
+        return await service.get_pipeline(conn, project_id)
+
+
+@router.post("/projects/{project_id}/pipeline:advance", response_model=PipelineOut)
+async def advance_pipeline(
+    request: Request,
+    project_id: uuid.UUID,
+    body: PipelineAdvanceRequest,
+    response: Response,
+    principal: _AdvancePipeline,
+) -> PipelineOut:
+    """Complete the current stage and enter its immediate successor. An
+    out-of-order ``target_stage`` is a 409 with a logged rejected-transition event
+    and no state change (TITAN-WFL-002)."""
+    engine = request.app.state.engine
+    async with engine.connect() as conn:
+        await projects.get_project(conn, project_id)  # 404 before mutating
+    updated = await service.advance_pipeline(engine, project_id, body, actor=str(principal.sub))
+    set_etag(response, updated.version)
+    return updated
+
+
+@router.post("/projects/{project_id}/pipeline:not-applicable", response_model=PipelineOut)
+async def pipeline_not_applicable(
+    request: Request,
+    project_id: uuid.UUID,
+    body: PipelineNotApplicableRequest,
+    response: Response,
+    principal: _OverridePipeline,
+) -> PipelineOut:
+    """Mark the current stage NOT_APPLICABLE with a logged justification — the
+    single sanctioned skip (TITAN-WFL-002), gated on pipeline:override."""
+    engine = request.app.state.engine
+    async with engine.connect() as conn:
+        await projects.get_project(conn, project_id)  # 404 before mutating
+    updated = await service.mark_stage_not_applicable(
+        engine, project_id, body, actor=str(principal.sub)
+    )
+    set_etag(response, updated.version)
+    return updated
+
+
+@router.post("/projects/{project_id}/pipeline:retry", response_model=PipelineOut)
+async def retry_pipeline(
+    request: Request,
+    project_id: uuid.UUID,
+    body: PipelineRetryRequest,
+    response: Response,
+    principal: _AdvancePipeline,
+) -> PipelineOut:
+    """Re-enter the current stage, bumping its iteration counter (a gate-failure
+    rework re-entry). The persisted (stage, iteration) is what a restarted
+    orchestrator resumes on."""
+    async with request.app.state.engine.begin() as conn:
+        await projects.get_project(conn, project_id)
+        updated = await service.retry_pipeline_stage(
+            conn, project_id, body, actor=str(principal.sub)
+        )
+    set_etag(response, updated.version)
+    return updated
+
+
+@router.post("/projects/{project_id}/pipeline:resume-budget", response_model=PipelineOut)
+async def resume_pipeline_budget(
+    request: Request,
+    project_id: uuid.UUID,
+    response: Response,
+    principal: _OverridePipeline,
+) -> PipelineOut:
+    """Raise the project budget (clear the project hold) so a pipeline paused on
+    budget hold resumes exactly where it paused (§ point 4)."""
+    async with request.app.state.engine.begin() as conn:
+        await projects.get_project(conn, project_id)
+        updated = await service.resume_pipeline_budget(
+            conn, project_id, actor=str(principal.sub), redis=request.app.state.redis
+        )
+    set_etag(response, updated.version)
+    return updated
+
+
+@router.post("/tasks/{task_id}:resume-budget", response_model=TaskOut)
+async def resume_task_budget(
+    request: Request, task_id: uuid.UUID, response: Response, principal: _Authenticated
+) -> TaskOut:
+    """Raise a task's budget (clear its task-scoped hold) so a paused task resumes
+    exactly where it paused. Object-authorized on task:transition."""
+    async with request.app.state.engine.begin() as conn:
+        task = await service.get_task(conn, task_id)
+        await _authorize_task(request, task, "task:transition")
+        updated = await service.resume_task_budget(
+            conn, task_id, actor=str(principal.sub), redis=request.app.state.redis
         )
     set_etag(response, updated.version)
     return updated

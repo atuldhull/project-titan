@@ -34,6 +34,9 @@ DECISION_RECORDED = "decision.recorded"
 AGENT_STATUS = "agent.status"
 SPRINT_UPDATED = "sprint.updated"
 SYS_NOTICE = "sys.notice"
+# Vol 6 §2.5 / §2.1 (Phase 41): the Kanban card-move and pipeline stage frames.
+TASK_KANBAN = "task.kanban"
+PIPELINE_UPDATED = "pipeline.updated"
 
 SERVER_EVENT_TYPES: frozenset[str] = frozenset(
     {
@@ -47,6 +50,8 @@ SERVER_EVENT_TYPES: frozenset[str] = frozenset(
         AGENT_STATUS,
         SPRINT_UPDATED,
         SYS_NOTICE,
+        TASK_KANBAN,
+        PIPELINE_UPDATED,
     }
 )
 
@@ -206,6 +211,7 @@ __all__ = [
     "ERROR",
     "MESSAGE_CREATED",
     "PING",
+    "PIPELINE_UPDATED",
     "PONG",
     "PROTOCOL_VERSION",
     "RUN_FINISHED",
@@ -217,6 +223,7 @@ __all__ = [
     "SYS_NOTICE",
     "SYS_RESYNC",
     "TASK_CREATED",
+    "TASK_KANBAN",
     "TASK_UPDATED",
     "TOPIC_AGENTS_STATUS",
     "TOPIC_NOTIFICATIONS_ME",

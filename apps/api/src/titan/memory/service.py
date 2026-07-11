@@ -105,6 +105,7 @@ from titan.memory.reflection import (
     generate_task_reflection,
     sprint_retrospective,
     task_has_reflection,
+    task_reflection_exists,
 )
 from titan.memory.retrieval import (
     CrossEncoderReranker,
@@ -624,6 +625,7 @@ __all__ = [
     "sprint_retrospective",
     "supersede_decision",
     "task_has_reflection",
+    "task_reflection_exists",
     "token_cost",
     "traverse",
     "write_events",

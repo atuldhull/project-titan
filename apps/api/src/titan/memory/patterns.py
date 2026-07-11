@@ -132,7 +132,10 @@ async def mine_patterns(
     # TITAN-BRN-023: the miner RUN is visible in the ledger regardless of whether
     # it minted anything (per-pattern 'write' rows alone would hide a 0-novel run).
     await _log_miner_run(
-        engine, project_id, scanned=len(decisions), candidates=len(candidates),
+        engine,
+        project_id,
+        scanned=len(decisions),
+        candidates=len(candidates),
         novel=[p.record_id for p in minted],
     )
     logger.info("memory.pattern_miner_run", project_id=str(project_id), novel=novel)
@@ -161,8 +164,13 @@ async def _log_miner_run(
             action="write",
             record_ids=novel,
             detail=json.dumps(
-                {"miner_run": True, "scope": f"project:{project_id}",
-                 "decisions_scanned": scanned, "candidates": candidates, "novel": len(novel)}
+                {
+                    "miner_run": True,
+                    "scope": f"project:{project_id}",
+                    "decisions_scanned": scanned,
+                    "candidates": candidates,
+                    "novel": len(novel),
+                }
             ),
         )
 

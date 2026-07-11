@@ -8,12 +8,15 @@ loader, and the FastAPI router stay private to the package. The canonical
 Pydantic DTOs — never provider payloads — cross this boundary.
 """
 
+import uuid
 from pathlib import Path
 
 import httpx
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from titan.llm import budget
+from titan.llm import repository as repo
 from titan.llm.config import ConfigLoader, GatewayConfig, parse_config
 from titan.llm.errors import (
     AllProvidersDownError,
@@ -88,6 +91,35 @@ def build_gateway(
     return LlmGateway(loader, http, pricebook=pricebook, engine=engine, redis=redis)
 
 
+# --- budget-hold accessors (TITAN-OPS-021, wired into the state machines) ----
+
+
+async def active_budget_hold(
+    conn: AsyncConnection, *, project_id: uuid.UUID | None, task_id: uuid.UUID | None
+) -> str | None:
+    """The reason a project OR task is on budget hold, else None. The Phase-41
+    scheduler and pipeline consult this to PAUSE work at 100% budget (no new LLM
+    calls) without losing the underlying resumable state (§ budget_hold)."""
+    row = await repo.get_hold(conn, project_id=project_id, task_id=task_id)
+    return row.reason if row is not None else None
+
+
+async def raise_budget(
+    conn: AsyncConnection, *, scope: str, scope_id: uuid.UUID, redis: Redis | None = None
+) -> None:
+    """Clear a persisted budget hold ("raise the budget") so paused work resumes
+    exactly where it paused. ``scope`` is 'project' or 'task'.
+
+    Also resets the Redis rolling-spend counter for the scope when ``redis`` is
+    given: clearing only the DB hold would leave the counter at cap, so the very
+    next ``reserve()`` would re-breach and immediately re-hold — the resume would
+    not stick for actual LLM work (TITAN-OPS-021)."""
+    await repo.clear_hold(conn, scope=scope, scope_id=scope_id)
+    if redis is not None:
+        key = budget.spend_key(scope, scope_id)
+        await redis.delete(key, f"{key}:notified80")
+
+
 __all__ = [
     "ChatRequest",
     "ChatResponse",
@@ -108,8 +140,10 @@ __all__ = [
     "ToolResultPart",
     "ToolUsePart",
     "Usage",
+    "active_budget_hold",
     "build_gateway",
     "compute_cost",
     "is_transient_error",
     "parse_config",
+    "raise_budget",
 ]

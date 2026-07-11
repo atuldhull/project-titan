@@ -45,6 +45,10 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # doc types (coding_standard/decision_record) — Vol 5 §10.3, Phase 39.
         "kb:propose",
         "kb:approve",
+        # Drive the delivery pipeline + the CEO NOT_APPLICABLE / budget-raise
+        # override (Vol 6 §2.1/§2.5, Phase 41).
+        "pipeline:advance",
+        "pipeline:override",
         "*:read",
     ],
     "maintainer": [
@@ -61,6 +65,9 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # Propose + approve KB changes (human sign-off on protected types), §10.3.
         "kb:propose",
         "kb:approve",
+        # Maintainer advances the pipeline; the NOT_APPLICABLE skip + budget-raise
+        # (pipeline:override) stay with Admin/Owner — the human sign-off gate.
+        "pipeline:advance",
         "*:read",
     ],
     # The machine/agent bundle (TITAN-BCK-021): task flow + the sandbox
@@ -76,6 +83,9 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # types (§10.3); the human sign-off on protected types blocks agent approval.
         "kb:propose",
         "kb:approve",
+        # Agents advance the delivery pipeline; the NOT_APPLICABLE skip stays a
+        # human/override authority (Vol 6 §2.2, Phase 41).
+        "pipeline:advance",
         "workspace:read",
         "workspace:write",
         "terminal:run",

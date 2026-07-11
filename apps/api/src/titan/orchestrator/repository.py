@@ -241,3 +241,153 @@ async def graph_edges(conn: AsyncConnection, project_id: uuid.UUID) -> Sequence[
         {"pid": project_id},
     )
     return result.all()
+
+
+# --- delivery pipeline state machine (Vol 6 §2.1, TITAN-WFL-001) ------------
+
+_PIPELINE_COLS = "project_id, current_stage, iteration, status, created_at, updated_at, version"
+
+
+async def ensure_pipeline_state(
+    conn: AsyncConnection, project_id: uuid.UUID, *, initial_stage: str
+) -> tuple[Row[Any], bool]:
+    """Idempotently create the project's pipeline row at ``initial_stage``.
+
+    Returns ``(row, inserted)`` where ``inserted`` is True ONLY for the caller
+    that actually created the row. ``INSERT ... ON CONFLICT DO NOTHING RETURNING``
+    returns a row iff this statement inserted (a conflict returns nothing), so two
+    concurrent first-initializers see exactly one ``inserted=True`` — that caller
+    alone logs the opening 'enter' event, so the append-only ledger never carries a
+    duplicate opening row (TITAN-WFL-001)."""
+    result = await conn.execute(
+        text(
+            "INSERT INTO pipeline_states (project_id, current_stage) "
+            f"VALUES (:pid, :stage) ON CONFLICT (project_id) DO NOTHING RETURNING {_PIPELINE_COLS}"
+        ),
+        {"pid": project_id, "stage": initial_stage},
+    )
+    inserted = result.one_or_none()
+    if inserted is not None:
+        return inserted, True
+    existing = await get_pipeline_state(conn, project_id)
+    assert existing is not None  # a conflict means the row is committed by a peer
+    return existing, False
+
+
+async def get_pipeline_state(conn: AsyncConnection, project_id: uuid.UUID) -> Row[Any] | None:
+    result = await conn.execute(
+        text(f"SELECT {_PIPELINE_COLS} FROM pipeline_states WHERE project_id = :pid"),
+        {"pid": project_id},
+    )
+    return result.one_or_none()
+
+
+async def advance_pipeline_stage(
+    conn: AsyncConnection,
+    project_id: uuid.UUID,
+    *,
+    from_stage: str,
+    to_stage: str,
+) -> Row[Any] | None:
+    """Guarded stage advance: applies ONLY while the row is still at
+    ``from_stage`` (``WHERE current_stage = :from``), resetting iteration to 0 for
+    the new stage. Returns None if the pipeline already left ``from_stage`` — which
+    makes the advance race-safe and idempotent (a re-fired advance no-ops)."""
+    result = await conn.execute(
+        text(
+            "UPDATE pipeline_states SET current_stage = :to, iteration = 0, "
+            "version = version + 1 WHERE project_id = :pid AND current_stage = :from "
+            f"RETURNING {_PIPELINE_COLS}"
+        ),
+        {"pid": project_id, "from": from_stage, "to": to_stage},
+    )
+    return result.one_or_none()
+
+
+async def bump_pipeline_iteration(
+    conn: AsyncConnection, project_id: uuid.UUID, *, stage: str
+) -> Row[Any] | None:
+    """Increment the current stage's iteration counter (a retry / re-entry),
+    guarded on the stage so a stale caller cannot bump the wrong stage."""
+    result = await conn.execute(
+        text(
+            "UPDATE pipeline_states SET iteration = iteration + 1, version = version + 1 "
+            "WHERE project_id = :pid AND current_stage = :stage "
+            f"RETURNING {_PIPELINE_COLS}"
+        ),
+        {"pid": project_id, "stage": stage},
+    )
+    return result.one_or_none()
+
+
+async def set_pipeline_status(
+    conn: AsyncConnection, project_id: uuid.UUID, *, status: str
+) -> Row[Any] | None:
+    result = await conn.execute(
+        text(
+            "UPDATE pipeline_states SET status = :status, version = version + 1 "
+            f"WHERE project_id = :pid RETURNING {_PIPELINE_COLS}"
+        ),
+        {"pid": project_id, "status": status},
+    )
+    return result.one_or_none()
+
+
+async def append_stage_event(
+    conn: AsyncConnection,
+    project_id: uuid.UUID,
+    *,
+    stage: str,
+    event: str,
+    iteration: int,
+    actor: str,
+    detail: str,
+) -> None:
+    """Append one row to the immutable stage ledger. ``detail`` is a JSON string."""
+    await conn.execute(
+        text(
+            "INSERT INTO pipeline_stage_events "
+            "(project_id, stage, event, iteration, actor, detail) "
+            "VALUES (:pid, :stage, :event, :iteration, :actor, CAST(:detail AS jsonb))"
+        ),
+        {
+            "pid": project_id,
+            "stage": stage,
+            "event": event,
+            "iteration": iteration,
+            "actor": actor,
+            "detail": detail,
+        },
+    )
+
+
+async def stage_events(conn: AsyncConnection, project_id: uuid.UUID) -> Sequence[Row[Any]]:
+    """The project's full stage history in insert order (ledger replay)."""
+    result = await conn.execute(
+        text(
+            "SELECT id, project_id, stage, event, iteration, actor, detail, at "
+            "FROM pipeline_stage_events WHERE project_id = :pid ORDER BY id ASC"
+        ),
+        {"pid": project_id},
+    )
+    return result.all()
+
+
+async def active_pipeline_projects(conn: AsyncConnection) -> Sequence[uuid.UUID]:
+    """Project ids whose pipeline is still running — the reconciler's work set."""
+    result = await conn.execute(
+        text("SELECT project_id FROM pipeline_states WHERE status = 'running'")
+    )
+    return [row.project_id for row in result.all()]
+
+
+async def projects_without_pipeline(conn: AsyncConnection) -> Sequence[uuid.UUID]:
+    """Non-archived projects that have no pipeline row yet (reconciler seeds them)."""
+    result = await conn.execute(
+        text(
+            "SELECT p.id FROM projects p "
+            "LEFT JOIN pipeline_states ps ON ps.project_id = p.id "
+            "WHERE ps.project_id IS NULL AND p.status <> 'archived'"
+        )
+    )
+    return [row.id for row in result.all()]
