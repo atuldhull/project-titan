@@ -58,9 +58,7 @@ def upgrade() -> None:
             "project_id", "stage", "version", name="uq_handoff_artifacts_project_stage_version"
         ),
     )
-    op.create_index(
-        "ix_handoff_artifacts_project_id", "handoff_artifacts", ["project_id", "stage"]
-    )
+    op.create_index("ix_handoff_artifacts_project_id", "handoff_artifacts", ["project_id", "stage"])
 
     # -- TITAN-WFL-004: the append-only gate ledger ----------------------------
     op.create_table(

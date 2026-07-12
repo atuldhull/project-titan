@@ -150,6 +150,7 @@ def test_propose_then_approve_materialises_current_version(api: dict[str, Any]) 
         await pipeline.drain()
         async with engine.connect() as conn:
             doc = await repo.get_kb_document_by_slug(conn, slug)
+            assert doc is not None, f"approval should have materialized the doc {slug!r}"
             versions = await repo.list_kb_versions(conn, doc.id)
             rec = (
                 await conn.execute(
@@ -225,6 +226,7 @@ def test_new_version_supersedes_previous_out_of_titan_kb(api: dict[str, Any]) ->
         await pipeline.drain()
         async with engine.connect() as conn:
             doc = await repo.get_kb_document_by_slug(conn, slug)
+            assert doc is not None, f"both revisions should share the doc {slug!r}"
             v1status = (
                 await conn.execute(
                     text("SELECT status, superseded_by FROM brain.memory_records WHERE id = :id"),
@@ -703,6 +705,7 @@ def test_traversal_edge_type_filter_and_scope_isolation(api: dict[str, Any]) -> 
             await kg.ensure_node(conn, scope=scope_b, node_type="project", name="P")
             other = await kg.ensure_node(conn, scope=scope_b, node_type="component", name="secretC")
             p_b = await repo.get_kg_node_id(conn, scope=scope_b, node_type="project", name="P")
+            assert p_b is not None, "ensure_node above must have created project 'P' in scope_b"
             await kg.add_edge(conn, src=other, dst=p_b, edge_type="PART_OF")
         # Filter to PART_OF only: from P we reach C (depth 1) but NOT D/L (those
         # are reached via DECIDED_FOR/DERIVED_FROM, now filtered out).

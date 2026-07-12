@@ -77,9 +77,7 @@ def upgrade() -> None:
         sa.Column("record_class", sa.Text, nullable=False),
         sa.Column("packets", sa.Integer, nullable=False, server_default=sa.text("0")),
         sa.Column("citations", sa.Integer, nullable=False, server_default=sa.text("0")),
-        sa.Column(
-            "at", TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
-        ),
+        sa.Column("at", TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.UniqueConstraint("week", "record_class", name="uq_retrieval_feedback_week_class"),
         schema="brain",
     )

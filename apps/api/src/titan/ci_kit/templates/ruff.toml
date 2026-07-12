@@ -1,0 +1,43 @@
+# The Engineering Standards Constitution — Vol 6 §6, Python lint surface.
+# Installed by `titan-ci-init`. Edit the constitution, not this file: every rule
+# below cites the TITAN-WFL id it enforces, and a project that loosens one has
+# opted out of the constitution rather than configured its linter.
+
+target-version = "py312"
+line-length = 100
+
+[lint]
+select = [
+    "E",      # pycodestyle — includes E722, bare except (§6.3 TITAN-WFL-028, R5)
+    "F",      # pyflakes
+    "W",      # pycodestyle warnings
+    "I",      # isort — deterministic import order
+    "N",      # pep8-naming — the §6.2 table (TITAN-WFL-027)
+    "B",      # bugbear — includes B904 (raise ... from), §6.3 error chaining
+    "S",      # bandit — hardcoded secrets and unsafe calls (§6.6 R3)
+    "ASYNC",  # blocking calls in async code
+    "T20",    # no print() — §6.4 requires structured logging (TITAN-WFL-029)
+    "ERA",    # commented-out code (§6.6 R7)
+    "TD",     # TODO/FIXME hygiene (§6.6 R7: placeholder code is blocking)
+    "RUF",
+]
+ignore = [
+    # The reviewer, not the linter, decides whether a TODO's author/link matter;
+    # TD002/TD003 demand metadata on a construct §6.6 R7 bans outright.
+    "TD002",
+    "TD003",
+]
+
+[lint.per-file-ignores]
+# Tests assert on internals and use fixtures the bandit rules misread.
+"tests/**" = ["S101", "S105", "S106"]
+# Migrations are generated DDL, not application code.
+"migrations/**" = ["E501", "N999"]
+
+[lint.flake8-tidy-imports]
+# §6.1 TITAN-WFL-022: layering is enforced by import-linter, which understands
+# the layer graph. Relative imports across packages defeat it by hiding the edge.
+ban-relative-imports = "parents"
+
+[format]
+docstring-code-format = true

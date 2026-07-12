@@ -71,9 +71,7 @@ def upgrade() -> None:
             sa.ForeignKey("projects.id", ondelete="CASCADE"),
             primary_key=True,
         ),
-        sa.Column(
-            "current_stage", sa.Text, nullable=False, server_default=sa.text("'ceo_vision'")
-        ),
+        sa.Column("current_stage", sa.Text, nullable=False, server_default=sa.text("'ceo_vision'")),
         sa.Column("iteration", sa.Integer, nullable=False, server_default=sa.text("0")),
         sa.Column("status", sa.Text, nullable=False, server_default=sa.text("'running'")),
         *_conventions(),
@@ -101,9 +99,7 @@ def upgrade() -> None:
         sa.Column("actor", sa.Text, nullable=False),
         # justification (NOT_APPLICABLE), rejection reason, target stage, etc.
         sa.Column("detail", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
-        sa.Column(
-            "at", TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
-        ),
+        sa.Column("at", TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")),
     )
     # History replay + the "reconstruct the full history" check read in insert
     # order per project.

@@ -1,0 +1,93 @@
+# The Engineering Standards Constitution — Vol 6 §6.
+# Installed by `titan-ci-init`. This workflow is the machine half of the
+# constitution: it rejects what §6.1-6.5 forbid, before a reviewer ever looks
+# (ADR-WFL-04 — standards enforced by machines first, reviewer second).
+#
+# The gates are NOT re-implemented here. Every step below defers to
+# `titan.ci_kit.gates.runner`, the same entry point the kit's own fixture tests
+# drive, so what CI enforces and what the kit was tested against cannot drift.
+
+name: Constitution
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  constitution:
+    name: Vol 6 §6 gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # TITAN-WFL-030 diffs against the merge-base, which needs real history.
+          # A shallow clone silently measures coverage over the wrong line set.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the gate toolchain
+        run: python -m pip install --upgrade ruff import-linter pytest pytest-cov
+
+      - name: Install project dependencies
+        run: |
+          if [ -f pyproject.toml ]; then python -m pip install -e .; fi
+          if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
+
+      # TITAN-WFL-030 needs a coverage report to gate on. This must run BEFORE
+      # the gates: a missing coverage.xml is reported as an ERROR, not a pass.
+      - name: Test suite with coverage
+        run: pytest --cov --cov-branch --cov-report=xml
+
+      - name: Constitutional gates
+        env:
+          PYTHONPATH: .titan/ci
+        run: python -m titan.ci_kit.gates.runner --workspace .
+
+  # On the base branch, record the project-wide coverage floor the
+  # never-decrease rule (TITAN-WFL-030) compares against.
+  baseline:
+    name: Record coverage floor
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: constitution
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the gate toolchain
+        run: python -m pip install --upgrade ruff import-linter pytest pytest-cov
+
+      - name: Install project dependencies
+        run: |
+          if [ -f pyproject.toml ]; then python -m pip install -e .; fi
+          if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
+
+      - name: Test suite with coverage
+        run: pytest --cov --cov-branch --cov-report=xml
+
+      - name: Update the coverage floor
+        env:
+          PYTHONPATH: .titan/ci
+        run: |
+          python -m titan.ci_kit.gates.runner --workspace . --gate diff_coverage --update-baseline
+          if ! git diff --quiet -- .titan/ci/coverage-baseline.json; then
+            git config user.name "titan-ci"
+            git config user.email "ci@titan.local"
+            git add .titan/ci/coverage-baseline.json
+            git commit -m "chore(ci): update the project coverage floor"
+            git push
+          fi

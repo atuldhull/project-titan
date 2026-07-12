@@ -10,7 +10,7 @@ zero further work; the gate ledger exports every pass/fail with reasons.
 import asyncio
 import uuid
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from sqlalchemy import text
@@ -55,7 +55,7 @@ def _submit(
 def _pipeline(api: dict[str, Any], pid: str) -> dict[str, Any]:
     r = api["client"].get(f"/api/v1/projects/{pid}/pipeline", headers=api["token_for"]("owner"))
     assert r.status_code == 200, r.text
-    return r.json()["pipeline"]
+    return cast(dict[str, Any], r.json()["pipeline"])
 
 
 def _ledger(api: dict[str, Any], pid: str) -> list[dict[str, Any]]:
@@ -63,7 +63,7 @@ def _ledger(api: dict[str, Any], pid: str) -> list[dict[str, Any]]:
         f"/api/v1/projects/{pid}/handoffs/gate-ledger", headers=api["token_for"]("owner")
     )
     assert r.status_code == 200, r.text
-    return r.json()["evaluations"]
+    return cast(list[dict[str, Any]], r.json()["evaluations"])
 
 
 # --- happy path + schema gate ----------------------------------------------
@@ -186,10 +186,17 @@ def test_concurrent_failures_at_budget_escalate_exactly_once(api: dict[str, Any]
                 engine, pid_u, "ceo_vision", VALID_BRIEF, submitted_by="ceo"
             )
         # Two concurrent 4th submissions race the escalation boundary.
-        return await asyncio.gather(
-            handoffs.submit_artifact(engine, pid_u, "ceo_vision", VALID_BRIEF, submitted_by="ceo"),
-            handoffs.submit_artifact(engine, pid_u, "ceo_vision", VALID_BRIEF, submitted_by="ceo"),
-            return_exceptions=True,
+        # gather() with a fixed arity is typed as a tuple; the caller wants a list.
+        return list(
+            await asyncio.gather(
+                handoffs.submit_artifact(
+                    engine, pid_u, "ceo_vision", VALID_BRIEF, submitted_by="ceo"
+                ),
+                handoffs.submit_artifact(
+                    engine, pid_u, "ceo_vision", VALID_BRIEF, submitted_by="ceo"
+                ),
+                return_exceptions=True,
+            )
         )
 
     results = run_async(scenario)

@@ -1,0 +1,24 @@
+#!/bin/sh
+# TITAN-WFL-027 — Conventional Commits (Vol 6 §6.2).
+# Installed by `titan-ci-init` into .githooks/ and activated with
+# `git config core.hooksPath .githooks`.
+#
+# The same check runs in CI over every commit in the PR, so removing this hook
+# does not remove the rule — it only moves the rejection later, where it costs
+# the agent a full loop cycle instead of a retype.
+set -e
+
+# Prefer python3, but fall back to python: Git for Windows ships an sh that runs
+# this hook against a PATH where only `python` exists, and a hook that silently
+# fails to start is a hook that enforces nothing.
+if command -v python3 >/dev/null 2>&1; then
+  py=python3
+elif command -v python >/dev/null 2>&1; then
+  py=python
+else
+  echo "commit-msg hook: no python on PATH — cannot enforce TITAN-WFL-027" >&2
+  exit 1
+fi
+
+root=$(git rev-parse --show-toplevel)
+PYTHONPATH="$root/.titan/ci" exec "$py" -m titan.ci_kit.gates.commit_msg "$1"

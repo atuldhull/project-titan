@@ -7,7 +7,7 @@ records the constitution version it judged against (§2.3 H5 DoD).
 
 import uuid
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -111,7 +111,7 @@ def _ledger(api: dict[str, Any], pid: str) -> list[dict[str, Any]]:
         f"/api/v1/projects/{pid}/handoffs/gate-ledger", headers=api["token_for"]("owner")
     )
     assert r.status_code == 200, r.text
-    return r.json()["evaluations"]
+    return cast(list[dict[str, Any]], r.json()["evaluations"])
 
 
 def _active_constitution_version(api: dict[str, Any]) -> int:

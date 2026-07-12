@@ -45,6 +45,12 @@ rerank = ["sentence-transformers[onnx]>=4.0"]
 [project.scripts]
 # The operator CLI (Phase 35: `titan memory rebuild-index`, TITAN-BRN-004).
 titan = "titan.cli:main"
+# The constitution CI kit installer (Phase 45, Vol 6 §6). The DevOps agent runs
+# this through the Phase-21 terminal tool inside its sandbox, where it is on PATH
+# via infra/docker/titan-sandbox.Dockerfile — hence a dedicated entry point
+# rather than a `titan` subcommand: the sandbox carries titan.ci_kit ALONE, and
+# titan.cli would drag the whole API in behind it.
+titan-ci-init = "titan.ci_kit.__main__:main"
 
 [dependency-groups]
 dev = [
@@ -96,6 +102,11 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "TID", "ASYNC"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/titan/llm/**" = ["TID251"]
+# Phase 43 seeds the constitution by embedding Vol 6 §6 VERBATIM, and its sha256
+# is the artifact's checksum — rewrapping the prose to 100 cols would change the
+# bytes and therefore the checksum. The long lines are the spec's own paragraphs,
+# not code. (This was failing `make lint-style` unnoticed since Phase 43.)
+"alembic/versions/0021_constitution_and_clarification.py" = ["E501"]
 
 [tool.mypy]
 strict = true
@@ -197,10 +208,59 @@ source_modules = [
     "titan.constitution",
     "titan.clarification",
     "titan.loop",
+    "titan.ci_kit",
     "titan.events",
     "titan.observability",
 ]
 forbidden_modules = ["anthropic", "openai", "google", "ollama"]
+
+[[tool.importlinter.contracts]]
+# Phase 45. This is not style — it is the kit's shipping constraint. The whole
+# titan/ci_kit tree is COPY'd into the Alpine sandbox image and vendored into
+# every generated workspace, both of which have a bare python3 and NO package
+# index (the sandbox is network-denied). One import of titan.settings would pull
+# in FastAPI + SQLAlchemy + Pydantic and break `titan-ci-init` everywhere it
+# actually runs. The gates must stay stdlib-only.
+name = "The constitution CI kit is self-contained: stdlib only, no titan imports (Phase 45)"
+type = "forbidden"
+source_modules = ["titan.ci_kit"]
+forbidden_modules = [
+    "titan.main",
+    "titan.worker",
+    "titan.cli",
+    "titan.settings",
+    "titan.clients",
+    "titan.db",
+    "titan.schema",
+    "titan.gateway",
+    "titan.identity",
+    "titan.projects",
+    "titan.orchestrator",
+    "titan.agents",
+    "titan.runs",
+    "titan.messaging",
+    "titan.memory",
+    "titan.plugins",
+    "titan.llm",
+    "titan.tools",
+    "titan.realtime",
+    "titan.intake",
+    "titan.runtime",
+    "titan.conflict",
+    "titan.handoffs",
+    "titan.constitution",
+    "titan.clarification",
+    "titan.loop",
+    "titan.events",
+    "titan.observability",
+    "fastapi",
+    "sqlalchemy",
+    "pydantic",
+    "redis",
+    "httpx",
+    "structlog",
+    "alembic",
+]
 
 [[tool.importlinter.contracts]]
 name = "Shared libraries never import domain modules (Vol 3 §3: events/observability are libraries)"

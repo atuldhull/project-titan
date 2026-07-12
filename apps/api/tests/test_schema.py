@@ -46,6 +46,25 @@ TOOLS_TABLES = {"tool_audit", "tool_approvals", "project_egress_hosts"}
 CONFLICT_TABLES = {"conflicts", "conflict_transitions", "merge_vetoes", "conflict_thresholds"}
 # …plus the Orchestrator watchdog's live config added in Phase 32 (migration 0013).
 WATCHDOG_TABLES = {"watchdog_config"}
+# …plus the per-project delivery-pipeline state machine added in Phase 41
+# (migration 0019, Vol 6 §2.1).
+PIPELINE_TABLES = {"pipeline_states", "pipeline_stage_events"}
+# …plus the handoff artifacts + auditable gate ledger added in Phase 42
+# (migration 0020, Vol 6 §2.2–2.3).
+HANDOFF_TABLES = {"handoff_artifacts", "gate_evaluations"}
+# …plus the versioned constitution + CEO clarification batches added in Phase 43
+# (migration 0021, Vol 6 §6, §2.4).
+CONSTITUTION_TABLES = {
+    "constitution_versions",
+    "clarification_batches",
+    "clarification_questions",
+}
+# …plus the self-improvement loop engine added in Phase 44 (migration 0022,
+# Vol 6 §3).
+LOOP_TABLES = {"loop_records", "loop_cycles", "loop_findings", "loop_stage_events"}
+# NOTE: the Memory/KB/KG tables (Phases 33–39, migrations 0014–0018) live in the
+# ``brain`` schema, which inspect().get_table_names() does not enumerate by
+# default — so they are intentionally absent from this public-schema census.
 EXPECTED_TABLES = (
     CORE_TABLES
     | IDENTITY_TABLES
@@ -54,6 +73,10 @@ EXPECTED_TABLES = (
     | TOOLS_TABLES
     | CONFLICT_TABLES
     | WATCHDOG_TABLES
+    | PIPELINE_TABLES
+    | HANDOFF_TABLES
+    | CONSTITUTION_TABLES
+    | LOOP_TABLES
 )
 
 EXPECTED_INDEXES = {
@@ -95,7 +118,7 @@ PARTIAL_INDEXES = {
 }
 
 
-def test_all_fifteen_tables_exist(migrated_engine: AsyncEngine) -> None:
+def test_public_schema_table_census_is_exact(migrated_engine: AsyncEngine) -> None:
     async def tables() -> set[str]:
         async with migrated_engine.connect() as conn:
             return set(await conn.run_sync(lambda sc: inspect(sc).get_table_names()))

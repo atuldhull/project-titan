@@ -167,13 +167,9 @@ def upgrade() -> None:
         # pass | fail | n/a
         sa.Column("verdict", sa.Text, nullable=False, server_default=sa.text("'n/a'")),
         sa.Column("detail", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
-        sa.Column(
-            "at", TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
-        ),
+        sa.Column("at", TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")),
     )
-    op.create_index(
-        "ix_loop_stage_events_loop", "loop_stage_events", ["loop_id", "id"]
-    )
+    op.create_index("ix_loop_stage_events_loop", "loop_stage_events", ["loop_id", "id"])
     op.execute(
         "CREATE TRIGGER trg_loop_stage_events_append_only "
         "BEFORE UPDATE OR DELETE ON loop_stage_events "

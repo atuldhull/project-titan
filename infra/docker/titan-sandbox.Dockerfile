@@ -18,6 +18,20 @@ RUN apk add --no-cache \
       coreutils \
       bash
 
+# The constitution CI enforcement kit (Phase 45, Vol 6 §6). Baked into the image
+# rather than pip-installed at use time because the sandbox runs with deny-all
+# egress: there is no index to install from. titan/ci_kit is stdlib-only and
+# imports nothing else from titan (enforced by the "CI kit is self-contained"
+# import-linter contract), so copying the package root's __init__ plus the kit
+# is sufficient for `python3 -m titan.ci_kit...` to resolve.
+COPY apps/api/src/titan/__init__.py /opt/titan-ci-kit/titan/__init__.py
+COPY apps/api/src/titan/ci_kit /opt/titan-ci-kit/titan/ci_kit
+ENV PYTHONPATH=/opt/titan-ci-kit
+
+# The one command the DevOps agent runs via the Phase-21 terminal tool.
+RUN printf '#!/bin/sh\nexec python3 -m titan.ci_kit "$@"\n' > /usr/local/bin/titan-ci-init \
+    && chmod 0755 /usr/local/bin/titan-ci-init
+
 # A non-root identity matching the controller's default user (10001). The
 # controller still enforces user 10001 at runtime; this makes the home dir and
 # git config writable under /tmp when needed.

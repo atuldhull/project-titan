@@ -6,6 +6,8 @@ unknown fields (extra="forbid"), enforces its key constraints, and produces a
 field-level error report on a missing required field.
 """
 
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
 
@@ -13,7 +15,7 @@ from titan.handoffs import gates
 from titan.handoffs import schemas as s
 
 # One representative instance per artifact type, from the §2.3 field lists.
-EXAMPLES: dict[str, dict] = {
+EXAMPLES: dict[str, dict[str, Any]] = {
     "UserRequest": dict(raw_text="Build me a Netflix clone", org="acme"),
     "ProjectBrief": dict(
         vision="A local-first streaming app.",

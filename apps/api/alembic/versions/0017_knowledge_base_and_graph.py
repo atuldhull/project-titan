@@ -94,9 +94,7 @@ def upgrade() -> None:
         sa.Column(
             "created_at", TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
         ),
-        sa.CheckConstraint(
-            "status IN ('active','deprecated')", name="ck_kb_documents_status"
-        ),
+        sa.CheckConstraint("status IN ('active','deprecated')", name="ck_kb_documents_status"),
         sa.CheckConstraint(_in_list("doc_type", _DOC_TYPES), name="ck_kb_documents_doc_type"),
         schema="brain",
     )
@@ -246,9 +244,7 @@ def upgrade() -> None:
     # -- ingest_outbox.collection: route a chunk's embedding to its collection --
     op.add_column(
         "ingest_outbox",
-        sa.Column(
-            "collection", sa.Text, nullable=False, server_default=sa.text("'titan_memory'")
-        ),
+        sa.Column("collection", sa.Text, nullable=False, server_default=sa.text("'titan_memory'")),
         schema="brain",
     )
 

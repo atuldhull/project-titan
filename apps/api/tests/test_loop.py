@@ -11,7 +11,7 @@ contains no implementation-side chain-of-thought.
 
 import uuid
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from sqlalchemy import text
@@ -138,13 +138,13 @@ def _run(api: dict[str, Any], tid: str, driver: ScriptedDriver, **kw: Any) -> lo
             **kw,
         )
 
-    return run_async(_do)
+    return cast(loop.LoopOutcome, run_async(_do))
 
 
 def _loop_view(api: dict[str, Any], tid: str) -> dict[str, Any]:
     r = api["client"].get(f"/api/v1/tasks/{tid}/loop", headers=api["token_for"]("owner"))
     assert r.status_code == 200, r.text
-    return r.json()
+    return cast(dict[str, Any], r.json())
 
 
 # --- pure engine (hermetic) -------------------------------------------------
@@ -256,7 +256,7 @@ def _arbitration_count(api: dict[str, Any], pid: str) -> int:
                 ).scalar_one()
             )
 
-    return run_async(_count)
+    return cast(int, run_async(_count))
 
 
 def test_twice_refuted_upheld_finding_routes_to_arbitration(api: dict[str, Any]) -> None:
