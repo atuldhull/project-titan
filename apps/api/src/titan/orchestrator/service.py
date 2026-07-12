@@ -430,6 +430,14 @@ async def apply_transition(
             "no schema-valid reflection on record (TITAN-WFL-009 / TITAN-BRN-025)."
         )
 
+    # TITAN-WFL-010: `in_loop -> merged` requires a converged self-improvement loop
+    # record — no component ships as a first draft. Lazy import: loop.service imports
+    # this module (to drive task transitions), so a top-level import would cycle.
+    if action == "merge":
+        from titan.loop import service as loop
+
+        await loop.assert_loop_approved(conn, task.id)
+
     # Serialize dependency-sensitive transitions on the global graph lock so
     # concurrent completions can't write-skew (two sibling blockers both missing
     # their shared dependent's promotion under READ COMMITTED).
@@ -475,9 +483,18 @@ async def apply_transition(
         raise TransitionConflict(transition.from_status, action)
     updated = TaskOut.model_validate(row)
 
-    if action == "reopen" and updated.assignee_agent_id is not None:
-        # TITAN-BCK-016: reopen creates a fresh run attempt (max+1) for retry.
-        await runs.create_run(conn, updated.id, runs.RunCreate(agent_id=updated.assignee_agent_id))
+    if action == "reopen":
+        # TITAN-WFL-010: reopening re-works the task, so a prior converged loop no
+        # longer covers it — retire it (a fresh loop must converge before it can
+        # merge again). Lazy import to avoid the loop↔orchestrator cycle.
+        from titan.loop import service as loop
+
+        await loop.supersede_loop_on_reopen(conn, updated.id)
+        if updated.assignee_agent_id is not None:
+            # TITAN-BCK-016: reopen creates a fresh run attempt (max+1) for retry.
+            await runs.create_run(
+                conn, updated.id, runs.RunCreate(agent_id=updated.assignee_agent_id)
+            )
     if is_done_entry:
         await _promote_ready_dependents(conn, updated.id)
 

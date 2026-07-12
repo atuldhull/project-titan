@@ -1,12 +1,15 @@
 """Exhaustive task state-machine matrix (TITAN-BCK-012). Pure unit test over the
-transition table — no DB — so every (state, action) pair is covered: the 16
-legal moves resolve to the documented target, and the other 65 pairs are illegal
-(resolve -> None, which the :transition endpoint renders as 409)."""
+transition table — no DB — so every (state, action) pair is covered: each legal
+move resolves to the documented target, and every other pair is illegal (resolve
+-> None, which the :transition endpoint renders as 409). Covers both the §8.1
+engineering edges and the Vol 6 §2.5 delivery edges (block/loop/merge/escalate,
+Phase 41)."""
 
 from titan.orchestrator.transitions import ACTIONS, STATES, resolve
 
-# The complete set of legal transitions (§8.1): (from_status, action) -> to_status.
+# The complete set of legal transitions: (from_status, action) -> to_status.
 LEGAL: dict[tuple[str, str], str] = {
+    # --- §8.1 engineering edges ---
     ("backlog", "ready"): "ready",
     ("ready", "assign"): "assigned",
     ("assigned", "start"): "in_progress",
@@ -16,6 +19,17 @@ LEGAL: dict[tuple[str, str], str] = {
     ("in_review", "request_changes"): "changes_requested",
     ("changes_requested", "resubmit"): "in_review",
     ("done", "reopen"): "reopened",
+    # --- Vol 6 §2.5 delivery edges (Phase 41) ---
+    ("ready", "block"): "blocked",
+    ("blocked", "unblock"): "ready",
+    ("in_progress", "enter_loop"): "in_loop",
+    ("in_loop", "merge"): "merged",
+    ("merged", "complete"): "done",
+    ("in_progress", "fail"): "failed",
+    ("failed", "escalate"): "escalated",
+    ("in_loop", "escalate"): "escalated",
+    ("reopened", "requeue"): "ready",
+    # --- cancel from every non-terminal state (§8.1 + §2.5) ---
     ("backlog", "cancel"): "cancelled",
     ("ready", "cancel"): "cancelled",
     ("assigned", "cancel"): "cancelled",
@@ -23,6 +37,9 @@ LEGAL: dict[tuple[str, str], str] = {
     ("in_review", "cancel"): "cancelled",
     ("changes_requested", "cancel"): "cancelled",
     ("reopened", "cancel"): "cancelled",
+    ("blocked", "cancel"): "cancelled",
+    ("in_loop", "cancel"): "cancelled",
+    ("merged", "cancel"): "cancelled",
 }
 
 

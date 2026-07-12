@@ -136,6 +136,22 @@ def _seed_reflection(api: dict[str, Any], pid: str, tid: str) -> None:
     run_async(_do)
 
 
+def _seed_converged_loop(api: dict[str, Any], tid: str, pid: str) -> None:
+    """Insert a converged loop record so the TITAN-WFL-010 merge gate passes."""
+
+    async def _do() -> None:
+        async with api["engine"].begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO loop_records (id, task_id, project_id, status, cycle_count) "
+                    "VALUES (:id, :tid, :pid, 'converged', 2)"
+                ),
+                {"id": uuid.uuid4(), "tid": tid, "pid": pid},
+            )
+
+    run_async(_do)
+
+
 # --- §2.5 edges over the real endpoint -------------------------------------
 
 
@@ -164,6 +180,9 @@ def test_loop_to_merged_then_complete_needs_reflection(api: dict[str, Any]) -> N
     assert _transition(api, tid, "assign", actor=assignee).status_code == 200
     assert _transition(api, tid, "start").json()["status"] == "in_progress"
     assert _transition(api, tid, "enter_loop").json()["status"] == "in_loop"
+    # TITAN-WFL-010 (Phase 44): merge requires a converged self-improvement loop
+    # record — seed one so this pre-loop-engine edge test still reaches merged.
+    _seed_converged_loop(api, tid, pid)
     assert _transition(api, tid, "merge").json()["status"] == "merged"
     # Acceptance gate: `complete` without a reflection is a 409.
     blocked = _transition(api, tid, "complete")

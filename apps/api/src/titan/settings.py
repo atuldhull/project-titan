@@ -88,6 +88,9 @@ class Settings(BaseSettings):
     # answer within this many hours, the pipeline proceeds with best-judgment
     # assumptions flagged for the release approval. Configurable per project.
     clarification_timeout_hours: int = 24
+    # Hard cap on self-improvement loop cycles per task (TITAN-WFL-013); the engine
+    # clamps to the configurable 2–5 range. On exhaustion the task escalates.
+    loop_max_cycles: int = 3
 
     # --- CEO intake handler (Phase 25 walking skeleton) ---
     # When a project brief is created, run the thin CEO intake turn (stream an LLM

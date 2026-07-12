@@ -39,6 +39,7 @@ from titan.identity import router as identity_router
 from titan.identity.tokens import KeyRing
 from titan.llm import router as llm_router
 from titan.llm import service as llm_service
+from titan.loop import router as loop_router
 from titan.memory import router as memory_router
 from titan.memory import service as memory_service
 from titan.messaging import router as messaging_router
@@ -329,6 +330,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     memory_router.mount(app)  # /memory/events, /memory/records/{id} — the Memory Service
     constitution_router.mount(app)  # /constitution — versioned §6 standards artifact
     clarification_router.mount(app)  # /projects/{id}/clarifications — CEO §2.4 engine
+    loop_router.mount(app)  # /tasks/{id}/loop — self-improvement loop audit trail
     otel.instrument_app(active_settings, app)
 
     def custom_openapi() -> dict[str, Any]:
