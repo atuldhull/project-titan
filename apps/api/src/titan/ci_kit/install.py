@@ -13,6 +13,7 @@ from pathlib import Path
 
 from titan.ci_kit.config import KitConfig
 from titan.ci_kit.render import KitFile, render_kit
+from titan.ci_kit.scaffold import scaffold_files
 
 
 @dataclass(frozen=True)
@@ -59,7 +60,9 @@ def _activate_hooks(root: Path) -> bool:
     return result.returncode == 0
 
 
-def install_kit(workspace: Path, config: KitConfig, *, force: bool = False) -> InstallResult:
+def install_kit(
+    workspace: Path, config: KitConfig, *, force: bool = False, scaffold: bool = False
+) -> InstallResult:
     """Drop every kit file into ``workspace`` and activate the commit-msg hook.
 
     ``ruff.toml`` and ``eslint.config.mjs`` are the project's own files once
@@ -68,12 +71,22 @@ def install_kit(workspace: Path, config: KitConfig, *, force: bool = False) -> I
     and is always overwritten: those files ARE the gates, and letting a
     stale-but-present copy survive a kit upgrade is how a workspace ends up
     enforcing a constitution nobody is reading any more.
+
+    ``scaffold=True`` also renders the Phase-46 project templates (the §6.3-6.5
+    error/logging/test starter). Scaffold files are the PROJECT's source once
+    written, so — like ruff.toml — an existing one is preserved unless ``force``:
+    re-running the installer to pull new gates must never clobber code the team
+    has since edited.
     """
     workspace.mkdir(parents=True, exist_ok=True)
 
+    files = list(render_kit(config))
+    if scaffold:
+        files.extend(scaffold_files(config.package))
+
     written: list[str] = []
     skipped: list[str] = []
-    for file in render_kit(config):
+    for file in files:
         kit_owned = file.path.startswith(".titan/")
         exists = (workspace / file.path).exists()
         if exists and not force and not kit_owned:

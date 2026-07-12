@@ -268,6 +268,39 @@ def test_measure_ignores_files_absent_from_the_coverage_report() -> None:
     assert result.line_rate == 100.0
 
 
+def test_measure_reconstructs_source_relative_filenames() -> None:
+    """coverage.py with [tool.coverage.run] source=["src/pkg"] emits filenames
+    RELATIVE to the source root; the gate must prefix <source> to match a
+    git-diff path — else every file reads as 'no coverage data' (a real fail-open
+    the Phase-46 scaffold hit)."""
+    xml = (
+        '<coverage line-rate="0.95">'
+        "<sources><source>src/billing</source></sources>"
+        "<packages><package><classes>"
+        '<class filename="application/fees.py"><lines>'
+        '<line number="1" hits="1"/><line number="2" hits="1"/>'
+        "</lines></class></classes></package></packages></coverage>"
+    )
+    # The git diff names the file from the repo root.
+    result = diff_coverage.measure({"src/billing/application/fees.py": {1, 2}}, xml)
+    assert result.lines_total == 2
+    assert result.lines_covered == 2
+    assert result.line_rate == 100.0
+
+
+def test_absolute_source_root_matches_by_suffix() -> None:
+    xml = (
+        '<coverage line-rate="0.9">'
+        "<sources><source>/runner/work/repo/src/billing</source></sources>"
+        "<packages><package><classes>"
+        '<class filename="application/fees.py"><lines><line number="1" hits="0"/></lines></class>'
+        "</classes></package></packages></coverage>"
+    )
+    result = diff_coverage.measure({"src/billing/application/fees.py": {1}}, xml)
+    assert result.lines_total == 1
+    assert result.lines_covered == 0
+
+
 def test_measure_counts_branches_on_changed_lines() -> None:
     xml = (
         '<coverage line-rate="0.9"><packages><package><classes>'

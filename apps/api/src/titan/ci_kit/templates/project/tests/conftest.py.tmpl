@@ -1,0 +1,64 @@
+"""Shared test fixtures enforcing hermeticity (TITAN-WFL-031, Vol 6 §6.5).
+
+Determinism is injected, never ambient: use ``clock`` for time and ``seeded_rng``
+for randomness so tests are reproducible and parallel-safe. The testcontainers
+fixtures provide REAL PostgreSQL 16 / Redis 7 for the integration layer; they
+skip cleanly when Docker is absent so the unit layer still runs anywhere.
+"""
+
+from __future__ import annotations
+
+import random
+from collections.abc import Iterator
+from datetime import datetime, timezone
+
+import pytest
+
+# A fixed instant every test that needs "now" reads, instead of the wall clock.
+FROZEN_NOW = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture
+def clock() -> datetime:
+    """The injected clock. Tests take time from here, never datetime.now()."""
+    return FROZEN_NOW
+
+
+@pytest.fixture
+def seeded_rng() -> random.Random:
+    """A seeded, isolated RNG. Tests draw randomness from here, never the global
+    random.* module functions, so runs are reproducible."""
+    return random.Random(1234)
+
+
+@pytest.fixture(scope="session")
+def postgres_url() -> Iterator[str]:
+    """A real PostgreSQL 16 via testcontainers (integration layer). Skips when
+    Docker is unavailable — the unit suite does not depend on it."""
+    try:
+        from testcontainers.postgres import PostgresContainer
+    except ImportError:  # pragma: no cover - optional integration dependency
+        pytest.skip("testcontainers not installed")
+
+    try:
+        with PostgresContainer("postgres:16-alpine") as pg:
+            yield pg.get_connection_url()
+    except Exception as exc:  # pragma: no cover - Docker not running
+        pytest.skip(f"Docker unavailable for testcontainers: {exc}")
+
+
+@pytest.fixture(scope="session")
+def redis_url() -> Iterator[str]:
+    """A real Redis 7 via testcontainers. Skips when Docker is unavailable."""
+    try:
+        from testcontainers.redis import RedisContainer
+    except ImportError:  # pragma: no cover - optional integration dependency
+        pytest.skip("testcontainers not installed")
+
+    try:
+        with RedisContainer("redis:7-alpine") as redis:
+            host = redis.get_container_host_ip()
+            port = redis.get_exposed_port(6379)
+            yield f"redis://{host}:{port}/0"
+    except Exception as exc:  # pragma: no cover - Docker not running
+        pytest.skip(f"Docker unavailable for testcontainers: {exc}")

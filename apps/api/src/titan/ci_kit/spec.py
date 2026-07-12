@@ -77,6 +77,18 @@ RULES: tuple[Rule, ...] = (
         ),
         mechanism="coverage.xml + git diff",
     ),
+    Rule(
+        gate="log_scan",
+        wfl_id="TITAN-WFL-029",
+        title="Structured logging: no secrets/tokens/PII in log calls, no print()",
+        mechanism="AST scan of log calls for banned field names + interpolated messages",
+    ),
+    Rule(
+        gate="hermeticity",
+        wfl_id="TITAN-WFL-031",
+        title="Deterministic tests: no real network, no wall-clock/unseeded randomness",
+        mechanism="AST scan of the test tree for non-hermetic calls",
+    ),
 )
 
 BY_GATE: dict[str, Rule] = {rule.gate: rule for rule in RULES}

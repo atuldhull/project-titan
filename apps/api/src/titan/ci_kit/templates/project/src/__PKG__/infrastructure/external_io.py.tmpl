@@ -1,0 +1,90 @@
+"""Guarded external I/O (TITAN-WFL-028, Vol 6 §6.3).
+
+Every call to an external service goes through :func:`call_external`, which
+enforces the §6.3 rules mechanically:
+  * a mandatory timeout (no unbounded wait);
+  * typed failure mapping — any transport/timeout error becomes an
+    ``ExternalServiceError`` (a DomainError), so the interface layer renders a
+    clean 502 and the upstream's raw error never reaches the client;
+  * retries with exponential backoff + jitter ONLY when the caller declares the
+    operation idempotent (retrying a non-idempotent POST can double-charge).
+
+No bare ``except``; the caught exception is logged and re-raised as a typed
+DomainError (§6.3: catch → log-and-rethrow, never swallow).
+"""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
+
+from __PKG__.domain.errors import ExternalServiceError
+from __PKG__.observability.logging import get_logger
+
+T = TypeVar("T")
+
+_log = get_logger(__name__)
+
+DEFAULT_TIMEOUT_S = 5.0
+DEFAULT_MAX_ATTEMPTS = 3
+_BASE_BACKOFF_S = 0.1
+_MAX_BACKOFF_S = 2.0
+
+# Transport failures that are safe to retry on an idempotent operation.
+_RETRYABLE: tuple[type[Exception], ...] = (TimeoutError, ConnectionError, OSError)
+
+
+def _backoff_delay(attempt: int, rng: Callable[[], float]) -> float:
+    """Exponential backoff with full jitter. ``rng`` is injected so tests seed it
+    (TITAN-WFL-031) and production passes ``random.random``."""
+    ceiling = min(_MAX_BACKOFF_S, _BASE_BACKOFF_S * (2**attempt))
+    return ceiling * rng()
+
+
+async def call_external(
+    operation: Callable[[], Awaitable[T]],
+    *,
+    name: str,
+    idempotent: bool,
+    timeout_s: float = DEFAULT_TIMEOUT_S,
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+    rng: Callable[[], float] | None = None,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> T:
+    """Run ``operation`` under a timeout, mapping failure to a DomainError.
+
+    Retries (backoff + jitter) apply ONLY when ``idempotent`` is True. A
+    non-idempotent call is attempted exactly once. ``rng``/``sleep`` are injected
+    so the retry path is deterministically testable.
+    """
+    if rng is None:
+        import random
+
+        rng = random.random
+
+    attempts = max_attempts if idempotent else 1
+    last_exc: Exception | None = None
+
+    for attempt in range(attempts):
+        try:
+            async with asyncio.timeout(timeout_s):
+                return await operation()
+        except _RETRYABLE as exc:
+            last_exc = exc
+            _log.warning(
+                "external_call_failed",
+                service=name,
+                attempt=attempt + 1,
+                max_attempts=attempts,
+                error_type=type(exc).__name__,
+            )
+            if attempt + 1 < attempts:
+                await sleep(_backoff_delay(attempt, rng))
+
+    # Exhausted (or single non-idempotent attempt): log and rethrow as typed.
+    _log.error("external_call_exhausted", service=name, error_type=type(last_exc).__name__)
+    raise ExternalServiceError(f"the {name} service is unavailable") from last_exc
+
+
+__all__ = ["DEFAULT_MAX_ATTEMPTS", "DEFAULT_TIMEOUT_S", "call_external"]

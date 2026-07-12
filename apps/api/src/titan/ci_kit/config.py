@@ -47,6 +47,9 @@ class KitConfig:
     migrations: str = "migrations"
     """Directory the SQL migration linter scans."""
 
+    tests: str = "tests"
+    """Directory the hermeticity gate (TITAN-WFL-031) scans for non-hermetic tests."""
+
     base_ref: str = "origin/main"
     """The ref CI diffs against for the changed-code coverage gate."""
 
@@ -87,6 +90,7 @@ def parse_config(text: str) -> KitConfig:
         package=package,
         src=_str("src", "src"),
         migrations=_str("migrations", "migrations"),
+        tests=_str("tests", "tests"),
         base_ref=_str("base_ref", "origin/main"),
         ts_src=_str("ts_src", ""),
     )

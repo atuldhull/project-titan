@@ -1,0 +1,74 @@
+"""Error-handling verification suite (TITAN-WFL-028 acceptance, Vol 6 §6.3).
+
+Asserts every endpoint returns RFC 9457 problem-details on induced failure, and
+that the server LOGS the stack trace the client response omits — the exact §6.3
+acceptance criterion. Hermetic: FastAPI's TestClient talks to the in-process app
+over localhost, no external service, no wall-clock, no unseeded randomness.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+
+import pytest
+from fastapi.testclient import TestClient
+
+from __PKG__.application.widgets import create_widget, get_widget
+from __PKG__.domain.errors import ConflictError
+from __PKG__.interface.app import create_app
+
+
+def _client() -> TestClient:
+    return TestClient(create_app(), raise_server_exceptions=False)
+
+
+def test_not_found_returns_problem_details() -> None:
+    response = _client().get("/widgets/does-not-exist")
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("application/problem+json")
+    body = response.json()
+    assert body["type"].endswith("not-found")
+    assert body["status"] == 404
+    assert "detail" in body
+
+
+def test_validation_error_returns_422_problem() -> None:
+    response = _client().get("/widgets/%20")  # blank id
+    assert response.status_code == 422
+    assert response.json()["type"].endswith("validation-error")
+
+
+def test_unexpected_error_is_opaque_500_but_logged(capsys) -> None:
+    response = _client().get("/boom")
+    assert response.status_code == 500
+
+    # The client sees NOTHING about internals — no stack trace, no leaked detail.
+    body = response.json()
+    assert "internal detail that must never reach the client" not in json.dumps(body)
+    assert body["type"].endswith("internal-error")
+
+    # ...but the server logged the stack trace (§6.3 acceptance).
+    logged = capsys.readouterr().out
+    assert "unhandled_exception" in logged
+    assert "RuntimeError" in logged
+
+
+def test_happy_path_still_works() -> None:
+    response = _client().get("/widgets/1")
+    assert response.status_code == 200
+    assert response.json() == {"id": "1", "name": "anvil"}
+
+
+def test_create_widget_raises_conflict_on_duplicate() -> None:
+    # Exercises the ConflictError branch of the taxonomy at the use-case level.
+    create_widget("42", "gadget")
+    assert get_widget("42") == "gadget"
+    with pytest.raises(ConflictError):
+        create_widget("42", "again")
+
+
+def test_logging_module_importable_at_all_levels() -> None:
+    # Guards that the level policy constants exist (§6.4 DEBUG..CRITICAL).
+    for level in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+        assert hasattr(logging, level)

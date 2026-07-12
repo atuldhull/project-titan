@@ -1,0 +1,119 @@
+"""Structured, correlated logging (TITAN-WFL-029, Vol 6 §6.4).
+
+Cross-cutting configuration (outside the four layers, like stdlib ``logging``):
+``configure_logging(service)`` installs a structlog pipeline that emits ONE JSON
+object per event with the mandatory fields — ``timestamp``, ``level``,
+``service``, ``trace_id``/``span_id``, ``project_id``, ``agent_id``, ``event`` —
+and a redaction processor that drops secrets/tokens/PII before rendering. The
+redactor is the runtime half of TITAN-WFL-029; the CI ``log_scan`` gate is the
+static half.
+
+Correlation ids live in context vars so every log inside a request is joinable to
+its trace by ``trace_id`` without threading them through call signatures. Bind
+them once (e.g. in middleware) via :func:`bind_context`.
+"""
+
+from __future__ import annotations
+
+import logging
+from contextvars import ContextVar
+from typing import Any
+
+import structlog
+
+# Mandatory correlation fields, propagated via context (OTel sets trace/span).
+_trace_id: ContextVar[str | None] = ContextVar("trace_id", default=None)
+_span_id: ContextVar[str | None] = ContextVar("span_id", default=None)
+_project_id: ContextVar[str | None] = ContextVar("project_id", default=None)
+_agent_id: ContextVar[str | None] = ContextVar("agent_id", default=None)
+
+# Field names whose VALUES are redacted before rendering (§6.4). Keep in sync
+# with the ci_kit log_scan gate's banned set — that gate rejects passing these at
+# all; this is defence in depth for anything that slips through.
+_REDACT: frozenset[str] = frozenset(
+    {
+        "password",
+        "passwd",
+        "secret",
+        "token",
+        "api_key",
+        "apikey",
+        "access_token",
+        "refresh_token",
+        "authorization",
+        "auth",
+        "credential",
+        "credentials",
+        "private_key",
+        "ssn",
+        "credit_card",
+        "card_number",
+        "cvv",
+        "pin",
+        "otp",
+    }
+)
+_REDACTED = "***redacted***"
+
+
+def _add_correlation(_logger: Any, _method: str, event: dict[str, Any]) -> dict[str, Any]:
+    event["trace_id"] = _trace_id.get()
+    event["span_id"] = _span_id.get()
+    event["project_id"] = _project_id.get()
+    event["agent_id"] = _agent_id.get()
+    return event
+
+
+def _redact(_logger: Any, _method: str, event: dict[str, Any]) -> dict[str, Any]:
+    for key in list(event):
+        segments = key.lower().split("_")
+        if key.lower() in _REDACT or any(seg in _REDACT for seg in segments):
+            event[key] = _REDACTED
+    return event
+
+
+def configure_logging(service: str, *, level: int = logging.INFO) -> None:
+    """Install the JSON logging pipeline. Levels follow §6.4:
+    DEBUG (dev) / INFO (state changes) / WARNING (handled) / ERROR (failed) /
+    CRITICAL (data-loss/security)."""
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso", utc=True, key="timestamp"),
+            _add_correlation,
+            _redact,
+            structlog.processors.dict_tracebacks,
+            structlog.processors.JSONRenderer(),
+        ],
+        wrapper_class=structlog.make_filtering_bound_logger(level),
+        context_class=dict,
+        logger_factory=structlog.PrintLoggerFactory(),
+        cache_logger_on_first_use=True,
+    )
+    structlog.contextvars.bind_contextvars(service=service)
+
+
+def bind_context(
+    *,
+    trace_id: str | None = None,
+    span_id: str | None = None,
+    project_id: str | None = None,
+    agent_id: str | None = None,
+) -> None:
+    """Bind the correlation ids for the current context (call in middleware)."""
+    if trace_id is not None:
+        _trace_id.set(trace_id)
+    if span_id is not None:
+        _span_id.set(span_id)
+    if project_id is not None:
+        _project_id.set(project_id)
+    if agent_id is not None:
+        _agent_id.set(agent_id)
+
+
+def get_logger(name: str) -> Any:
+    return structlog.get_logger(name)
+
+
+__all__ = ["bind_context", "configure_logging", "get_logger"]

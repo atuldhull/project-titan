@@ -1,0 +1,38 @@
+"""The FastAPI application (interface layer).
+
+Wires the single problem-details translation boundary (§6.3) and structured
+logging (§6.4). Endpoints call application use cases and let domain errors
+propagate — they are translated centrally, never caught per-route.
+"""
+
+from __future__ import annotations
+
+from fastapi import FastAPI
+
+from __PKG__.application.widgets import get_widget
+from __PKG__.interface.problem_details import register_error_handlers
+from __PKG__.observability.logging import configure_logging
+
+SERVICE_NAME = "__PKG__"
+
+
+def create_app() -> FastAPI:
+    configure_logging(SERVICE_NAME)
+    app = FastAPI(title=SERVICE_NAME)
+    register_error_handlers(app)
+
+    @app.get("/widgets/{widget_id}")
+    async def read_widget(widget_id: str) -> dict[str, str]:
+        # No try/except: a NotFoundError/ValidationError propagates to the
+        # central handler, which renders problem-details.
+        return {"id": widget_id, "name": get_widget(widget_id)}
+
+    @app.get("/boom")
+    async def boom() -> dict[str, str]:
+        # An UNEXPECTED error — the handler logs the trace and returns opaque 500.
+        raise RuntimeError("internal detail that must never reach the client")
+
+    return app
+
+
+__all__ = ["SERVICE_NAME", "create_app"]

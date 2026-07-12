@@ -46,6 +46,7 @@ def _titan_ci_toml(config: KitConfig) -> str:
         f'package = "{config.package}"\n'
         f'src = "{config.src}"\n'
         f'migrations = "{config.migrations}"\n'
+        f'tests = "{config.tests}"\n'
         f'base_ref = "{config.base_ref}"\n'
         f"{ts_line}"
     )

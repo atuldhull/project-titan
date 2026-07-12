@@ -1,0 +1,31 @@
+"""An example use case (application layer). Depends only on the domain.
+
+Replace with your real use cases; it exists so the scaffold ships a working
+error-handling path the verification suite can exercise end to end.
+"""
+
+from __future__ import annotations
+
+from __PKG__.domain.errors import ConflictError, NotFoundError, ValidationError
+
+_WIDGETS: dict[str, str] = {"1": "anvil"}
+
+
+def get_widget(widget_id: str) -> str:
+    """Return a widget's name, or raise the typed domain error."""
+    if not widget_id.strip():
+        raise ValidationError("widget id must not be blank")
+    try:
+        return _WIDGETS[widget_id]
+    except KeyError as exc:
+        # catch -> rethrow as typed (§6.3: never swallow, never bare-except).
+        raise NotFoundError(f"no widget {widget_id!r}", instance=f"/widgets/{widget_id}") from exc
+
+
+def create_widget(widget_id: str, name: str) -> None:
+    if widget_id in _WIDGETS:
+        raise ConflictError(f"widget {widget_id!r} already exists")
+    _WIDGETS[widget_id] = name
+
+
+__all__ = ["create_widget", "get_widget"]

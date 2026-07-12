@@ -1,0 +1,90 @@
+"""External-I/O determinism suite (TITAN-WFL-028 + 031, Vol 6 §6.3/§6.5).
+
+Verifies the guarded-I/O helper maps failures to a typed DomainError, retries an
+idempotent operation with backoff, and does NOT retry a non-idempotent one.
+Hermetic: the operation, RNG and sleep are all injected, so there is no real
+network, no wall clock, and no unseeded randomness. Coroutines are driven with
+asyncio.run() so the suite needs no async pytest plugin.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import random
+
+import pytest
+
+from __PKG__.domain.errors import ExternalServiceError
+from __PKG__.infrastructure.external_io import call_external
+
+
+async def _no_sleep(_seconds: float) -> None:
+    return None
+
+
+def test_idempotent_call_retries_then_maps_to_domain_error(seeded_rng: random.Random) -> None:
+    attempts = 0
+
+    async def flaky() -> str:
+        nonlocal attempts
+        attempts += 1
+        raise TimeoutError("slow upstream")
+
+    async def scenario() -> None:
+        await call_external(
+            flaky,
+            name="billing-api",
+            idempotent=True,
+            max_attempts=3,
+            rng=seeded_rng.random,
+            sleep=_no_sleep,
+        )
+
+    with pytest.raises(ExternalServiceError):
+        asyncio.run(scenario())
+    assert attempts == 3, "an idempotent call must exhaust its retry budget"
+
+
+def test_non_idempotent_call_is_attempted_once(seeded_rng: random.Random) -> None:
+    attempts = 0
+
+    async def once() -> str:
+        nonlocal attempts
+        attempts += 1
+        raise ConnectionError("no")
+
+    async def scenario() -> None:
+        await call_external(
+            once,
+            name="charge-api",
+            idempotent=False,
+            rng=seeded_rng.random,
+            sleep=_no_sleep,
+        )
+
+    with pytest.raises(ExternalServiceError):
+        asyncio.run(scenario())
+    assert attempts == 1, "a non-idempotent call must not be retried"
+
+
+def test_the_raw_upstream_error_never_leaks_into_the_domain_error(
+    seeded_rng: random.Random,
+) -> None:
+    async def always_fails() -> str:
+        raise ConnectionError("upstream down")
+
+    async def scenario() -> None:
+        await call_external(
+            always_fails,
+            name="inventory",
+            idempotent=True,
+            max_attempts=1,
+            rng=seeded_rng.random,
+            sleep=_no_sleep,
+        )
+
+    with pytest.raises(ExternalServiceError) as caught:
+        asyncio.run(scenario())
+    # The client-facing message names the service, not the upstream's raw text.
+    assert "inventory" in str(caught.value)
+    assert "upstream down" not in str(caught.value)

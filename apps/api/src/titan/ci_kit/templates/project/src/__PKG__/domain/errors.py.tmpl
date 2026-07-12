@@ -1,0 +1,67 @@
+"""The domain error taxonomy (TITAN-WFL-028, Vol 6 §6.3).
+
+Raised from the domain and application layers; translated EXACTLY ONCE, at the
+interface layer, into RFC 9457 problem-details (see interface/problem_details.py).
+Every class carries a stable machine-readable ``code`` — clients branch on the
+code, never on the prose ``detail`` — and the HTTP ``status`` its problem maps to.
+
+Zero framework imports: this is the innermost layer.
+"""
+
+from __future__ import annotations
+
+
+class DomainError(Exception):
+    """Base of every expected, client-meaningful failure.
+
+    ``code`` is the stable RFC 9457 ``type`` slug; ``status`` is the HTTP status
+    the interface layer renders. Subclasses set both as class attributes so the
+    translator needs no per-type mapping table.
+    """
+
+    code: str = "about:blank"
+    status: int = 500
+
+    def __init__(self, detail: str, *, instance: str | None = None) -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.instance = instance
+
+
+class NotFoundError(DomainError):
+    code = "not-found"
+    status = 404
+
+
+class ConflictError(DomainError):
+    code = "conflict"
+    status = 409
+
+
+class ValidationError(DomainError):
+    code = "validation-error"
+    status = 422
+
+
+class AuthorizationError(DomainError):
+    code = "authorization-error"
+    status = 403
+
+
+class ExternalServiceError(DomainError):
+    """An external dependency failed after timeouts/retries (see
+    infrastructure/external_io.py). Surfaced to the client as 502 — never the
+    upstream's raw error, stack trace, or internal identifiers."""
+
+    code = "external-service-error"
+    status = 502
+
+
+__all__ = [
+    "AuthorizationError",
+    "ConflictError",
+    "DomainError",
+    "ExternalServiceError",
+    "NotFoundError",
+    "ValidationError",
+]

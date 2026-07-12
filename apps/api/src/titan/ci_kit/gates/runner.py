@@ -26,7 +26,9 @@ from titan.ci_kit.config import ConfigError, load_config
 from titan.ci_kit.gates import (
     commit_msg,
     diff_coverage,
+    hermeticity,
     layering,
+    log_scan,
     migration_sql,
     naming,
     orm_boundary,
@@ -36,7 +38,7 @@ from titan.ci_kit.spec import BY_GATE
 
 # The gates a workspace scan runs. commit_msg is handled separately: its subject
 # is a git history, not a tree.
-_WORKSPACE_GATES = (layering, orm_boundary, naming, migration_sql)
+_WORKSPACE_GATES = (layering, orm_boundary, naming, migration_sql, log_scan, hermeticity)
 
 
 @dataclass(frozen=True)

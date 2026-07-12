@@ -50,9 +50,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="TypeScript source root; omit to disable the ESLint boundary gate",
     )
     parser.add_argument(
+        "--scaffold",
+        action="store_true",
+        help=(
+            "also render the Phase-46 project starter (§6.3-6.5 error taxonomy, "
+            "structured logging + redaction, and the test pyramid)"
+        ),
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
-        help="overwrite ruff.toml / eslint.config.mjs if the workspace already has them",
+        help="overwrite project-owned files (ruff.toml, scaffold sources) if present",
     )
     return parser
 
@@ -67,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
         base_ref=args.base_ref,
         ts_src=args.ts_src,
     )
-    result = install_kit(args.workspace, config, force=args.force)
+    result = install_kit(args.workspace, config, force=args.force, scaffold=args.scaffold)
 
     print(result.render())
     print("\nMachine-enforced (CI rejects a violation):")

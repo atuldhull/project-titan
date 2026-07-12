@@ -1,0 +1,22 @@
+"""E2E journey slot (TITAN-WFL-030, Vol 6 §6.5).
+
+Every critical user journey named in the ProductBacklog gets a Playwright e2e
+test here (100% of journeys covered before M2). This placeholder skips until
+Playwright and a running app are wired, so the slot exists without blocking the
+unit/integration layers. Replace ``skip`` with a real journey.
+
+Hermetic note: e2e tests drive the app under test at a localhost URL only.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+pytestmark = pytest.mark.e2e
+
+
+@pytest.mark.skip(reason="wire Playwright + a running app for the real journey")
+def test_critical_journey_checkout() -> None:  # pragma: no cover - placeholder slot
+    # from playwright.sync_api import sync_playwright
+    # drive the journey against http://localhost:8000 ...
+    raise AssertionError("replace with the real journey")

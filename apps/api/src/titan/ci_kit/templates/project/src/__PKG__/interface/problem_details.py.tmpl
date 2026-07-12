@@ -1,0 +1,76 @@
+"""RFC 9457 problem-details translation — the ONE place domain errors become
+HTTP responses (TITAN-WFL-028, Vol 6 §6.3).
+
+Install ``register_error_handlers(app)`` once at startup. A DomainError raised
+anywhere in the domain/application/infrastructure layers is translated here,
+exactly once, into a ``application/problem+json`` body carrying the stable
+``type`` code and a safe ``detail``. The stack trace and any internal identifiers
+are LOGGED, never sent to the client (§6.3: no stack traces or internal ids in
+client responses); the unexpected-exception handler returns an opaque 500.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+from __PKG__.domain.errors import DomainError
+from __PKG__.observability.logging import get_logger
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
+
+_log = get_logger(__name__)
+
+PROBLEM_BASE_URI = "https://errors.example.com/"
+
+
+def _problem(status: int, code: str, detail: str, instance: str | None) -> JSONResponse:
+    body: dict[str, object] = {
+        "type": PROBLEM_BASE_URI + code,
+        "title": code.replace("-", " ").title(),
+        "status": status,
+        "detail": detail,
+    }
+    if instance is not None:
+        body["instance"] = instance
+    return JSONResponse(
+        status_code=status,
+        content=body,
+        media_type="application/problem+json",
+    )
+
+
+async def _handle_domain_error(request: Request, exc: DomainError) -> JSONResponse:
+    # The detail is domain-authored and safe. Log at WARNING (a handled anomaly)
+    # WITH the code and path; the exception itself is not re-raised.
+    _log.warning(
+        "domain_error",
+        code=exc.code,
+        status=exc.status,
+        path=request.url.path,
+    )
+    return _problem(exc.status, exc.code, exc.detail, exc.instance)
+
+
+async def _handle_unexpected(request: Request, exc: Exception) -> JSONResponse:
+    # An UNEXPECTED failure: log the full stack trace server-side (exc_info), but
+    # return an opaque 500 — the client learns nothing about internals (§6.3).
+    _log.error("unhandled_exception", path=request.url.path, exc_info=exc)
+    return _problem(
+        500,
+        "internal-error",
+        "An internal error occurred. The incident has been logged.",
+        None,
+    )
+
+
+def register_error_handlers(app: FastAPI) -> None:
+    """Wire the single translation boundary. Call once, at app construction."""
+    app.add_exception_handler(DomainError, _handle_domain_error)  # type: ignore[arg-type]
+    app.add_exception_handler(Exception, _handle_unexpected)
+
+
+__all__ = ["PROBLEM_BASE_URI", "register_error_handlers"]

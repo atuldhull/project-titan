@@ -1,0 +1,58 @@
+"""Redaction verification suite (TITAN-WFL-029 acceptance, Vol 6 §6.4).
+
+Asserts the logging pipeline emits structured JSON with the mandatory correlation
+fields and that secrets/tokens/PII never survive into the rendered line. Hermetic:
+the logger writes to captured stdout, no external sink.
+"""
+
+from __future__ import annotations
+
+import json
+
+from __PKG__.observability.logging import bind_context, configure_logging, get_logger
+
+
+def _emit_and_capture(capsys, **fields) -> dict:
+    configure_logging("test-service")
+    bind_context(trace_id="trace-abc", span_id="span-def", project_id="proj-1")
+    get_logger("test").info("an_event", **fields)
+    line = capsys.readouterr().out.strip().splitlines()[-1]
+    return json.loads(line)
+
+
+def test_mandatory_fields_are_present(capsys) -> None:
+    record = _emit_and_capture(capsys)
+    for field in ("timestamp", "level", "service", "trace_id", "span_id", "project_id", "event"):
+        assert field in record, f"missing mandatory field {field!r}"
+    assert record["event"] == "an_event"
+    assert record["service"] == "test-service"
+    assert record["trace_id"] == "trace-abc"
+
+
+def test_secrets_are_redacted(capsys) -> None:
+    record = _emit_and_capture(
+        capsys,
+        password="hunter2",
+        api_key="sk-live-123",
+        db_password="pg-secret",
+        user_id="u-42",  # NOT sensitive — must survive
+    )
+    dumped = json.dumps(record)
+    assert "hunter2" not in dumped
+    assert "sk-live-123" not in dumped
+    assert "pg-secret" not in dumped
+    assert record["password"] == "***redacted***"
+    assert record["api_key"] == "***redacted***"
+    assert record["db_password"] == "***redacted***"
+    # A non-sensitive field is untouched.
+    assert record["user_id"] == "u-42"
+
+
+def test_output_is_valid_json_one_object_per_line(capsys) -> None:
+    configure_logging("svc")
+    get_logger("t").warning("first")
+    get_logger("t").error("second")
+    lines = [line for line in capsys.readouterr().out.strip().splitlines() if line]
+    assert len(lines) == 2
+    for line in lines:
+        json.loads(line)  # each line is a standalone JSON object

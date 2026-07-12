@@ -122,11 +122,26 @@ def parse_diff(diff: str) -> dict[str, set[int]]:
 
 
 def parse_coverage_xml(xml: str) -> tuple[dict[str, dict[int, LineCoverage]], float]:
-    """Cobertura XML -> (per-file line coverage, project-wide line rate %). Pure."""
+    """Cobertura XML -> (per-file line coverage, project-wide line rate %). Pure.
+
+    Cobertura records each ``<class>`` filename RELATIVE to a ``<sources>/<source>``
+    root, not from the repo root. coverage.py with ``[tool.coverage.run] source =
+    ["src/pkg"]`` (which real projects set, and the Phase-46 scaffold ships) emits
+    ``filename="application/x.py"`` under ``<source>src/pkg</source>`` — so keying
+    only on the bare filename never matches a git-diff path like
+    ``src/pkg/application/x.py``. We reconstruct the full path by prefixing each
+    source root, and fall back to a suffix match for absolute source roots.
+    """
     try:
         root = ET.fromstring(xml)  # noqa: S314 — CI-generated report, not untrusted input
     except ET.ParseError as exc:
         raise CoverageError(f"{COVERAGE_XML} is not valid XML: {exc}") from exc
+
+    sources: list[str] = []
+    for source_node in root.iter("source"):
+        text = (source_node.text or "").strip().replace("\\", "/").rstrip("/")
+        if text and text != ".":
+            sources.append(text)
 
     files: dict[str, dict[int, LineCoverage]] = {}
     for class_node in root.iter("class"):
@@ -136,7 +151,7 @@ def parse_coverage_xml(xml: str) -> tuple[dict[str, dict[int, LineCoverage]], fl
         # Cobertura writes the OS-native separator; normalise so a report
         # generated on Windows still matches git's forward-slash paths.
         filename = filename.replace("\\", "/")
-        lines = files.setdefault(filename, {})
+        lines: dict[int, LineCoverage] = {}
         for line_node in class_node.iter("line"):
             number = line_node.get("number")
             if number is None:
@@ -152,9 +167,29 @@ def parse_coverage_xml(xml: str) -> tuple[dict[str, dict[int, LineCoverage]], fl
                 branches_taken=taken,
                 branches_total=total,
             )
+        # Key by the full-from-root path (source root + filename); with no
+        # source roots the filename is already full-from-root (Phase-45 shape).
+        keys = [f"{src}/{filename}" for src in sources] if sources else [filename]
+        for key in keys:
+            files[key] = lines
 
     rate = root.get("line-rate")
     return files, (100.0 * float(rate) if rate is not None else 0.0)
+
+
+def _coverage_for(
+    files: dict[str, dict[int, LineCoverage]], path: str
+) -> dict[int, LineCoverage] | None:
+    """The coverage for a git-diff path, tolerating an absolute source root.
+
+    Exact match first (the relative-source case); otherwise a UNIQUE coverage key
+    whose tail equals the diff path (the absolute-source case). Ambiguous suffix
+    matches resolve to None rather than guess."""
+    hit = files.get(path)
+    if hit is not None:
+        return hit
+    candidates = [lines for key, lines in files.items() if key.endswith("/" + path)]
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def _measure(
@@ -164,7 +199,7 @@ def _measure(
 ) -> DiffCoverage:
     lines_total = lines_covered = branches_total = branches_taken = 0
     for path, numbers in changed.items():
-        coverage = files.get(path)
+        coverage = _coverage_for(files, path)
         if coverage is None:
             # Not in the report. This is NOT automatically safe: a changed source
             # file absent from the report is untested new code, handled separately
@@ -251,7 +286,7 @@ def untested_source_files(
     """
     absent: list[str] = []
     for path in changed:
-        if path in files or not _is_source_path(path, config):
+        if _coverage_for(files, path) is not None or not _is_source_path(path, config):
             continue
         file_path = workspace / path
         try:
