@@ -21,17 +21,20 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from titan.constitution import service as constitution
 from titan.events.service import STREAM_EVENTS_DOMAIN, write_event
 from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import not_found
 from titan.handoffs import gates
 from titan.handoffs import repository as repo
-from titan.handoffs.gates import Gate, GateResult, register_gate, validate_schema
+from titan.handoffs.gates import Gate, GateContext, GateResult, register_gate, validate_schema
 from titan.handoffs.schemas import ALL_ARTIFACT_SCHEMAS, ARTIFACT_SCHEMAS, schema_for_stage
+from titan.handoffs.standard_gates import evaluate_intake_gate, register_standard_gates
 from titan.llm import service as llm
 from titan.messaging import service as messaging
 from titan.orchestrator import service as orchestrator
 from titan.projects import service as projects
+from titan.settings import get_settings
 
 # Re-export the stage → schema mapping + registry hooks other modules/tests use.
 PRODUCING_STAGES: tuple[str, ...] = tuple(ARTIFACT_SCHEMAS)
@@ -72,6 +75,8 @@ class GateEvaluationOut(BaseModel):
     evaluator_agent: str
     evaluator_model: str
     prompt_version: str
+    #: The constitution version this gate judged against (G5 only; None otherwise).
+    constitution_version: int | None = None
     created_at: datetime
 
 
@@ -140,6 +145,38 @@ async def _emit_gate_event(
             },
         },
         actor=actor,
+    )
+
+
+async def _build_gate_context(
+    conn: AsyncConnection, project_id: uuid.UUID, stage: str, body: dict[str, Any]
+) -> GateContext:
+    """Assemble the pure gate's :class:`GateContext` — the only DB access a gate's
+    evaluation performs. Loads each earlier producing stage's latest artifact (for
+    G3/G4/G5 cross-artifact checks) and, for the design gate, the active
+    constitution (retrieved into context; its version is stamped on the G5 ledger
+    row). The gate predicate itself stays pure and side-effect-free."""
+    priors: dict[str, dict[str, Any]] = {}
+    for prior in PRODUCING_STAGES:
+        if prior == stage:
+            break
+        row = await repo.latest_artifact(conn, project_id, prior)
+        if row is not None:
+            priors[prior] = dict(row.body)
+    constitution_version: int | None = None
+    constitution_body = ""
+    if stage == "architect_design":
+        active = await constitution.active_constitution(conn)
+        constitution_version = active.version
+        constitution_body = active.body
+    return GateContext(
+        stage=stage,
+        body=body,
+        prior_artifacts=priors,
+        constitution_version=constitution_version,
+        constitution_body=constitution_body,
+        sprint_capacity_days=get_settings().sprint_capacity_days,
+        project_id=project_id,
     )
 
 
@@ -221,9 +258,11 @@ async def submit_artifact(
         # Qdrant collection is wired when artifact retrieval lands — the store is the
         # source of truth, retrieval is additive.)
 
-        # 3) Acceptance gate (TITAN-WFL-004). Concrete G1–G12 predicates register in
-        # later phases; the default auto-passes a schema-valid artifact.
-        gate_result = gates.gate_for_stage(stage).evaluate(stage, normalized)
+        # 3) Acceptance gate (TITAN-WFL-004). G2–G5 are registered concrete
+        # predicates (standard_gates); unregistered stages auto-pass a schema-valid
+        # artifact. The gate is pure — the executor assembles its context here.
+        ctx = await _build_gate_context(conn, project_id, stage, normalized)
+        gate_result = gates.gate_for_stage(stage).evaluate(ctx)
         return await _record_and_route(
             conn,
             project_id=project_id,
@@ -267,6 +306,7 @@ async def _record_and_route(
         evaluator_agent=result.evaluator_agent,
         evaluator_model=result.evaluator_model,
         prompt_version=result.prompt_version,
+        constitution_version=result.constitution_version,
     )
     await _emit_gate_event(
         conn,
@@ -399,13 +439,16 @@ __all__ = [
     "ARTIFACT_SCHEMAS",
     "PRODUCING_STAGES",
     "Gate",
+    "GateContext",
     "GateEvaluationOut",
     "GateLedger",
     "GateResult",
     "HandoffArtifactOut",
     "HandoffOutcome",
+    "evaluate_intake_gate",
     "gate_ledger",
     "latest_artifact",
     "register_gate",
+    "register_standard_gates",
     "submit_artifact",
 ]

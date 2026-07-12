@@ -80,6 +80,15 @@ class Settings(BaseSettings):
     # a busy drainer never sleeps (it only pauses when the outbox is empty).
     outbox_drain_idle_seconds: float = 0.1
 
+    # --- Delivery-pipeline gates & clarification (Phase 43; Vol 6 §2.3–2.4) ---
+    # Per-sprint capacity in ideal agent-days used by gate G4 (H4) to reject an
+    # over-capacity sprint. A deploy-time default; the Architect can plan below it.
+    sprint_capacity_days: float = 5.0
+    # Non-blocking CEO clarification window (TITAN-WFL-008): if the user does not
+    # answer within this many hours, the pipeline proceeds with best-judgment
+    # assumptions flagged for the release approval. Configurable per project.
+    clarification_timeout_hours: int = 24
+
     # --- CEO intake handler (Phase 25 walking skeleton) ---
     # When a project brief is created, run the thin CEO intake turn (stream an LLM
     # response, publish run.output.delta over the WS, persist user stories). Opt-in

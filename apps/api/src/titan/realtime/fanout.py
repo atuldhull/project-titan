@@ -184,6 +184,16 @@ async def _handoff(fanout: WsFanout, payload: dict[str, Any], ts: str) -> None:
     )
 
 
+async def _clarification(fanout: WsFanout, payload: dict[str, Any], ts: str) -> None:
+    # Vol 6 §2.4 (TITAN-WFL-007/008): a clarification batch opened/answered/timed
+    # out. Metadata only (project + batch ids, status, counts) — never question or
+    # answer text (TITAN-OPS-016).
+    clar = payload["clarification"]
+    await fanout._publish_project(
+        str(clar["project_id"]), protocol.CLARIFICATION_UPDATED, clar, ts, buffered=True
+    )
+
+
 async def _agent_status(fanout: WsFanout, payload: dict[str, Any], ts: str) -> None:
     await fanout._publish_agents(
         {k: payload.get(k) for k in ("agent_id", "state", "current_task_id")}, ts
@@ -216,6 +226,7 @@ _HANDLERS: dict[str, Any] = {
     protocol.TASK_KANBAN: _kanban,
     protocol.PIPELINE_UPDATED: _pipeline,
     protocol.HANDOFF_EVALUATED: _handoff,
+    protocol.CLARIFICATION_UPDATED: _clarification,
     "notification.created": _notification,
     protocol.SYS_NOTICE: _sys_notice,
 }

@@ -242,6 +242,18 @@ class Adr(BaseModel):
     rationale: str = Field(min_length=1, max_length=4000)
 
 
+class TaskComponentRef(BaseModel):
+    """Maps a TaskGraph task (from the H4 SprintPlan) to the package component that
+    implements it. The mapping lives on the ArchitecturePackage because tasks are
+    decomposed at H4 *before* components exist at H5; the Architect declares the
+    home component for every task here, and G5 checks the coverage (§2.3 H5)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str = Field(min_length=1, max_length=100)
+    component: str = Field(min_length=1, max_length=200)
+
+
 class ArchitecturePackage(_Artifact):
     artifact_type: Literal["ArchitecturePackage"] = "ArchitecturePackage"
     component_diagram_ascii: str = Field(min_length=1)
@@ -250,6 +262,8 @@ class ArchitecturePackage(_Artifact):
     database: DbSchemaDraft
     frontend: FrontendPlan
     adrs: list[Adr] = Field(default_factory=list, max_length=200)
+    # G5 coverage (§2.3 H5): every TaskGraph task maps to a component in this package.
+    task_components: list[TaskComponentRef] = Field(default_factory=list, max_length=5000)
 
 
 # --- H6: MergeCandidateManifest ---------------------------------------------
@@ -575,6 +589,7 @@ __all__ = [
     "SprintPlan",
     "SprintSlice",
     "TableDraft",
+    "TaskComponentRef",
     "TaskEdge",
     "TestSuiteResult",
     "TraceRow",

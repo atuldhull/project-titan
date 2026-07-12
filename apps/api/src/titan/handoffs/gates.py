@@ -1,20 +1,31 @@
-"""Acceptance gates (Vol 6 §2.2, TITAN-WFL-003/004).
+"""Acceptance gates (Vol 6 §2.2, TITAN-WFL-003/004; §2.3 G1–G12).
 
 A gate is a machine-checkable predicate (optionally plus a consumer-agent review)
 that decides whether a handoff artifact may proceed. Every evaluation yields a
 :class:`GateResult` carrying the verdict, the reasons, and the evaluator identity
 (agent + model + prompt version) the ledger records.
 
-Two gates ship in this phase:
-- :func:`validate_schema` — the universal, always-first gate (TITAN-WFL-003):
-  schema-validation failure IS gate failure, with a field-level error report.
-- :class:`ConfigurableGate` — a deterministic fake gate the tests drive to force
-  pass/fail without an LLM, standing in for the concrete G1–G12 predicates that
-  land in later phases. The gate registry maps each stage to its gate; unmapped
-  stages fall back to the default (auto-pass once the schema validates), so the
-  framework is exercised end-to-end before real predicates exist.
+The gate framework is deliberately split into two layers:
+
+- The **schema gate** :func:`validate_schema` — the universal, always-first gate
+  (TITAN-WFL-003): schema-validation failure IS gate failure, with a field-level
+  error report. It runs in the executor before the acceptance gate.
+- The **acceptance gate**, a :class:`Gate` evaluated against a :class:`GateContext`.
+  The context carries everything a gate needs beyond its own artifact — prior-stage
+  artifacts (for cross-artifact traceability checks), the active constitution (for
+  G5), sibling active projects (for G1 duplicate detection), and tunables — so the
+  gate predicates stay **pure and synchronous** (no DB, no I/O), and therefore
+  deterministically fixture-testable. The executor assembles the context (the only
+  place that touches the database) and calls the pure gate.
+
+:class:`ConfigurableGate` is a deterministic fake gate the tests drive to force
+pass/fail without an evaluator; the concrete G1–G5 predicates live in
+``standard_gates``. The registry maps each stage to its gate; unmapped stages fall
+back to the default (auto-pass once the schema validates).
 """
 
+import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -33,18 +44,42 @@ class GateResult:
     evaluator_agent: str = "orchestrator"
     evaluator_model: str = "none"
     prompt_version: str = "n/a"
+    #: The constitution version this gate judged against (G5 only — §2.3 H5 DoD).
+    constitution_version: int | None = None
+
+
+@dataclass(frozen=True)
+class GateContext:
+    """Everything a pure gate predicate needs to evaluate one handoff. The executor
+    assembles it (the sole DB touchpoint); gates read it and stay side-effect-free.
+
+    ``body`` is the already-schema-valid, normalized artifact payload of ``stage``.
+    ``prior_artifacts`` maps each earlier producing stage to its latest normalized
+    artifact body (for cross-artifact checks — e.g. G3 story→feature coverage,
+    G4 story→task mapping, G5 task→component coverage)."""
+
+    stage: str
+    body: Mapping[str, Any]
+    prior_artifacts: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    #: Other non-archived projects' request/brief text (normalized) — G1 dedup.
+    active_project_texts: tuple[str, ...] = ()
+    #: The active constitution G5 judges against (retrieved into context, not
+    #: hardcoded). ``constitution_version`` is stamped onto the G5 ledger row.
+    constitution_version: int | None = None
+    constitution_body: str = ""
+    #: Per-sprint capacity in ideal agent-days (G4 capacity check).
+    sprint_capacity_days: float = 5.0
+    project_id: uuid.UUID | None = None
 
 
 class Gate(Protocol):
-    """A stage's acceptance gate. ``body`` is the already-schema-valid artifact
-    payload (validate_schema runs first, so a gate never sees an invalid one)."""
+    """A stage's acceptance gate. Pure: it reads only its :class:`GateContext` and
+    returns a :class:`GateResult` — no I/O, so it is deterministically testable."""
 
-    def evaluate(self, stage: str, body: dict[str, object]) -> GateResult: ...
+    def evaluate(self, ctx: GateContext) -> GateResult: ...
 
 
-def validate_schema(
-    stage: str, body: dict[str, Any]
-) -> tuple[GateResult, dict[str, Any] | None]:
+def validate_schema(stage: str, body: dict[str, Any]) -> tuple[GateResult, dict[str, Any] | None]:
     """The universal schema gate (TITAN-WFL-003). Returns ``(result, normalized)``:
     on success ``normalized`` is the round-tripped artifact payload (canonical,
     defaults filled); on failure ``result.passed`` is False with a field-level
@@ -77,7 +112,8 @@ def _field_errors(exc: ValidationError) -> list[str]:
 class ConfigurableGate:
     """A deterministic fake gate (tests + the framework default). Passes unless
     configured to fail; carries a fake evaluator identity so the ledger's
-    evaluator columns are exercised. Stands in for the real G1–G12 predicates."""
+    evaluator columns are exercised. Stands in for the real G1–G12 predicates when
+    a stage has no registered gate."""
 
     passes: bool = True
     reasons: list[str] = field(default_factory=list)
@@ -85,7 +121,7 @@ class ConfigurableGate:
     evaluator_model: str = "fake-model"
     prompt_version: str = "v0"
 
-    def evaluate(self, stage: str, body: dict[str, object]) -> GateResult:
+    def evaluate(self, ctx: GateContext) -> GateResult:
         return GateResult(
             passed=self.passes,
             reasons=list(self.reasons) if not self.passes else [],
@@ -95,8 +131,9 @@ class ConfigurableGate:
         )
 
 
-# The default gate: once the schema validates, auto-pass. Concrete per-stage G1–G12
-# predicates register here in later phases (Phase 43+).
+# The default gate: once the schema validates, auto-pass. Stages with a concrete
+# G1–G12 predicate register it (``standard_gates.register_standard_gates``);
+# unregistered stages (G6–G12, not yet implemented) fall back to this default.
 _DEFAULT_GATE: Gate = ConfigurableGate(passes=True)
 _GATES: dict[str, Gate] = {}
 
@@ -119,6 +156,7 @@ def clear_gates() -> None:
 __all__ = [
     "ConfigurableGate",
     "Gate",
+    "GateContext",
     "GateResult",
     "clear_gates",
     "gate_for_stage",

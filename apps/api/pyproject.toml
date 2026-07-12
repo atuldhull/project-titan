@@ -164,6 +164,8 @@ modules = [
     "titan.runtime",
     "titan.conflict",
     "titan.handoffs",
+    "titan.constitution",
+    "titan.clarification",
 ]
 ignore_imports = ["titan.** -> titan.*.service"]
 unmatched_ignore_imports_alerting = "none"
@@ -191,6 +193,8 @@ source_modules = [
     "titan.runtime",
     "titan.conflict",
     "titan.handoffs",
+    "titan.constitution",
+    "titan.clarification",
     "titan.events",
     "titan.observability",
 ]
@@ -214,4 +218,6 @@ forbidden_modules = [
     "titan.runtime",
     "titan.conflict",
     "titan.handoffs",
+    "titan.constitution",
+    "titan.clarification",
 ]

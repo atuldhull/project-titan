@@ -20,6 +20,7 @@ from prometheus_client import start_http_server
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from titan import clients
+from titan.clarification import service as clarification
 from titan.events import service as events
 from titan.events.consumers import run_domain_consumer, run_drainer, run_reaper
 from titan.events.outbox import OutboxDrainer
@@ -48,6 +49,11 @@ METRICS_PORT = 9100
 # 30 seconds" DoD for projects with no pipeline yet.
 PIPELINE_RECONCILE_INTERVAL_S = 15.0
 
+# How often to resolve clarification batches past their non-blocking deadline
+# (TITAN-WFL-008). Deadlines are hours out (default 24h), so a minute-scale tick is
+# ample; the resolver is idempotent and per-project serialized.
+CLARIFICATION_TIMEOUT_INTERVAL_S = 60.0
+
 
 async def _sleep_or_stop(stop: asyncio.Event, seconds: float) -> None:  # pragma: no cover
     with contextlib.suppress(TimeoutError):
@@ -68,6 +74,22 @@ async def run_pipeline_reconciler(  # pragma: no cover — live-verified loop
         except Exception:
             logger.exception("pipeline.reconciler_error")
         await _sleep_or_stop(stop, PIPELINE_RECONCILE_INTERVAL_S)
+
+
+async def run_clarification_timeout_reaper(  # pragma: no cover — live-verified loop
+    engine: AsyncEngine, *, stop: asyncio.Event
+) -> None:
+    """Resolve clarification batches past their non-blocking deadline (TITAN-WFL-008):
+    proceed with best-judgment assumptions flagged high-visibility for the release
+    approval. Self-healing: a transient DB error is logged and retried."""
+    while not stop.is_set():
+        try:
+            resolved = await clarification.resolve_timed_out_batches(engine)
+            if resolved:
+                logger.info("clarification.timed_out", resolved=resolved)
+        except Exception:
+            logger.exception("clarification.timeout_reaper_error")
+        await _sleep_or_stop(stop, CLARIFICATION_TIMEOUT_INTERVAL_S)
 
 
 async def run() -> None:  # pragma: no cover — live-verified orchestration loop
@@ -109,6 +131,7 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
             "memory-embedder",
             "memory-ingest-reaper",
             "pipeline-reconciler",
+            "clarification-timeout-reaper",
         ],
         worker_concurrency=settings.worker_concurrency,
         metrics_port=METRICS_PORT,
@@ -152,6 +175,7 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
         asyncio.create_task(memory.run_embedder(embedder, bus, consumer_name, stop=stop)),
         asyncio.create_task(memory.run_ingest_reaper(embedder, bus, consumer_name, stop=stop)),
         asyncio.create_task(run_pipeline_reconciler(engine, stop=stop)),
+        asyncio.create_task(run_clarification_timeout_reaper(engine, stop=stop)),
     ]
     try:
         # return_exceptions: a loop that somehow escapes its own guard cannot

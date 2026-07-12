@@ -193,6 +193,16 @@ async def list_projects(
     return Page(items=[ProjectOut.model_validate(r) for r in page], next_cursor=cursor)
 
 
+async def active_project_briefs(
+    conn: AsyncConnection, *, exclude: uuid.UUID | None = None
+) -> list[str]:
+    """The brief text of every active (non-archived, non-released) project, minus
+    ``exclude``. Gate G1 compares an incoming UserRequest against these to reject a
+    duplicate of an already-active project (§2.3 H1)."""
+    rows = await repo.active_project_briefs(conn, exclude=exclude)
+    return [str(r.brief) for r in rows]
+
+
 async def update_project(
     conn: AsyncConnection, project_id: uuid.UUID, patch: ProjectPatch, expected_version: int
 ) -> ProjectOut | None:

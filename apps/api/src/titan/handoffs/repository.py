@@ -17,7 +17,7 @@ _ARTIFACT_COLS = (
 )
 _GATE_COLS = (
     "id, project_id, stage, artifact_id, attempt, verdict, reasons, evaluator_agent, "
-    "evaluator_model, prompt_version, created_at"
+    "evaluator_model, prompt_version, constitution_version, created_at"
 )
 
 
@@ -90,13 +90,15 @@ async def insert_gate_evaluation(
     evaluator_agent: str,
     evaluator_model: str,
     prompt_version: str,
+    constitution_version: int | None = None,
 ) -> Row[Any]:
     result = await conn.execute(
         text(
             "INSERT INTO gate_evaluations "
             "(id, project_id, stage, artifact_id, attempt, verdict, reasons, evaluator_agent, "
-            "evaluator_model, prompt_version) VALUES (:id, :pid, :stage, :aid, :attempt, :verdict, "
-            "CAST(:reasons AS jsonb), :agent, :model, :pv) "
+            "evaluator_model, prompt_version, constitution_version) "
+            "VALUES (:id, :pid, :stage, :aid, :attempt, :verdict, "
+            "CAST(:reasons AS jsonb), :agent, :model, :pv, :cv) "
             f"RETURNING {_GATE_COLS}"
         ),
         {
@@ -110,6 +112,7 @@ async def insert_gate_evaluation(
             "agent": evaluator_agent,
             "model": evaluator_model,
             "pv": prompt_version,
+            "cv": constitution_version,
         },
     )
     return result.one()

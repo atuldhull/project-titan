@@ -39,6 +39,8 @@ TASK_KANBAN = "task.kanban"
 PIPELINE_UPDATED = "pipeline.updated"
 # Vol 6 §2.2 (Phase 42): a handoff gate evaluation (the §2.2 outcome / failure event).
 HANDOFF_EVALUATED = "handoff.evaluated"
+# Vol 6 §2.4 (Phase 43): a CEO clarification batch opened / answered / timed out.
+CLARIFICATION_UPDATED = "clarification.updated"
 
 SERVER_EVENT_TYPES: frozenset[str] = frozenset(
     {
@@ -55,6 +57,7 @@ SERVER_EVENT_TYPES: frozenset[str] = frozenset(
         TASK_KANBAN,
         PIPELINE_UPDATED,
         HANDOFF_EVALUATED,
+        CLARIFICATION_UPDATED,
     }
 )
 
@@ -210,6 +213,7 @@ def parse_client_frame(raw: str) -> ClientFrame:
 __all__ = [
     "AGENT_STATUS",
     "AUTHENTICATED",
+    "CLARIFICATION_UPDATED",
     "DECISION_RECORDED",
     "ERROR",
     "HANDOFF_EVALUATED",

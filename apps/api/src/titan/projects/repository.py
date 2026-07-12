@@ -83,6 +83,26 @@ async def list_projects(
     return result.all()
 
 
+async def active_project_briefs(
+    conn: AsyncConnection, *, exclude: uuid.UUID | None = None
+) -> Sequence[Row[Any]]:
+    """The (id, brief) of every non-terminal project — those a new request could
+    duplicate (gate G1). ``archived``/``released`` projects are done, not active,
+    so they are excluded; ``exclude`` drops the requesting project itself."""
+    params: dict[str, Any] = {}
+    clause = ""
+    if exclude is not None:
+        clause = "AND id <> :exclude"
+        params["exclude"] = exclude
+    result = await conn.execute(
+        text(
+            f"SELECT id, brief FROM projects WHERE status NOT IN ('archived', 'released') {clause}"
+        ),
+        params,
+    )
+    return result.all()
+
+
 async def update_project(
     conn: AsyncConnection,
     project_id: uuid.UUID,

@@ -20,6 +20,8 @@ from fastapi.openapi.utils import get_openapi
 from titan import clients
 from titan.agents import router as agents_router
 from titan.agents import service as agents_service
+from titan.clarification import router as clarification_router
+from titan.constitution import router as constitution_router
 from titan.events import service as events_service
 from titan.gateway.idempotency import IdempotencyMiddleware
 from titan.gateway.middleware import RequestContextMiddleware
@@ -32,6 +34,7 @@ from titan.gateway.security import (
 )
 from titan.gateway.slots import AuthenticationSlot, RateLimitSlot, RBACSlot
 from titan.handoffs import router as handoffs_router
+from titan.handoffs.service import register_standard_gates
 from titan.identity import router as identity_router
 from titan.identity.tokens import KeyRing
 from titan.llm import router as llm_router
@@ -324,6 +327,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     tools_router.mount(app)  # /projects/{id}/tool-approvals — admin-risk gate
     realtime_router.mount(app)  # /ws — JWT-authenticated realtime channel (ADR-009)
     memory_router.mount(app)  # /memory/events, /memory/records/{id} — the Memory Service
+    constitution_router.mount(app)  # /constitution — versioned §6 standards artifact
+    clarification_router.mount(app)  # /projects/{id}/clarifications — CEO §2.4 engine
     otel.instrument_app(active_settings, app)
 
     def custom_openapi() -> dict[str, Any]:
@@ -342,3 +347,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 app = create_app()
+# Register the concrete G2–G5 acceptance gates (Vol 6 §2.3) at the composition
+# root so real pipelines enforce them. Idempotent; tests drive the gate registry
+# explicitly (the §2.3 predicates live in titan.handoffs.standard_gates).
+register_standard_gates()

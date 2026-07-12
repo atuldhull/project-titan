@@ -67,6 +67,8 @@ class GateEvaluation(Base):
     evaluator_agent: Mapped[str] = mapped_column(Text, nullable=False)
     evaluator_model: Mapped[str] = mapped_column(Text, nullable=False)
     prompt_version: Mapped[str] = mapped_column(Text, nullable=False)
+    # The constitution version this gate judged against (G5 only; null otherwise).
+    constitution_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
     )
