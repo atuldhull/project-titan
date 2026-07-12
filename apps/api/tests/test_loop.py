@@ -471,3 +471,63 @@ def test_two_findings_in_one_cycle_both_reach_arbitration(api: dict[str, Any]) -
     arb = [f for f in _loop_view(api, tid)["findings"] if f["disposition"] == "arbitration"]
     assert {f["rationale"] for f in arb} == {"issue x", "issue y"}
     assert all(f["conflict_id"] is not None for f in arb)
+
+
+def test_advisory_finding_is_persisted_with_its_rule_and_does_not_block(
+    api: dict[str, Any],
+) -> None:
+    """Phase 47: a finding carrying a §6.6 rule code round-trips through
+    loop_findings (TITAN-WFL-033), and an ADVISORY finding (out of blast radius)
+    does not count toward convergence — so a cycle with only advisory findings is
+    clean and the task converges."""
+    pid = _project(api)
+    tid = _task_in_progress(api, pid)
+    advisory = Finding(
+        fingerprint="adv-1",
+        severity="major",
+        file="legacy.py",
+        line=3,
+        rationale="pre-existing missing docstring",
+        suggestion="add a docstring",
+        rule_code="R11",
+        advisory=True,
+    )
+    # The advisory finding is raised every cycle but must never block convergence.
+    out = _run(api, tid, ScriptedDriver(findings={1: [advisory], 2: [advisory]}))
+    assert out.status == "converged" and out.task_status == "merged"
+
+    stored = {f["fingerprint"]: f for f in _loop_view(api, tid)["findings"]}
+    assert "adv-1" in stored
+    assert stored["adv-1"]["rule_code"] == "R11"
+    assert stored["adv-1"]["advisory"] is True
+
+
+def test_advisory_finding_never_routes_to_arbitration(api: dict[str, Any]) -> None:
+    """Phase 47 review-fix: an advisory finding must NEVER block, even when it
+    would otherwise arbitrate. Here the driver would refute-and-uphold it every
+    cycle (which for a normal finding routes to the Architect twice-upheld), yet
+    an advisory finding opens no conflict and the task converges."""
+    pid = _project(api)
+    tid = _task_in_progress(api, pid)
+    advisory = Finding(
+        fingerprint="adv-arb",
+        severity="blocking",
+        file="legacy.py",
+        line=99,
+        rationale="pre-existing issue outside the diff",
+        suggestion="handle separately",
+        rule_code="R1",
+        advisory=True,
+    )
+    driver = ScriptedDriver(
+        findings={1: [advisory], 2: [advisory]},
+        dispositions={"adv-arb": Disposition(kind="refuted", reason="out of scope")},
+        upheld=True,  # a NON-advisory finding refuted+upheld twice would arbitrate
+    )
+    out = _run(api, tid, driver)
+    assert out.status == "converged" and out.task_status == "merged"
+    assert _arbitration_count(api, pid) == 0, "an advisory finding must not open a conflict"
+    stored = {f["fingerprint"]: f for f in _loop_view(api, tid)["findings"]}
+    # It is recorded with a terminal (non-open) disposition — 100% terminal (WFL-012).
+    assert stored["adv-arb"]["disposition"] == "refuted"
+    assert stored["adv-arb"]["advisory"] is True

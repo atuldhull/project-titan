@@ -59,7 +59,11 @@ class ReviewerContext:
 class Finding:
     """One review finding. ``fingerprint`` is its stable identity within a loop
     (re-asserting the same finding is a no-op insert and drives oscillation/new
-    detection); ``hunk_key`` identifies the code hunk it concerns."""
+    detection); ``hunk_key`` identifies the code hunk it concerns.
+
+    ``rule_code`` cites the §6.6 rule (R1-R11, Phase 47) and ``advisory`` marks a
+    finding outside the diff's blast radius — persisted so loop records satisfy
+    the TITAN-WFL-033 citation requirement."""
 
     fingerprint: str
     severity: str
@@ -68,6 +72,8 @@ class Finding:
     rationale: str
     suggestion: str = ""
     hunk_key: str = ""
+    rule_code: str = ""
+    advisory: bool = False
 
 
 @dataclass(frozen=True)

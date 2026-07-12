@@ -17,8 +17,8 @@ _LOOP_COLS = (
 )
 _FINDING_COLS = (
     "id, loop_id, task_id, raised_cycle, severity, file, line, rationale, suggestion, "
-    "fingerprint, hunk_key, disposition, refutation_reason, refute_upheld_count, conflict_id, "
-    "created_at, updated_at, version"
+    "fingerprint, hunk_key, rule_code, advisory, disposition, refutation_reason, "
+    "refute_upheld_count, conflict_id, created_at, updated_at, version"
 )
 _CYCLE_COLS = "id, loop_id, cycle_number, new_findings_count, clean, outcome, created_at"
 _EVENT_COLS = "id, loop_id, task_id, cycle_number, stage, actor, verdict, detail, at"
@@ -174,14 +174,16 @@ async def insert_finding_if_new(
     suggestion: str,
     fingerprint: str,
     hunk_key: str,
+    rule_code: str = "",
+    advisory: bool = False,
 ) -> bool:
     """Insert a finding; a no-op if this fingerprint already exists in the loop
     (a re-asserted finding, not a new one). Returns True iff it was new."""
     result = await conn.execute(
         text(
             "INSERT INTO loop_findings (id, loop_id, task_id, raised_cycle, severity, file, line, "
-            "rationale, suggestion, fingerprint, hunk_key) "
-            "VALUES (:id, :lid, :tid, :rc, :sev, :file, :line, :rat, :sug, :fp, :hk) "
+            "rationale, suggestion, fingerprint, hunk_key, rule_code, advisory) "
+            "VALUES (:id, :lid, :tid, :rc, :sev, :file, :line, :rat, :sug, :fp, :hk, :rule, :adv) "
             "ON CONFLICT (loop_id, fingerprint) DO NOTHING RETURNING id"
         ),
         {
@@ -196,6 +198,8 @@ async def insert_finding_if_new(
             "sug": suggestion,
             "fp": fingerprint,
             "hk": hunk_key,
+            "rule": rule_code or None,
+            "adv": advisory,
         },
     )
     return result.one_or_none() is not None
@@ -251,11 +255,14 @@ async def open_minor_plus_count(conn: AsyncConnection, loop_id: uuid.UUID) -> in
     backlog a clean cycle must have emptied. "≥ minor" matches the engine's
     ``is_minor_plus``: everything EXCEPT ``info`` (an unknown/out-of-enum severity
     is treated as ≥ minor, never silently dropped — closing the fail-open where an
-    upheld 'critical' finding would slip past a literal severity allow-list)."""
+    upheld 'critical' finding would slip past a literal severity allow-list).
+
+    Advisory findings (outside the diff's blast radius, TITAN-WFL-033) are
+    excluded — they are recorded with their rule citation but can never block."""
     result = await conn.execute(
         text(
             "SELECT count(*) FROM loop_findings WHERE loop_id = :l "
-            "AND disposition IN ('open', 'upheld') AND severity <> 'info'"
+            "AND disposition IN ('open', 'upheld') AND severity <> 'info' AND advisory = false"
         ),
         {"l": loop_id},
     )

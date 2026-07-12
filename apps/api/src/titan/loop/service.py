@@ -111,6 +111,9 @@ class LoopFindingOut(BaseModel):
     line: int
     rationale: str
     suggestion: str
+    fingerprint: str
+    rule_code: str | None
+    advisory: bool
     disposition: str
     refutation_reason: str | None
     refute_upheld_count: int
@@ -265,6 +268,22 @@ async def run_loop(
         findings = list(await driver.review(reviewer_ctx, cycle))
         gathered: list[tuple[Finding, engine.Disposition, bool | None, bool]] = []
         for finding in findings:
+            # Advisory findings (outside the diff's blast radius, TITAN-WFL-033)
+            # NEVER block: they skip refute-or-fix and arbitration entirely and
+            # take a terminal, non-disputed disposition. Routing one to the
+            # engineer or the Architect would let an out-of-scope note block merge.
+            if finding.advisory:
+                gathered.append(
+                    (
+                        finding,
+                        engine.Disposition(
+                            kind="refuted", reason="advisory: outside the diff's blast radius"
+                        ),
+                        None,
+                        False,
+                    )
+                )
+                continue
             disp = await driver.dispose(finding, cycle)
             oscillated = False
             if disp.new_hunk_state is not None:
@@ -317,8 +336,12 @@ async def run_loop(
                     suggestion=finding.suggestion,
                     fingerprint=finding.fingerprint,
                     hunk_key=finding.hunk_key,
+                    rule_code=finding.rule_code,
+                    advisory=finding.advisory,
                 )
-                if is_new and is_minor_plus(finding):
+                # Advisory findings (out of blast radius, TITAN-WFL-033) are
+                # recorded but never count toward convergence — they cannot block.
+                if is_new and is_minor_plus(finding) and not finding.advisory:
                     new_minor_plus += 1
 
             # Every finding that reaches arbitration this cycle (oscillation OR a
