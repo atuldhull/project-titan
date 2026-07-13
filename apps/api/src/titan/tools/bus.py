@@ -333,18 +333,21 @@ class ToolBus:
             if self._workspace_provider is not None
             else None
         )
+        # One live-output stream per call, shared by whichever session runs it
+        # (terminal/git via the sandbox, docker/deploy via the DinD sidecar). It
+        # is a silent no-op when no broker is wired.
+        stream = ToolOutputStream(
+            self._redis,
+            project_id=call.project_id,
+            task_id=call.task_id,
+            agent_id=call.agent_id,
+            tool=call.tool,
+            tool_call_id=call.tool_call_id,
+        )
         # A lightweight per-call session handle (the container is created lazily
         # only if a terminal/git/code tool actually calls `await ctx.sandbox.get()`).
         sandbox: SandboxSession | None = None
         if self._sandbox_manager is not None and workspace is not None:
-            stream = ToolOutputStream(
-                self._redis,
-                project_id=call.project_id,
-                task_id=call.task_id,
-                agent_id=call.agent_id,
-                tool=call.tool,
-                tool_call_id=call.tool_call_id,
-            )
             sandbox = SandboxSession(
                 self._sandbox_manager,
                 project_id=call.project_id,
@@ -352,8 +355,10 @@ class ToolBus:
                 workspace=workspace,
                 stream=stream,
             )
-        # docker.* run against a per-task DinD sidecar (needs the workspace for
-        # compose files / build contexts); browser.* drive a per-task page.
+        # docker.* / deploy.* run against a per-task DinD sidecar (needs the
+        # workspace for compose files / build contexts) and stream their build,
+        # compose, and container logs over the same tool.output channel;
+        # browser.* drive a per-task page.
         dind: DindSession | None = None
         if self._dind_manager is not None and workspace is not None:
             dind = DindSession(
@@ -361,6 +366,7 @@ class ToolBus:
                 project_id=call.project_id,
                 task_id=call.task_id,
                 workspace=workspace,
+                stream=stream,
             )
         browser: BrowserSession | None = None
         if self._browser_manager is not None:

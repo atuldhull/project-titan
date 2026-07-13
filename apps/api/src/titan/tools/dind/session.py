@@ -14,6 +14,7 @@ import uuid
 from titan.tools.dind.controller import DindController, DindSidecar
 from titan.tools.errors import ToolError
 from titan.tools.sandbox.workspace import Workspace
+from titan.tools.streaming import ToolOutputStream
 
 _Key = tuple[str, str]
 _LOCK_STRIPES = 64
@@ -62,7 +63,11 @@ class DindSessionManager:
 
 
 class DindSession:
-    """The per-call handle placed in ``ToolExecutionContext.dind``."""
+    """The per-call handle placed in ``ToolExecutionContext.dind``. Carries the
+    call's live-output stream so a docker/deploy tool can pump its build,
+    compose, and container logs to the dashboard Logs view over the tool.output
+    channel (``stream`` is ``None`` when no broker is wired — streaming is then a
+    silent no-op)."""
 
     def __init__(
         self,
@@ -71,15 +76,21 @@ class DindSession:
         project_id: uuid.UUID,
         task_id: uuid.UUID | None,
         workspace: Workspace,
+        stream: ToolOutputStream | None = None,
     ) -> None:
         self._manager = manager
         self._project_id = project_id
         self._task_id = task_id
         self._workspace = workspace
+        self._stream = stream
 
     @property
     def workspace(self) -> Workspace:
         return self._workspace
+
+    @property
+    def stream(self) -> ToolOutputStream | None:
+        return self._stream
 
     async def get(self) -> DindSidecar:
         try:

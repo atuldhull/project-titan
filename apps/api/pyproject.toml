@@ -180,6 +180,7 @@ modules = [
     "titan.loop",
     "titan.review",
     "titan.docs",
+    "titan.deploy",
 ]
 ignore_imports = ["titan.** -> titan.*.service"]
 unmatched_ignore_imports_alerting = "none"
@@ -212,6 +213,7 @@ source_modules = [
     "titan.loop",
     "titan.review",
     "titan.docs",
+    "titan.deploy",
     "titan.ci_kit",
     "titan.events",
     "titan.observability",

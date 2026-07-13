@@ -134,6 +134,40 @@ def test_first_commit_on_unborn_task_branch_is_allowed() -> None:
         h.close()
 
 
+def test_git_init_then_conventional_task_branch_commit() -> None:
+    """FND-012 / Vol 6 §6.2: git.init creates the per-project repo; an agent then
+    branches to a Conventional ``type/task-id-slug`` branch and commits, recorded
+    with the agent as author — the per-project versioned workspace story."""
+    h = ToolHarness()
+    try:
+        initialized = run_async(lambda: git._init({}, h.ctx())).result
+        assert initialized["initialized"] is True
+        created = run_async(lambda: git._branch({"name": "feat/TSK-1-widget"}, h.ctx()))
+        assert created.result["branch"] == "feat/TSK-1-widget"
+        (h.workspace.root / "widget.py").write_text("print('w')\n")
+        committed = run_async(
+            lambda: git._commit(
+                {
+                    "message": "feat(widget): add the widget module",
+                    "paths": ["widget.py"],
+                    "author_agent": "agent.backend.7",
+                },
+                h.ctx(),
+            )
+        ).result
+        assert len(committed["commit_sha"]) == 40 and committed["files_changed"] == 1
+        status = run_async(lambda: git._status({}, h.ctx())).result
+        assert status["branch"] == "feat/TSK-1-widget"
+        author = run_async(
+            lambda: terminal._run(
+                {"argv": ["git", "-c", "safe.directory=*", "log", "-1", "--format=%an"]}, h.ctx()
+            )
+        ).result
+        assert author["stdout"].strip() == "agent.backend.7"
+    finally:
+        h.close()
+
+
 def test_branch_and_push_constraints_reject_refspec_smuggling() -> None:
     # The param constraints (checked in the bus) reject non-task names AND
     # refspec smuggling (titan/task-1:main) before the executor runs.

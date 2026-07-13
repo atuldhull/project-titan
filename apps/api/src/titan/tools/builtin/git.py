@@ -12,6 +12,7 @@ credentials, so push/clone run against local fixtures for now.
 
 from typing import Any
 
+from titan.tools.branches import is_task_branch
 from titan.tools.errors import ToolError, ToolErrorCode
 from titan.tools.registry import ExecutionOutcome, ToolExecutionContext, ToolSpec
 from titan.tools.sandbox.controller import ExecResult, Sandbox
@@ -19,6 +20,11 @@ from titan.tools.sandbox.policy import ResourceLimits
 from titan.tools.sandbox.session import SandboxSession
 
 _TASK_BRANCH_PREFIX = "titan/task-"
+# The Vol 6 §6.2 branch guidance surfaced in error messages (kept referencing
+# titan/task-* so the SEC-031 contract stays legible in the denial text).
+_TASK_BRANCH_HINT = (
+    "a task branch (titan/task-* or a Conventional type/task-id-slug, e.g. feat/TSK-1-x)"
+)
 # safe.directory='*' avoids git's "dubious ownership" refusal when the
 # bind-mounted /workspace is owned by a different uid than the runtime user.
 _GIT_BASE = ["git", "-c", "safe.directory=*"]
@@ -44,38 +50,48 @@ async def _current_branch(sandbox: Sandbox) -> str:
 
 
 async def _require_task_branch(sandbox: Sandbox) -> str:
-    """TITAN-SEC-031: commit/merge/rebase may only mutate a titan/task-* branch."""
+    """TITAN-SEC-031: commit/merge/rebase may only mutate a task branch — the
+    platform ``titan/task-*`` form or a Vol 6 §6.2 Conventional ``type/task-id-
+    slug`` branch (never a protected branch)."""
     branch = await _current_branch(sandbox)
-    if not branch.startswith(_TASK_BRANCH_PREFIX):
+    if not is_task_branch(branch):
         raise ToolError(
             "PERMISSION_DENIED",
-            f"git writes are only allowed on {_TASK_BRANCH_PREFIX}* branches (on {branch!r})",
+            f"git writes are only allowed on {_TASK_BRANCH_HINT} (on {branch!r})",
         )
     return branch
 
 
 def _task_branch_constraint(field: str) -> Any:
     """A TITAN-SEC-031 param constraint: the named branch argument must be a bare
-    titan/task-* branch — never a refspec, force-push, or ref expression (used
-    where the branch is an argument, not the current HEAD)."""
+    task branch (``titan/task-*`` or a Vol 6 §6.2 ``type/task-id-slug`` branch) —
+    never a protected branch, refspec, force-push, or ref expression (used where
+    the branch is an argument, not the current HEAD)."""
 
     def check(args: dict[str, Any]) -> "tuple[ToolErrorCode, str] | None":
         value = args.get(field)
         if value is None:
             return None
-        text = str(value)
-        # A refspec (src:dst), force (+), or ref-expression (^ ~ @{ whitespace)
-        # could redirect the write off the task branch (e.g. titan/task-1:main).
-        if any(ch in text for ch in ":+^~ \t\n") or "@{" in text:
-            return (
-                "PERMISSION_DENIED",
-                f"at '/{field}': must be a bare {_TASK_BRANCH_PREFIX}* branch, not a refspec",
-            )
-        if not text.startswith(_TASK_BRANCH_PREFIX):
-            return ("PERMISSION_DENIED", f"at '/{field}': must be a {_TASK_BRANCH_PREFIX}* branch")
+        # is_task_branch rejects protected names AND ref-smuggling (refspec,
+        # force, ref-expression, whitespace) — e.g. titan/task-1:main.
+        if not is_task_branch(str(value)):
+            return ("PERMISSION_DENIED", f"at '/{field}': must be {_TASK_BRANCH_HINT}")
         return None
 
     return check
+
+
+def _default_branch_constraint(args: dict[str, Any]) -> "tuple[ToolErrorCode, str] | None":
+    """``git.init`` may name any plain default branch (``main`` is the norm), but
+    the argument must be a bare branch name — never a refspec, ref expression,
+    option-injection, or whitespace-bearing string."""
+    value = args.get("default_branch")
+    if value is None:
+        return None
+    text = str(value)
+    if text.startswith("-") or "@{" in text or any(ch in text for ch in ":+^~ \t\n"):
+        return ("PERMISSION_DENIED", "at '/default_branch': must be a bare branch name")
+    return None
 
 
 def _remote_constraint(args: dict[str, Any]) -> "tuple[ToolErrorCode, str] | None":
@@ -85,6 +101,27 @@ def _remote_constraint(args: dict[str, Any]) -> "tuple[ToolErrorCode, str] | Non
     if remote and (any(ch in remote for ch in ":/@\\") or remote.startswith(".")):
         return ("PERMISSION_DENIED", "at '/remote': must be a configured remote name, not a URL")
     return None
+
+
+# --- init (per-project repo) -------------------------------------------------
+
+
+async def _init(args: dict[str, Any], ctx: ToolExecutionContext) -> ExecutionOutcome:
+    """Initialize the per-project git repository in the workspace (TITAN-FND-012).
+
+    Idempotent (``git init`` re-runs cleanly on an existing repo). The default
+    branch is deliberately a NON-task branch, so an agent must branch to a task
+    branch before it can commit — SEC-031 still gates every write."""
+    sandbox = await _require_sandbox(ctx).get()
+    default_branch = str(args.get("default_branch", "main"))
+    result = await _git(sandbox, ["init", "-q", "-b", default_branch])
+    if not result.ok:
+        raise ToolError("UPSTREAM_ERROR", f"git init failed: {result.stderr.strip()}")
+    # A stable repo identity so agent-less bookkeeping commits have an author;
+    # git.commit still overrides it per commit with the acting agent.
+    await _git(sandbox, ["config", "user.name", "titan-agent"])
+    await _git(sandbox, ["config", "user.email", "agent@titan.local"])
+    return ExecutionOutcome(result={"initialized": True, "branch": default_branch})
 
 
 # --- read tools --------------------------------------------------------------
@@ -298,6 +335,19 @@ _COMMIT_OUTPUT = {
 }
 
 SPECS = (
+    _spec(
+        "git.init",
+        "Initialize the per-project git repository in the workspace.",
+        "write",
+        "workspace:write",
+        _init,
+        _obj(
+            {"default_branch": {"type": "string", "minLength": 1, "maxLength": 255}},
+            [],
+        ),
+        _OBJ,
+        constraints=(_default_branch_constraint,),
+    ),
     _spec(
         "git.status",
         "Show working-tree status.",

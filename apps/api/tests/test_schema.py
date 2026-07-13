@@ -62,6 +62,9 @@ CONSTITUTION_TABLES = {
 # …plus the self-improvement loop engine added in Phase 44 (migration 0022,
 # Vol 6 §3).
 LOOP_TABLES = {"loop_records", "loop_cycles", "loop_findings", "loop_stage_events"}
+# …plus the local deployment records added in Phase 48 (migration 0025, Vol 7
+# §6.7 / TITAN-INT-046 — the titan.local connector's deploy.compose target).
+DEPLOY_TABLES = {"deployments"}
 # NOTE: the Memory/KB/KG tables (Phases 33–39, migrations 0014–0018) live in the
 # ``brain`` schema, which inspect().get_table_names() does not enumerate by
 # default — so they are intentionally absent from this public-schema census.
@@ -77,6 +80,7 @@ EXPECTED_TABLES = (
     | HANDOFF_TABLES
     | CONSTITUTION_TABLES
     | LOOP_TABLES
+    | DEPLOY_TABLES
 )
 
 EXPECTED_INDEXES = {
