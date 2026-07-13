@@ -316,6 +316,22 @@ async def get_clarification(conn: AsyncConnection, project_id: uuid.UUID) -> Cla
     return _batch_out(batch, questions)
 
 
+async def assumptions_for_release(conn: AsyncConnection, project_id: uuid.UUID) -> list[str]:
+    """The high-visibility assumption-driven decisions the release approval (H12)
+    must restate (TITAN-WFL-008). These are the best-judgment assumptions the CEO
+    proceeded on when the clarification window timed out (and any dropped-question
+    assumptions), read back from the batch for ``ReleaseApproval.assumptions_restated``.
+    Empty if the project has no batch or every question was answered in time."""
+    batch = await repo.get_batch(conn, project_id)
+    if batch is None:
+        return []
+    return [
+        str(a["statement"])
+        for a in (batch.assumptions or [])
+        if isinstance(a, dict) and a.get("high_visibility") and a.get("statement")
+    ]
+
+
 async def resolve_timed_out_batches(engine: AsyncEngine, *, actor: str = "orchestrator") -> int:
     """Proceed with best-judgment assumptions on every open batch past its deadline
     (TITAN-WFL-008). Each unanswered question becomes a high-visibility assumption
@@ -357,6 +373,7 @@ __all__ = [
     "ProposedQuestionIn",
     "UserRequestSubmission",
     "answer_clarification",
+    "assumptions_for_release",
     "get_clarification",
     "resolve_timed_out_batches",
     "submit_user_request",

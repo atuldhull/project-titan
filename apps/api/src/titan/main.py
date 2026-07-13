@@ -51,6 +51,7 @@ from titan.observability.logging import configure_logging
 from titan.observability.metrics import REDMetricsMiddleware
 from titan.observability.metrics import router as metrics_router
 from titan.orchestrator import router as tasks_router
+from titan.planning import router as planning_router
 from titan.projects import router as projects_router
 from titan.realtime import router as realtime_router
 from titan.realtime import service as realtime_service
@@ -335,6 +336,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     loop_router.mount(app)  # /tasks/{id}/loop — self-improvement loop audit trail
     deploy_router.mount(app)  # /projects/{id}/deployments — local deploy records (§6.7)
     debt_router.mount(app)  # /projects/{id}/debt — technical-debt ledger (WFL-021)
+    planning_router.mount(app)  # /projects/{id}/sprint-plan, ceremonies, milestone, blockers (§4)
     otel.instrument_app(active_settings, app)
 
     def custom_openapi() -> dict[str, Any]:

@@ -68,6 +68,9 @@ DEPLOY_TABLES = {"deployments"}
 # …plus the technical-debt ledger added in Phase 49 (migration 0026, Vol 6 §5 /
 # TITAN-WFL-021 — every accepted deviation at review becomes a debt ticket).
 DEBT_TABLES = {"debt_tickets"}
+# …plus the autonomous-planning mechanics added in Phase 50 (migration 0027, Vol 6
+# §4 / TITAN-WFL-016/018/019 — ceremonies, milestone state, blocker ledger).
+PLANNING_TABLES = {"sprint_ceremonies", "milestone_states", "task_blocks"}
 # NOTE: the Memory/KB/KG tables (Phases 33–39, migrations 0014–0018) live in the
 # ``brain`` schema, which inspect().get_table_names() does not enumerate by
 # default — so they are intentionally absent from this public-schema census.
@@ -85,6 +88,7 @@ EXPECTED_TABLES = (
     | LOOP_TABLES
     | DEPLOY_TABLES
     | DEBT_TABLES
+    | PLANNING_TABLES
 )
 
 EXPECTED_INDEXES = {

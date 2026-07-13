@@ -28,6 +28,7 @@ from titan.llm.service import build_gateway
 from titan.memory import service as memory
 from titan.observability.logging import configure_logging
 from titan.orchestrator import service as orchestrator
+from titan.planning import service as planning
 from titan.realtime import service as realtime
 from titan.runs.coordinator import (
     run_execute_reaper,
@@ -53,6 +54,11 @@ PIPELINE_RECONCILE_INTERVAL_S = 15.0
 # (TITAN-WFL-008). Deadlines are hours out (default 24h), so a minute-scale tick is
 # ample; the resolver is idempotent and per-project serialized.
 CLARIFICATION_TIMEOUT_INTERVAL_S = 60.0
+
+# How often the Project Manager sweeps for blocked tasks and runs the recovery
+# ladder (TITAN-WFL-019 requires recovery within one ≤60s tick). Overridable via
+# settings; defaulted below the 60s ceiling.
+BLOCKER_SWEEP_INTERVAL_S = 30.0
 
 
 async def _sleep_or_stop(stop: asyncio.Event, seconds: float) -> None:  # pragma: no cover
@@ -90,6 +96,28 @@ async def run_clarification_timeout_reaper(  # pragma: no cover — live-verifie
         except Exception:
             logger.exception("clarification.timeout_reaper_error")
         await _sleep_or_stop(stop, CLARIFICATION_TIMEOUT_INTERVAL_S)
+
+
+async def run_blocker_sweeper(  # pragma: no cover — live-verified loop
+    engine: AsyncEngine, *, stop: asyncio.Event
+) -> None:
+    """Detect blocked tasks system-wide and run the recovery ladder on a ≤60s tick
+    (TITAN-WFL-019). Self-healing: a transient DB error is logged and retried."""
+    interval = get_settings().blocker_sweep_interval_seconds
+    while not stop.is_set():
+        try:
+            result = await planning.sweep_blockers(engine)
+            if result.detected or result.advanced or result.recovered or result.escalated:
+                logger.info(
+                    "planning.blocker_sweep",
+                    detected=result.detected,
+                    advanced=result.advanced,
+                    recovered=result.recovered,
+                    escalated=result.escalated,
+                )
+        except Exception:
+            logger.exception("planning.blocker_sweep_error")
+        await _sleep_or_stop(stop, interval)
 
 
 async def run() -> None:  # pragma: no cover — live-verified orchestration loop
@@ -176,6 +204,7 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
         asyncio.create_task(memory.run_ingest_reaper(embedder, bus, consumer_name, stop=stop)),
         asyncio.create_task(run_pipeline_reconciler(engine, stop=stop)),
         asyncio.create_task(run_clarification_timeout_reaper(engine, stop=stop)),
+        asyncio.create_task(run_blocker_sweeper(engine, stop=stop)),
     ]
     try:
         # return_exceptions: a loop that somehow escapes its own guard cannot

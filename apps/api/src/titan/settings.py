@@ -92,6 +92,20 @@ class Settings(BaseSettings):
     # clamps to the configurable 2–5 range. On exhaustion the task escalates.
     loop_max_cycles: int = 3
 
+    # --- Autonomous planning (Phase 50; Vol 6 §4, TITAN-WFL-015/019) ---
+    # Parallel-agent capacity the sprint planner packs each sprint to (WFL-015).
+    planning_parallel_capacity: int = 4
+    # Blocker sweep cadence (WFL-019 requires recovery within one ≤60s tick).
+    blocker_sweep_interval_seconds: float = 30.0
+    # A task with no state change for longer than this multiple of its estimate is
+    # flagged BLOCKED/stalled (WFL-019: "beyond 2× its estimate").
+    blocker_stall_multiplier: float = 2.0
+    # Converts a story-point estimate to a wall-clock stall budget (ideal hours per
+    # point) for the stall check.
+    blocker_hours_per_point: float = 4.0
+    # Estimate assumed for a task that carries no story-point estimate.
+    blocker_default_points: int = 2
+
     # --- CEO intake handler (Phase 25 walking skeleton) ---
     # When a project brief is created, run the thin CEO intake turn (stream an LLM
     # response, publish run.output.delta over the WS, persist user stories). Opt-in
