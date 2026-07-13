@@ -70,6 +70,12 @@ class GateContext:
     #: Per-sprint capacity in ideal agent-days (G4 capacity check).
     sprint_capacity_days: float = 5.0
     project_id: uuid.UUID | None = None
+    #: Execution-side results the executor computed for gates whose artifact does
+    #: not itself record them: G6 reads ``checks["ci"]`` (lint/typecheck/unit/
+    #: integration/coverage) + ``checks["migration"]`` (fresh + snapshot apply), and
+    #: G11 reads ``checks["doc"]`` (the §6.7 coverage report). The gate stays pure —
+    #: it only READS the pre-computed results; the executor runs the real checks.
+    checks: Mapping[str, Any] = field(default_factory=dict)
 
 
 class Gate(Protocol):

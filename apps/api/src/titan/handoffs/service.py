@@ -14,6 +14,7 @@ gates, and router stay private. Pydantic v2 DTOs — never ORM rows — cross th
 boundary.
 """
 
+import hashlib
 import uuid
 from datetime import datetime
 from typing import Any, Literal
@@ -22,14 +23,18 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from titan.constitution import service as constitution
+from titan.debt import service as debt
 from titan.events.service import STREAM_EVENTS_DOMAIN, write_event
 from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import not_found
 from titan.handoffs import gates
 from titan.handoffs import repository as repo
 from titan.handoffs.gates import Gate, GateContext, GateResult, register_gate, validate_schema
+from titan.handoffs.release_deploy import DeployGateOutcome, run_deploy_gate
 from titan.handoffs.schemas import ALL_ARTIFACT_SCHEMAS, ARTIFACT_SCHEMAS, schema_for_stage
 from titan.handoffs.standard_gates import evaluate_intake_gate, register_standard_gates
+from titan.handoffs.standard_gates_release import medium_security_findings, review_comments
+from titan.handoffs.traceability import Traceability, build_traceability
 from titan.llm import service as llm
 from titan.messaging import service as messaging
 from titan.orchestrator import service as orchestrator
@@ -180,6 +185,48 @@ async def _build_gate_context(
     )
 
 
+def _debt_fingerprint(source: str, content: str) -> str:
+    """A stable dedup handle for a debt ticket so a re-run gate reuses its ticket."""
+    return f"{source}:{hashlib.sha256(content.encode()).hexdigest()[:16]}"
+
+
+async def _open_debt_after_pass(
+    conn: AsyncConnection, project_id: uuid.UUID, stage: str, body: dict[str, Any]
+) -> None:
+    """TITAN-WFL-021: a passing gate that ACCEPTS a constitution deviation opens a
+    debt ticket with a proposed paydown. G9 APPROVED_WITH_COMMENTS logs each review
+    comment; G8 logs each accepted medium-severity security finding. Idempotent by
+    fingerprint, so re-submitting the same artifact never duplicates a ticket."""
+    if stage == "code_review" and str(body.get("verdict")) == "APPROVED_WITH_COMMENTS":
+        # WFL-021: EVERY APPROVED_WITH_COMMENTS verdict opens a ticket — even one that
+        # carried no itemized comments, so the invariant holds per verdict, not per
+        # comment.
+        comments = list(review_comments(body)) or [
+            "release approved with comments (no itemized comments recorded)"
+        ]
+        for comment in comments:
+            await debt.open_ticket(
+                conn,
+                project_id,
+                source="code_review",
+                title="Review comment accepted at release (APPROVED_WITH_COMMENTS)",
+                detail=comment,
+                fingerprint=_debt_fingerprint("code_review", comment),
+                paydown_proposal=f"Address the accepted review comment: {comment}",
+            )
+    elif stage == "security":
+        for finding in medium_security_findings(body):
+            await debt.open_ticket(
+                conn,
+                project_id,
+                source="security",
+                title="Accepted medium-severity security finding",
+                detail=finding,
+                fingerprint=_debt_fingerprint("security", finding),
+                paydown_proposal=f"Remediate the accepted medium finding: {finding}",
+            )
+
+
 async def submit_artifact(
     engine: AsyncEngine,
     project_id: uuid.UUID,
@@ -263,7 +310,7 @@ async def submit_artifact(
         # artifact. The gate is pure — the executor assembles its context here.
         ctx = await _build_gate_context(conn, project_id, stage, normalized)
         gate_result = gates.gate_for_stage(stage).evaluate(ctx)
-        return await _record_and_route(
+        outcome = await _record_and_route(
             conn,
             project_id=project_id,
             stage=stage,
@@ -274,6 +321,11 @@ async def submit_artifact(
             schema_rejected=False,
             artifact_version=version,
         )
+        # WFL-021: a gate that PASSED while accepting a deviation (G9 ACWC / G8
+        # mediums) records the debt in the same transaction as the advance.
+        if outcome.outcome == "advanced":
+            await _open_debt_after_pass(conn, project_id, stage, normalized)
+        return outcome
 
 
 async def _record_and_route(
@@ -422,6 +474,24 @@ async def gate_ledger(conn: AsyncConnection, project_id: uuid.UUID) -> GateLedge
     )
 
 
+async def traceability(conn: AsyncConnection, project_id: uuid.UUID) -> Traceability:
+    """The TITAN-WFL-006 traceability table: every brief feature → stories → tasks →
+    PRs → tests → docs, generated from the project's handoff artifacts, with gap
+    detection over the MUST-features."""
+
+    async def body_of(stage: str) -> dict[str, Any] | None:
+        row = await repo.latest_artifact(conn, project_id, stage)
+        return dict(row.body) if row is not None else None
+
+    return build_traceability(
+        brief=await body_of("ceo_vision"),
+        backlog=await body_of("pm_backlog"),
+        plan=await body_of("pmgr_plan"),
+        manifest=await body_of("engineering"),
+        release_approval=await body_of("ceo_release"),
+    )
+
+
 async def latest_artifact(
     conn: AsyncConnection, project_id: uuid.UUID, stage: str
 ) -> HandoffArtifactOut:
@@ -438,6 +508,7 @@ __all__ = [
     "ALL_ARTIFACT_SCHEMAS",
     "ARTIFACT_SCHEMAS",
     "PRODUCING_STAGES",
+    "DeployGateOutcome",
     "Gate",
     "GateContext",
     "GateEvaluationOut",
@@ -445,10 +516,13 @@ __all__ = [
     "GateResult",
     "HandoffArtifactOut",
     "HandoffOutcome",
+    "Traceability",
     "evaluate_intake_gate",
     "gate_ledger",
     "latest_artifact",
     "register_gate",
     "register_standard_gates",
+    "run_deploy_gate",
     "submit_artifact",
+    "traceability",
 ]

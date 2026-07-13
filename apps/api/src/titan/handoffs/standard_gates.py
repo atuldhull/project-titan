@@ -457,9 +457,11 @@ _INTAKE_GATE = UserRequestGate()
 
 
 def register_standard_gates() -> None:
-    """Register the concrete G2–G5 predicates into the executor's gate registry.
+    """Register the concrete G2–G12 predicates into the executor's gate registry.
     Idempotent — safe to call at app/worker startup and in tests."""
-    for stage, gate in STANDARD_GATES.items():
+    from titan.handoffs.standard_gates_release import RELEASE_GATES
+
+    for stage, gate in {**STANDARD_GATES, **RELEASE_GATES}.items():
         register_gate(stage, gate)
 
 

@@ -15,7 +15,7 @@ from fastapi import APIRouter, Body, Depends, FastAPI, Request
 
 from titan.gateway.rbac import Requires
 from titan.handoffs import service
-from titan.handoffs.service import GateLedger, HandoffArtifactOut, HandoffOutcome
+from titan.handoffs.service import GateLedger, HandoffArtifactOut, HandoffOutcome, Traceability
 from titan.identity.service import Principal
 from titan.projects import service as projects
 
@@ -64,6 +64,17 @@ async def get_latest_artifact(
     async with request.app.state.engine.connect() as conn:
         await projects.get_project(conn, project_id)
         return await service.latest_artifact(conn, project_id, stage)
+
+
+@router.get("/projects/{project_id}/traceability", response_model=Traceability)
+async def get_traceability(
+    request: Request, project_id: uuid.UUID, principal: _ReadPipeline
+) -> Traceability:
+    """The auto-generated TITAN-WFL-006 traceability table (brief feature → stories →
+    tasks → PRs → tests → docs) with gap detection over the MUST-features."""
+    async with request.app.state.engine.connect() as conn:
+        await projects.get_project(conn, project_id)
+        return await service.traceability(conn, project_id)
 
 
 def mount(app: FastAPI) -> None:

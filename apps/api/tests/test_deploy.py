@@ -332,9 +332,7 @@ def test_rest_endpoints_list_and_get_a_deployment(api: dict[str, Any]) -> None:
 
     listed = client.get(f"/api/v1/projects/{pid}/deployments", headers=headers)
     assert listed.status_code == 200, listed.text
-    assert any(
-        d["name"] == "demo" and d["url"] == "http://localhost:8080" for d in listed.json()
-    )
+    assert any(d["name"] == "demo" and d["url"] == "http://localhost:8080" for d in listed.json())
 
     one = client.get(f"/api/v1/deployments/{deployment_id}", headers=headers)
     assert one.status_code == 200 and one.json()["status"] == "running"

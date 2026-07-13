@@ -22,6 +22,7 @@ from titan.agents import router as agents_router
 from titan.agents import service as agents_service
 from titan.clarification import router as clarification_router
 from titan.constitution import router as constitution_router
+from titan.debt import router as debt_router
 from titan.deploy import router as deploy_router
 from titan.events import service as events_service
 from titan.gateway.idempotency import IdempotencyMiddleware
@@ -333,6 +334,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     clarification_router.mount(app)  # /projects/{id}/clarifications — CEO §2.4 engine
     loop_router.mount(app)  # /tasks/{id}/loop — self-improvement loop audit trail
     deploy_router.mount(app)  # /projects/{id}/deployments — local deploy records (§6.7)
+    debt_router.mount(app)  # /projects/{id}/debt — technical-debt ledger (WFL-021)
     otel.instrument_app(active_settings, app)
 
     def custom_openapi() -> dict[str, Any]:

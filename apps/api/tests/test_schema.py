@@ -65,6 +65,9 @@ LOOP_TABLES = {"loop_records", "loop_cycles", "loop_findings", "loop_stage_event
 # …plus the local deployment records added in Phase 48 (migration 0025, Vol 7
 # §6.7 / TITAN-INT-046 — the titan.local connector's deploy.compose target).
 DEPLOY_TABLES = {"deployments"}
+# …plus the technical-debt ledger added in Phase 49 (migration 0026, Vol 6 §5 /
+# TITAN-WFL-021 — every accepted deviation at review becomes a debt ticket).
+DEBT_TABLES = {"debt_tickets"}
 # NOTE: the Memory/KB/KG tables (Phases 33–39, migrations 0014–0018) live in the
 # ``brain`` schema, which inspect().get_table_names() does not enumerate by
 # default — so they are intentionally absent from this public-schema census.
@@ -81,6 +84,7 @@ EXPECTED_TABLES = (
     | CONSTITUTION_TABLES
     | LOOP_TABLES
     | DEPLOY_TABLES
+    | DEBT_TABLES
 )
 
 EXPECTED_INDEXES = {
