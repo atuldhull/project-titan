@@ -106,6 +106,11 @@ class Settings(BaseSettings):
     # Estimate assumed for a task that carries no story-point estimate.
     blocker_default_points: int = 2
 
+    # --- Derived project artifacts (Phase 51; Vol 6 §5, TITAN-WFL-020) ---
+    # How often the reconciler regenerates the six derived artifacts for active
+    # projects (idempotent, version-on-change) so they never go stale.
+    artifact_reconcile_interval_seconds: float = 30.0
+
     # --- CEO intake handler (Phase 25 walking skeleton) ---
     # When a project brief is created, run the thin CEO intake turn (stream an LLM
     # response, publish run.output.delta over the WS, persist user stories). Opt-in

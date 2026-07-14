@@ -20,6 +20,7 @@ from fastapi.openapi.utils import get_openapi
 from titan import clients
 from titan.agents import router as agents_router
 from titan.agents import service as agents_service
+from titan.artifacts import router as artifacts_router
 from titan.clarification import router as clarification_router
 from titan.constitution import router as constitution_router
 from titan.debt import router as debt_router
@@ -337,6 +338,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     deploy_router.mount(app)  # /projects/{id}/deployments — local deploy records (§6.7)
     debt_router.mount(app)  # /projects/{id}/debt — technical-debt ledger (WFL-021)
     planning_router.mount(app)  # /projects/{id}/sprint-plan, ceremonies, milestone, blockers (§4)
+    artifacts_router.mount(app)  # /projects/{id}/artifacts — the six derived §5 artifacts
     otel.instrument_app(active_settings, app)
 
     def custom_openapi() -> dict[str, Any]:

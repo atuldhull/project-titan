@@ -71,6 +71,9 @@ DEBT_TABLES = {"debt_tickets"}
 # …plus the autonomous-planning mechanics added in Phase 50 (migration 0027, Vol 6
 # §4 / TITAN-WFL-016/018/019 — ceremonies, milestone state, blocker ledger).
 PLANNING_TABLES = {"sprint_ceremonies", "milestone_states", "task_blocks"}
+# …plus the versioned derived project artifacts added in Phase 51 (migration 0028,
+# Vol 6 §5 / TITAN-WFL-020 — the six auto-generated artifacts' store).
+ARTIFACTS_TABLES = {"derived_artifacts"}
 # NOTE: the Memory/KB/KG tables (Phases 33–39, migrations 0014–0018) live in the
 # ``brain`` schema, which inspect().get_table_names() does not enumerate by
 # default — so they are intentionally absent from this public-schema census.
@@ -89,6 +92,7 @@ EXPECTED_TABLES = (
     | DEPLOY_TABLES
     | DEBT_TABLES
     | PLANNING_TABLES
+    | ARTIFACTS_TABLES
 )
 
 EXPECTED_INDEXES = {

@@ -183,6 +183,7 @@ modules = [
     "titan.deploy",
     "titan.debt",
     "titan.planning",
+    "titan.artifacts",
 ]
 ignore_imports = ["titan.** -> titan.*.service"]
 unmatched_ignore_imports_alerting = "none"
@@ -218,6 +219,7 @@ source_modules = [
     "titan.deploy",
     "titan.debt",
     "titan.planning",
+    "titan.artifacts",
     "titan.ci_kit",
     "titan.events",
     "titan.observability",

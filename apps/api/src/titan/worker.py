@@ -20,6 +20,7 @@ from prometheus_client import start_http_server
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from titan import clients
+from titan.artifacts import service as artifacts
 from titan.clarification import service as clarification
 from titan.events import service as events
 from titan.events.consumers import run_domain_consumer, run_drainer, run_reaper
@@ -120,6 +121,23 @@ async def run_blocker_sweeper(  # pragma: no cover — live-verified loop
         await _sleep_or_stop(stop, interval)
 
 
+async def run_artifact_reconciler(  # pragma: no cover — live-verified loop
+    engine: AsyncEngine, *, stop: asyncio.Event
+) -> None:
+    """Regenerate the six derived §5 artifacts for every active project on a cadence
+    (TITAN-WFL-020 "never stale"). Idempotent — a regeneration versions only on a
+    content change. Self-healing: a transient DB error is logged and retried."""
+    interval = get_settings().artifact_reconcile_interval_seconds
+    while not stop.is_set():
+        try:
+            reconciled = await artifacts.reconcile_all_projects(engine)
+            if reconciled:
+                logger.info("artifacts.reconciled", projects=reconciled)
+        except Exception:
+            logger.exception("artifacts.reconciler_error")
+        await _sleep_or_stop(stop, interval)
+
+
 async def run() -> None:  # pragma: no cover — live-verified orchestration loop
     """Start the worker's stream-processing loops until interrupted."""
     settings = get_settings()
@@ -205,6 +223,7 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
         asyncio.create_task(run_pipeline_reconciler(engine, stop=stop)),
         asyncio.create_task(run_clarification_timeout_reaper(engine, stop=stop)),
         asyncio.create_task(run_blocker_sweeper(engine, stop=stop)),
+        asyncio.create_task(run_artifact_reconciler(engine, stop=stop)),
     ]
     try:
         # return_exceptions: a loop that somehow escapes its own guard cannot
