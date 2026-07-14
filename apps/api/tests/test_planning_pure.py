@@ -3,6 +3,7 @@ Docker, no clock — the sprint planner, milestone state machine, estimation
 correction, and blocker detector/ladder as fixture-driven unit tests."""
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 
@@ -129,7 +130,7 @@ def test_verify_plan_catches_a_hand_broken_plan() -> None:
 
 
 def _m2_signals(**overrides: object) -> milestones.MilestoneSignals:
-    base = dict(
+    base: dict[str, Any] = dict(
         brief_accepted=True,
         backlog_accepted=True,
         skeleton_deployed=True,
@@ -139,7 +140,7 @@ def _m2_signals(**overrides: object) -> milestones.MilestoneSignals:
         open_p0_count=0,
     )
     base.update(overrides)
-    return milestones.MilestoneSignals(**base)  # type: ignore[arg-type]
+    return milestones.MilestoneSignals(**base)
 
 
 def test_current_milestone_is_highest_contiguous_dod() -> None:
@@ -205,13 +206,13 @@ def test_stall_detected_past_two_x_estimate() -> None:
     # estimate 2 points × 4h/point = 8h; 2× ⇒ 16h stall threshold.
     fresh = _snap(updated_at=_NOW - timedelta(hours=10))
     stalled = _snap(updated_at=_NOW - timedelta(hours=20))
-    args = dict(stall_multiplier=2.0, hours_per_point=4.0, default_points=2)
+    args: dict[str, Any] = dict(stall_multiplier=2.0, hours_per_point=4.0, default_points=2)
     assert blockers.detect_block(fresh, _NOW, **args) is None
     assert blockers.detect_block(stalled, _NOW, **args) == blockers.BLOCK_STALLED
 
 
 def test_definitive_signals_win_over_stall_and_terminal_states_are_ignored() -> None:
-    args = dict(stall_multiplier=2.0, hours_per_point=4.0, default_points=2)
+    args: dict[str, Any] = dict(stall_multiplier=2.0, hours_per_point=4.0, default_points=2)
     dep = _snap(dependency_failed=True)
     assert blockers.detect_block(dep, _NOW, **args) == blockers.BLOCK_DEP_FAILED
     clar = _snap(awaiting_clarification=True)

@@ -1,0 +1,24 @@
+manifest_version: 1
+id: titan.mcp_filesystem
+name: MCP Filesystem
+version: 1.0.0
+description: >-
+  The reference Model Context Protocol filesystem server
+  (@modelcontextprotocol/server-filesystem) wired into TITAN as an ordinary plugin —
+  MANIFEST ONLY, zero TITAN code (ADR-INT-02, TITAN-INT-050). On enable, TITAN performs
+  the MCP handshake and registers each advertised tool as mcp.titan.mcp_filesystem.*,
+  gated + audited by the Tool Bus like any other tool.
+author: Anthropic (MCP reference server)
+license: MIT
+homepage: https://github.com/modelcontextprotocol/servers
+titan_api: ">=1.0,<2.0"
+runtime:
+  # stdio MCP server: spawned under the same per-plugin sandbox regime as a python plugin
+  # (§3.5). The trailing path is the single directory the server is allowed to serve.
+  type: mcp
+  transport: stdio
+  command: ["npx", "-y", "@modelcontextprotocol/server-filesystem", "."]
+permissions:
+  # The operator-approved scopes an agent must ALREADY hold to call these tools (they never
+  # self-grant — ADR-INT-04). A filesystem server reads and writes workspace files.
+  scopes: [workspace:read, workspace:write]

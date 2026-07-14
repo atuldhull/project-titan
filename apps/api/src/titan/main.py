@@ -197,6 +197,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 application.state.tool_registry,
                 secrets=application.state.plugin_secrets,
                 http_fetcher=plugins_service.build_http_fetcher(application.state.http),
+                # Phase 53: MCP Streamable-HTTP servers POST over the shared client, and
+                # per-tool risk overrides are read from the encrypted config at enable time.
+                http_client=application.state.http,
+                config_cipher=application.state.plugin_cipher,
                 call_timeout_s=active_settings.plugin_call_timeout_seconds,
                 workspace_root=Path(active_settings.sandbox_workspace_root),
             )

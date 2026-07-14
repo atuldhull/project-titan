@@ -94,6 +94,23 @@ async def get_install(request: Request, plugin_id: str, principal: _Reader) -> P
         return await service.get_install(conn, plugin_id, supervisor)
 
 
+@router.get("/plugins/{plugin_id}/mcp")
+async def mcp_introspection(request: Request, plugin_id: str, principal: _Reader) -> dict[str, Any]:
+    """For an enabled MCP server (§7): the negotiated protocol version, its discovered
+    tools (registered as ``mcp.<id>.*``), its resources (read via ``mcp.<id>.read_resource``)
+    and its prompts (surfaced to the prompt library, Vol 2)."""
+    _engine, supervisor, _scopes, _cipher = _runtime(request)
+    info: dict[str, Any] | None = supervisor.mcp_info(plugin_id)
+    if info is None:
+        raise ProblemException(
+            status=404,
+            title="Not an enabled MCP server",
+            detail=f"plugin '{plugin_id}' is not an enabled MCP runtime",
+            problem_type=problem_type("not-found"),
+        )
+    return info
+
+
 @router.post("/plugins/{plugin_id}/install", response_model=PluginInstallOut)
 async def install(request: Request, plugin_id: str, principal: _Admin) -> PluginInstallOut:
     engine, _sup, scopes, _cipher = _runtime(request)

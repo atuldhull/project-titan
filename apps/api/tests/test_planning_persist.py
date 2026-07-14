@@ -234,9 +234,10 @@ def test_recovery_ladder_advances_one_rung_per_tick_then_escalates(migrated_engi
         async def read() -> tuple[str, str]:
             async with migrated_engine.connect() as conn:
                 blocks = await planning.list_blocks(conn, pid)
-            return blocks[0].rung, blocks[0].status
+            return str(blocks[0].rung), str(blocks[0].status)
 
-        return run_async(read)
+        result: tuple[str, str] = run_async(read)
+        return result
 
     assert rung_after_ticks(1) == ("dependency_recheck", "open")
     assert rung_after_ticks(1) == ("reassign", "open")

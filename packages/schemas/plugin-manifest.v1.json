@@ -108,8 +108,21 @@
     },
     "RuntimeSpec": {
       "additionalProperties": false,
-      "description": "How the plugin executes. ``python`` runs out-of-process over JSON-RPC/stdio\n(ADR-INT-01); ``mcp`` reuses the same framing (ADR-INT-02) and lands in the next\nphase \u2014 the manifest accepts it, the runtime refuses to enable it for now.",
+      "description": "How the plugin executes. ``python`` runs a first-party plugin out-of-process over\nJSON-RPC/stdio (ADR-INT-01); ``mcp`` connects to a spec-compliant MCP server over the\nSAME newline-delimited JSON-RPC framing (ADR-INT-02) \u2014 ``stdio`` spawns ``command``\nunder the plugin sandbox regime, ``http`` speaks Streamable HTTP to ``url`` bound by\nthe manifest egress allowlist (Vol 7 \u00a77, TITAN-INT-050).",
       "properties": {
+        "auth_secret": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Auth Secret"
+        },
         "command": {
           "items": {
             "type": "string"

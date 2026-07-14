@@ -277,14 +277,14 @@ async def install(
         manifest, content_hash = load_manifest(plugin_dir, known_scopes=known_scopes)
     except ManifestError as exc:
         raise _bad_request(exc.errors) from exc
-    if manifest.runtime.type != "python":
-        raise _bad_request(
-            [f"runtime.type: '{manifest.runtime.type}' is not supported yet (MCP is next phase)"]
-        )
-    try:
-        venv = await _create_venv(plugin_dir)
-    except (RuntimeError, TimeoutError) as exc:
-        raise _bad_request([f"install: {exc}"]) from exc
+    # A python plugin gets an isolated venv; an MCP server runs its own command (stdio) or
+    # is a remote endpoint (http) — neither needs a TITAN-built venv (Vol 7 §7).
+    venv = ""
+    if manifest.runtime.type == "python":
+        try:
+            venv = await _create_venv(plugin_dir)
+        except (RuntimeError, TimeoutError) as exc:
+            raise _bad_request([f"install: {exc}"]) from exc
 
     async with engine.begin() as conn:
         row = await repo.upsert_install(

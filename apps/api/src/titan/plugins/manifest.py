@@ -92,18 +92,25 @@ class _Strict(BaseModel):
 
 
 class RuntimeSpec(_Strict):
-    """How the plugin executes. ``python`` runs out-of-process over JSON-RPC/stdio
-    (ADR-INT-01); ``mcp`` reuses the same framing (ADR-INT-02) and lands in the next
-    phase — the manifest accepts it, the runtime refuses to enable it for now."""
+    """How the plugin executes. ``python`` runs a first-party plugin out-of-process over
+    JSON-RPC/stdio (ADR-INT-01); ``mcp`` connects to a spec-compliant MCP server over the
+    SAME newline-delimited JSON-RPC framing (ADR-INT-02) — ``stdio`` spawns ``command``
+    under the plugin sandbox regime, ``http`` speaks Streamable HTTP to ``url`` bound by
+    the manifest egress allowlist (Vol 7 §7, TITAN-INT-050)."""
 
     type: RuntimeType = "python"
     #: ``module:Class`` for a python plugin.
     entrypoint: str | None = Field(default=None, max_length=500)
     python: str | None = Field(default=None, max_length=50)
-    # MCP transports (declared here so the schema is stable; Phase 53 implements them).
+    # MCP transports (ADR-INT-02).
     transport: Literal["stdio", "http"] | None = None
+    #: The stdio MCP server's argv, e.g. ``["npx", "-y", "@modelcontextprotocol/server-…"]``.
     command: list[str] = Field(default_factory=list, max_length=50)
+    #: The Streamable-HTTP MCP server endpoint.
     url: str | None = Field(default=None, max_length=2000)
+    #: For an HTTP MCP server: the NAME of the secret holding the OAuth 2.1 bearer token
+    #: (never the value — tokens live only in the secret store, §7).
+    auth_secret: str | None = Field(default=None, max_length=200)
 
 
 class EventPermissions(_Strict):
@@ -204,6 +211,39 @@ def _field_errors(exc: ValidationError) -> list[str]:
     return out
 
 
+def _runtime_errors(manifest: PluginManifest) -> list[str]:
+    """Per-runtime shape rules: a ``python`` plugin needs an entrypoint; an ``mcp`` server
+    needs a valid transport with exactly the fields that transport uses (TITAN-INT-050)."""
+    runtime = manifest.runtime
+    errors: list[str] = []
+    if runtime.type == "python":
+        if not runtime.entrypoint:
+            errors.append("runtime.entrypoint: required when runtime.type is 'python'")
+        return errors
+    # runtime.type == "mcp"
+    if runtime.entrypoint:
+        errors.append("runtime.entrypoint: not valid for an MCP runtime (use command/url)")
+    if runtime.transport not in ("stdio", "http"):
+        errors.append("runtime.transport: an MCP runtime requires transport 'stdio' or 'http'")
+    elif runtime.transport == "stdio":
+        if not runtime.command:
+            errors.append("runtime.command: an MCP stdio server requires a non-empty 'command'")
+        if runtime.url:
+            errors.append("runtime.url: not valid for an MCP stdio server (use command)")
+    else:  # http
+        if not runtime.url:
+            errors.append("runtime.url: an MCP http server requires a 'url'")
+        elif not (runtime.url.startswith("https://") or runtime.url.startswith("http://")):
+            errors.append("runtime.url: must be an http(s) URL")
+        if runtime.command:
+            errors.append("runtime.command: not valid for an MCP http server (use url)")
+    if runtime.auth_secret and runtime.auth_secret not in manifest.permissions.secrets:
+        errors.append(
+            f"runtime.auth_secret: secret '{runtime.auth_secret}' is not in permissions.secrets"
+        )
+    return errors
+
+
 def parse_manifest(
     raw: dict[str, Any],
     *,
@@ -229,14 +269,17 @@ def parse_manifest(
         errors.append(
             f"titan_api: core plugin API {api_version} does not satisfy '{manifest.titan_api}'"
         )
-    if manifest.runtime.type == "python" and not manifest.runtime.entrypoint:
-        errors.append("runtime.entrypoint: required when runtime.type is 'python'")
-    # Contributed tool names must be namespaced so a plugin cannot shadow a core tool.
+    errors.extend(_runtime_errors(manifest))
+    # Contributed tool names must be namespaced so a plugin cannot shadow a core tool, and
+    # the ``mcp.`` prefix is reserved for tools an MCP server contributes at runtime — a
+    # python plugin may not claim it (no impersonating an MCP provider in the registry).
     for tool in manifest.contributes.tools:
         if "." not in tool.name:
             errors.append(
                 f"contributes.tools: '{tool.name}' must be namespaced (e.g. 'jira.create_issue')"
             )
+        elif tool.name.startswith("mcp."):
+            errors.append(f"contributes.tools: '{tool.name}' uses the reserved 'mcp.' prefix")
     # A webhook that declares HMAC verification must name the secret holding the key.
     for hook in manifest.contributes.webhooks:
         if hook.verify == "hmac-sha256" and not hook.secret:

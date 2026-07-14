@@ -127,11 +127,12 @@ async def _seed(engine: Any) -> uuid.UUID:
         await debt.open_ticket(
             conn, pid, source="code_review", title="dup util", fingerprint="cr-1", detail="dup"
         )
-    for stage, atype, body in [
+    cases: list[tuple[str, str, dict[str, Any]]] = [
         ("ceo_vision", "ProjectBrief", _BRIEF),
         ("pmgr_plan", "SprintPlan", _PLAN),
         ("architect_design", "ArchitecturePackage", _ARCH),
-    ]:
+    ]
+    for stage, atype, body in cases:
         await _insert_handoff(engine, pid, stage, atype, body)
     # Milestone M2.
     await planning.sync_milestone(

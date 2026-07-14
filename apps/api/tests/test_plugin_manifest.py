@@ -88,6 +88,112 @@ def test_python_runtime_requires_an_entrypoint() -> None:
         parse_manifest(bad, known_scopes=KNOWN_SCOPES)
 
 
+# --- MCP runtime validation (Phase 53; Vol 7 §7, TITAN-INT-050) --------------
+
+_MCP_STDIO = {
+    "manifest_version": 1,
+    "id": "titan.mcp_fs",
+    "name": "MCP FS",
+    "version": "1.0.0",
+    "titan_api": ">=1.0,<2.0",
+    "runtime": {
+        "type": "mcp",
+        "transport": "stdio",
+        "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "."],
+    },
+    "permissions": {"scopes": ["workspace:read"]},
+}
+
+_MCP_HTTP = {
+    "manifest_version": 1,
+    "id": "titan.mcp_remote",
+    "name": "MCP Remote",
+    "version": "1.0.0",
+    "titan_api": ">=1.0,<2.0",
+    "runtime": {
+        "type": "mcp",
+        "transport": "http",
+        "url": "https://mcp.example.com/mcp",
+        "auth_secret": "MCP_TOKEN",
+    },
+    "permissions": {
+        "scopes": ["workspace:read"],
+        "secrets": ["MCP_TOKEN"],
+        "network": ["https://mcp.example.com"],
+    },
+}
+
+
+def test_valid_mcp_stdio_and_http_manifests_parse() -> None:
+    stdio = parse_manifest(_MCP_STDIO, known_scopes=KNOWN_SCOPES)
+    assert stdio.runtime.type == "mcp" and stdio.runtime.transport == "stdio"
+    assert stdio.runtime.command[0] == "npx"
+    http = parse_manifest(_MCP_HTTP, known_scopes=KNOWN_SCOPES)
+    assert http.runtime.transport == "http" and http.runtime.url == "https://mcp.example.com/mcp"
+    assert http.runtime.auth_secret == "MCP_TOKEN"
+
+
+@pytest.mark.parametrize(
+    ("mutation", "needle"),
+    [
+        ({"transport": None}, "transport 'stdio' or 'http'"),
+        ({"transport": "stdio", "command": []}, "command"),
+        ({"transport": "stdio", "url": "https://x.test"}, "not valid for an MCP stdio"),
+        ({"transport": "stdio", "entrypoint": "mod:Cls"}, "not valid for an MCP runtime"),
+    ],
+)
+def test_mcp_stdio_shape_is_enforced(mutation: dict[str, object], needle: str) -> None:
+    runtime = {"type": "mcp", "transport": "stdio", "command": ["srv"], **mutation}
+    bad = {**_MCP_STDIO, "runtime": runtime}
+    with pytest.raises(ManifestError) as exc:
+        parse_manifest(bad, known_scopes=KNOWN_SCOPES)
+    assert any(needle in e for e in exc.value.errors), exc.value.errors
+
+
+def test_mcp_http_requires_a_url_and_backed_auth_secret() -> None:
+    no_url = {**_MCP_HTTP, "runtime": {"type": "mcp", "transport": "http"}}
+    with pytest.raises(ManifestError) as exc:
+        parse_manifest(no_url, known_scopes=KNOWN_SCOPES)
+    assert any("url" in e for e in exc.value.errors)
+
+    # auth_secret must be declared in permissions.secrets (never inlined).
+    unbacked = {
+        **_MCP_HTTP,
+        "permissions": {"scopes": ["workspace:read"], "network": ["https://mcp.example.com"]},
+    }
+    with pytest.raises(ManifestError) as exc:
+        parse_manifest(unbacked, known_scopes=KNOWN_SCOPES)
+    assert any("auth_secret" in e and "permissions.secrets" in e for e in exc.value.errors)
+
+
+def test_reserved_mcp_prefix_on_a_python_tool_is_rejected() -> None:
+    """A python plugin may not contribute a tool under the ``mcp.`` prefix — that namespace
+    belongs to MCP servers, and impersonating one would confuse the registry/introspection."""
+    bad = {**_GOOD, "contributes": {"tools": [{"name": "mcp.trusted.tool"}]}}
+    with pytest.raises(ManifestError) as exc:
+        parse_manifest(bad, known_scopes=KNOWN_SCOPES)
+    assert any("reserved 'mcp.' prefix" in e for e in exc.value.errors)
+
+
+def test_committed_filesystem_mcp_manifest_validates() -> None:
+    """The reference server-filesystem plugin ships as a manifest ONLY (zero TITAN code);
+    it must validate against the running core so it can be discovered + installed (DoD)."""
+    import yaml
+
+    manifest_path = (
+        Path(__file__).parents[3]
+        / "plugins"
+        / "first_party"
+        / "mcp_filesystem"
+        / "titan-plugin.yaml"
+    )
+    assert manifest_path.exists()
+    raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest = parse_manifest(raw, known_scopes=KNOWN_SCOPES)
+    assert manifest.id == "titan.mcp_filesystem"
+    assert manifest.runtime.type == "mcp" and manifest.runtime.transport == "stdio"
+
+
 # --- the published JSON Schema (drift-gated artifact) ------------------------
 
 
