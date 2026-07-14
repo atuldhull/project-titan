@@ -1,0 +1,82 @@
+manifest_version: 1
+id: titan.github
+name: GitHub
+version: 1.0.0
+description: >-
+  First-party GitHub connector (Vol 7 §6.1, TITAN-INT-040) — the reference VCS connector.
+  A pure plugin: it reaches core only through capabilities (secret for App-key/PAT + config,
+  publish for vcs.* events). Deleting this directory leaves core tests green (TITAN-INT-011).
+author: TITAN
+license: Apache-2.0
+homepage: https://docs.github.com/rest
+titan_api: ">=1.0,<2.0"
+runtime:
+  type: python
+  entrypoint: github_plugin:GithubConnector
+permissions:
+  # api.github.com is the intended egress (the production §3.5 sidecar allowlist is built
+  # from this; the connector itself talks to the API directly as a trusted first party).
+  network: ["https://api.github.com"]
+  # Credentials + connector config both ride the secret channel (Phase-52's only per-plugin
+  # operator-data path to the subprocess). GITHUB_TOKEN (PAT) OR the App triple; the webhook
+  # HMAC key is GITHUB_WEBHOOK_SECRET.
+  secrets:
+    - GITHUB_TOKEN
+    - GITHUB_APP_ID
+    - GITHUB_APP_INSTALLATION_ID
+    - GITHUB_APP_PRIVATE_KEY
+    - GITHUB_API_URL
+    - GITHUB_WEBHOOK_SECRET
+  # Every vcs.* topic the webhook translator can emit (an ungranted topic is broker-denied).
+  events:
+    publish:
+      - vcs.pr.opened
+      - vcs.pr.updated
+      - vcs.pr.closed
+      - vcs.pr.merged
+      - vcs.pr.review_requested
+      - vcs.pr.commented
+      - vcs.checks.completed
+      - vcs.push
+  # The RBAC scope an agent must ALREADY hold to call these tools (never self-granted).
+  scopes: [workspace:write]
+contributes:
+  tools:
+    - name: github.create_repo
+      risk: write
+      description: Create a repository (user or org).
+    - name: github.create_branch
+      risk: write
+      description: Create a branch ref from a base sha (first step of the PR lifecycle).
+    - name: github.open_pr
+      risk: write
+      description: Open a pull request (head → base).
+    - name: github.update_pr
+      risk: write
+      description: Update a pull request's title/body/state/base.
+    - name: github.review_pr
+      risk: write
+      description: Submit a review (APPROVE / REQUEST_CHANGES / COMMENT) with optional comments.
+    - name: github.merge_pr
+      # admin: merging can touch a protected branch; the risk is fixed conservatively since
+      # a static manifest cannot express per-argument (per-branch-protection) risk.
+      risk: admin
+      description: Merge a pull request (squash/merge/rebase).
+    - name: github.create_issue
+      risk: write
+      description: Open an issue with optional labels/assignees.
+    - name: github.comment
+      risk: write
+      description: Comment on an issue or pull request.
+    - name: github.get_checks
+      risk: read
+      description: Read the check-runs for a commit ref.
+    - name: github.search_code
+      risk: read
+      description: Search code across accessible repositories.
+  webhooks:
+    # GitHub signs with X-Hub-Signature-256 = HMAC-SHA256 over the RAW body — exactly what
+    # the core webhook route verifies. A bad signature is rejected 401 + logged by core.
+    - path: /hooks/github
+      verify: hmac-sha256
+      secret: GITHUB_WEBHOOK_SECRET

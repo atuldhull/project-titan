@@ -1,0 +1,79 @@
+manifest_version: 1
+id: titan.chat
+name: Chat Notifications
+version: 1.0.0
+description: >-
+  First-party Slack + Discord notifications connector (Vol 7 §6.3, TITAN-INT-042). ONE
+  connector with two backends over one shared routing/template/retry pipeline — Discord
+  reuses Slack's machinery, not a second pipeline. Approval resolution from a Slack button
+  goes through the core tool-approval REST endpoint. Deleting this dir leaves core tests
+  green (TITAN-INT-011).
+author: TITAN
+license: Apache-2.0
+homepage: https://api.slack.com
+titan_api: ">=1.0,<2.0"
+runtime:
+  type: python
+  entrypoint: chat_plugin:ChatConnector
+permissions:
+  # Intended egress: the Slack + Discord APIs and (for approval resolution) TITAN's own API.
+  # OPERATOR: add your TITAN_API_URL origin here so the §3.5 egress sidecar permits the
+  # approval-resolution POST (it is not a public host, so it cannot be pre-listed).
+  network:
+    - https://slack.com
+    - https://discord.com
+  # Bot tokens, signing secrets/keys, the operator channel/user/template maps, and the
+  # service token for approval resolution all ride the secret channel.
+  secrets:
+    - SLACK_BOT_TOKEN
+    - SLACK_SIGNING_SECRET
+    - SLACK_CHANNEL_MAP
+    - SLACK_DEFAULT_CHANNEL
+    - SLACK_TEMPLATES
+    # SLACK_USER_MAP: {slack_user_id: titan_user_uuid} — the AUTHORIZED approvers; a Slack
+    # user absent from this map may not resolve an admin gate (attribution goes to the mapped
+    # TITAN user, though core records resolved_by as the service-token principal — see plugin).
+    - SLACK_USER_MAP
+    - DISCORD_BOT_TOKEN
+    - DISCORD_PUBLIC_KEY
+    - DISCORD_CHANNEL_MAP
+    - DISCORD_DEFAULT_CHANNEL
+    - TITAN_API_URL
+    - TITAN_SERVICE_TOKEN
+  # Subscribed notification topics (Vol 7 §6.3). Delivery is via the chat.notify tool.
+  events:
+    subscribe:
+      - milestone.completed
+      - pipeline.release.shipped
+      - vcs.checks.completed
+      - tool.approval.requested
+  scopes: [message:write]
+contributes:
+  tools:
+    - name: slack.post_message
+      risk: write
+      description: Post a message to a Slack channel (routed per project).
+    - name: slack.post_approval
+      risk: write
+      description: Post a Block Kit Approve/Reject message that resolves a pending admin gate.
+    - name: discord.post_message
+      risk: write
+      description: Post a Discord message (routed per project).
+    - name: discord.post_embed
+      risk: write
+      description: Post a Discord embed (routed per project).
+    - name: chat.notify
+      risk: write
+      description: Render a per-event template and deliver it to the project's channel with retry.
+  # NO inbound webhooks are declared here. Slack signs interactivity with the v0 scheme
+  # (HMAC over `v0:{ts}:{body}` in X-Slack-Signature) and Discord with Ed25519 (X-Signature-
+  # Ed25519) — NEITHER matches core's HMAC-over-raw-body webhook gate, and core forwards only
+  # the parsed body (no headers/raw bytes) to a plugin, so a plugin cannot verify them itself.
+  # Declaring an hmac-sha256 hook keyed on the PUBLIC Discord key would be forgeable, and one
+  # keyed on the Slack secret would reject all genuine Slack traffic. Inbound Slack/Discord
+  # therefore requires a signature-translating edge (verify v0/Ed25519, re-sign as an HMAC
+  # x-titan-signature) or a future generic core enhancement that forwards raw webhook context.
+  # The connector ships the correct verifiers + handlers ready for that: chat_slack.
+  # verify_slack_signature / handle_interactivity and chat_discord.verify_discord_signature /
+  # handle_interaction. The Slack approval-resolution path is proven against the real core
+  # approval machinery in tests (driving handle_interactivity → resolve_approval).
