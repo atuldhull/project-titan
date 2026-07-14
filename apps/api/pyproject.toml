@@ -25,6 +25,9 @@ dependencies = [
     "opentelemetry-instrumentation-httpx>=0.48b0",
     "pyjwt[crypto]>=2.9",
     "argon2-cffi>=23.1",
+    # Field-level AES-256-GCM for plugin config at rest (TITAN-SEC-063). Present
+    # transitively via pyjwt[crypto], but titan.plugins.secrets imports it directly.
+    "cryptography>=42.0",
     "pyyaml>=6.0",
     "jsonschema>=4.23",
     "docker>=7.1",

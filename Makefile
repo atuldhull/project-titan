@@ -51,9 +51,12 @@ typecheck:
 # Developer catch-all — the union of every static gate CI runs.
 lint: lint-style boundaries route-guards agent-purity typecheck lint-openapi
 
-# TITAN-BCK-027: OpenAPI -> TypeScript bridge into packages/schemas
+# TITAN-BCK-027: OpenAPI -> TypeScript bridge into packages/schemas.
+# TITAN-INT-010: the plugin-manifest JSON Schema is published alongside it so third
+# parties can validate titan-plugin.yaml before install; check-types-drift covers it.
 generate-types:
 	cd $(API_DIR) && uv run python scripts/export_openapi.py ../../$(SCHEMAS_DIR)/openapi.json
+	cd $(API_DIR) && uv run python scripts/export_plugin_schema.py ../../$(SCHEMAS_DIR)/plugin-manifest.v1.json
 	cd $(SCHEMAS_DIR) && npm run generate
 
 # CI drift gate: regenerating must produce zero diff against the committed

@@ -74,6 +74,9 @@ PLANNING_TABLES = {"sprint_ceremonies", "milestone_states", "task_blocks"}
 # …plus the versioned derived project artifacts added in Phase 51 (migration 0028,
 # Vol 6 §5 / TITAN-WFL-020 — the six auto-generated artifacts' store).
 ARTIFACTS_TABLES = {"derived_artifacts"}
+# …plus the manifest-driven plugin runtime added in Phase 52 (migration 0029,
+# Vol 7 §3 / TITAN-INT-010..017 — the catalogue + the lifecycle install record).
+PLUGIN_TABLES = {"plugins", "plugin_installs"}
 # NOTE: the Memory/KB/KG tables (Phases 33–39, migrations 0014–0018) live in the
 # ``brain`` schema, which inspect().get_table_names() does not enumerate by
 # default — so they are intentionally absent from this public-schema census.
@@ -93,6 +96,7 @@ EXPECTED_TABLES = (
     | DEBT_TABLES
     | PLANNING_TABLES
     | ARTIFACTS_TABLES
+    | PLUGIN_TABLES
 )
 
 EXPECTED_INDEXES = {

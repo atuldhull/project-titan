@@ -147,6 +147,20 @@ class ToolRegistry:
                 raise ValueError(f"tool {spec.name!r} {label}_schema must declare type 'object'")
         self._specs[spec.name] = spec
 
+    def unregister(self, name: str) -> bool:
+        """Remove one tool. Returns True if it was registered. Needed by the Phase-52
+        plugin lifecycle: disable/quarantine must UNLOAD a plugin's tools atomically so
+        subsequent calls fail closed with TOOL_UNAVAILABLE (§3.3, TITAN-INT-014)."""
+        return self._specs.pop(name, None) is not None
+
+    def unregister_provider(self, provider: str) -> list[str]:
+        """Remove every tool contributed by one provider (e.g. ``plugin:titan.jira``).
+        Returns the names removed, so the caller can report exactly what was unloaded."""
+        removed = [name for name, spec in self._specs.items() if spec.provider == provider]
+        for name in removed:
+            del self._specs[name]
+        return sorted(removed)
+
     def get(self, name: str) -> ToolSpec | None:
         return self._specs.get(name)
 
@@ -163,7 +177,9 @@ class ToolRegistry:
         return [
             spec.tool_def()
             for spec in self.specs()
-            if allowed_for_role(role, spec.name)
+            if allowed_for_role(
+                role, spec.name, is_plugin_tool=spec.provider.startswith(("plugin:", "mcp:"))
+            )
             and policy.provider_enabled(spec.provider)
             and policy.tool_enabled(spec.name)
         ]

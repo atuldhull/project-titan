@@ -111,6 +111,19 @@ class Settings(BaseSettings):
     # projects (idempotent, version-on-change) so they never go stale.
     artifact_reconcile_interval_seconds: float = 30.0
 
+    # --- Plugin runtime (Phase 52; Vol 7 §3, TITAN-INT-010..017) ---
+    # Off by default: enabling it lets the host spawn out-of-process plugin workers.
+    plugins_enabled: bool = False
+    # Where plugin directories (each with a titan-plugin.yaml) are discovered.
+    plugins_dir: str = "config/plugins"
+    # Default per-call ceiling for a plugin tool (§3.5: 60s, per-tool overridable).
+    # A hanging plugin cannot block core — the call is bounded and returns TIMEOUT.
+    plugin_call_timeout_seconds: float = 60.0
+    # Key material for AES-256-GCM encryption of plugin config at rest (SEC-063).
+    # Empty = an ephemeral dev key: config does not survive a restart, which is the
+    # intended pressure to set one in production.
+    plugin_config_key: str = ""
+
     # --- CEO intake handler (Phase 25 walking skeleton) ---
     # When a project brief is created, run the thin CEO intake turn (stream an LLM
     # response, publish run.output.delta over the WS, persist user stories). Opt-in

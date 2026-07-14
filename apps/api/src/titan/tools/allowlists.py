@@ -109,14 +109,28 @@ def _matches(name: str, patterns: tuple[str, ...]) -> bool:
     return any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
 
 
-def allowed_for_role(role: str, tool_name: str) -> bool:
+def allowed_for_role(role: str, tool_name: str, *, is_plugin_tool: bool = False) -> bool:
     """True if the role's row allows the tool and no deny pattern hits.
-    Unknown role → False (fail closed)."""
+    Unknown role → False (fail closed).
+
+    ``is_plugin_tool`` marks a tool contributed by an ENABLED plugin/MCP server (the
+    caller derives it from the registered ToolSpec's ``provider``, so there is NO
+    module-global plugin-tool state to leak across app instances). The static §4.3
+    matrix cannot name plugin tools — they arrive from a manifest at enable time — so
+    an enabled plugin tool is admitted for any role, subject to the deny rows FIRST:
+    ``_ALWAYS_DENY`` (secret.*/cloud.*/k8s.*/deploy.*) and the role's own deny families
+    still win, so a plugin can never contribute such a name and have it allowed. The
+    real per-agent gate for plugin tools is the Tool Bus SCOPE check + the agent's
+    roster tool_grants (ADR-INT-04), not this coarse name allowlist."""
     row = _MATRIX.get(role)
     if row is None:
         return False
     allow, deny = row
-    return _matches(tool_name, allow) and not _matches(tool_name, deny)
+    if _matches(tool_name, deny):  # deny wins, for plugin tools too
+        return False
+    if is_plugin_tool:
+        return True
+    return _matches(tool_name, allow)
 
 
 __all__ = ["allowed_for_role"]

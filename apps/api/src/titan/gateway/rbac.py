@@ -40,6 +40,52 @@ AGENT_ROLE = "operator"
 # read the audit log.
 SENSITIVE_RESOURCES = frozenset({"audit", "secret"})
 
+# The canonical set of RBAC scopes the host recognises. Permissions are otherwise
+# free-form strings, so this is the reference list a PLUGIN MANIFEST is validated
+# against: a manifest requesting a scope that is not here fails installation with an
+# actionable "unknown scope" error naming the field (Vol 7 §3.2, TITAN-INT-010).
+KNOWN_SCOPES: frozenset[str] = frozenset(
+    {
+        "project:read",
+        "project:write",
+        "project:create",
+        "project:delete",
+        "task:read",
+        "task:create",
+        "task:update",
+        "task:transition",
+        "task:assign",
+        "task:cancel",
+        "run:create",
+        "run:cancel",
+        "run:read",
+        "message:read",
+        "message:write",
+        "decision:write",
+        "agent:configure",
+        "audit:read",
+        "tool_approval:write",
+        "memory:read",
+        "memory:write",
+        "memory:admin",
+        "kb:propose",
+        "kb:approve",
+        "pipeline:read",
+        "pipeline:advance",
+        "pipeline:override",
+        "workspace:read",
+        "workspace:write",
+        "terminal:run",
+        "docker:run",
+        "browser:use",
+        "web:search",
+        "web:fetch",
+        "deploy:local",
+        "plugin:read",
+        "plugin:admin",
+    }
+)
+
 
 def permission_granted(required: str, granted: set[str]) -> bool:
     """True if ``required`` (resource:action) is covered by ``granted``."""

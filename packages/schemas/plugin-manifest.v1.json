@@ -1,0 +1,423 @@
+{
+  "$defs": {
+    "Contributes": {
+      "additionalProperties": false,
+      "properties": {
+        "agents": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "maxItems": 50,
+          "title": "Agents",
+          "type": "array"
+        },
+        "tools": {
+          "items": {
+            "$ref": "#/$defs/ToolContribution"
+          },
+          "maxItems": 200,
+          "title": "Tools",
+          "type": "array"
+        },
+        "ui_panels": {
+          "items": {
+            "$ref": "#/$defs/UiPanel"
+          },
+          "maxItems": 50,
+          "title": "Ui Panels",
+          "type": "array"
+        },
+        "webhooks": {
+          "items": {
+            "$ref": "#/$defs/Webhook"
+          },
+          "maxItems": 50,
+          "title": "Webhooks",
+          "type": "array"
+        }
+      },
+      "title": "Contributes",
+      "type": "object"
+    },
+    "EventPermissions": {
+      "additionalProperties": false,
+      "properties": {
+        "publish": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Publish",
+          "type": "array"
+        },
+        "subscribe": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Subscribe",
+          "type": "array"
+        }
+      },
+      "title": "EventPermissions",
+      "type": "object"
+    },
+    "Permissions": {
+      "additionalProperties": false,
+      "description": "The five deny-by-default capability classes (\u00a73.4).",
+      "properties": {
+        "events": {
+          "$ref": "#/$defs/EventPermissions"
+        },
+        "filesystem": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Filesystem",
+          "type": "array"
+        },
+        "network": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Network",
+          "type": "array"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Scopes",
+          "type": "array"
+        },
+        "secrets": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Secrets",
+          "type": "array"
+        }
+      },
+      "title": "Permissions",
+      "type": "object"
+    },
+    "RuntimeSpec": {
+      "additionalProperties": false,
+      "description": "How the plugin executes. ``python`` runs out-of-process over JSON-RPC/stdio\n(ADR-INT-01); ``mcp`` reuses the same framing (ADR-INT-02) and lands in the next\nphase \u2014 the manifest accepts it, the runtime refuses to enable it for now.",
+      "properties": {
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Command",
+          "type": "array"
+        },
+        "entrypoint": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Entrypoint"
+        },
+        "python": {
+          "anyOf": [
+            {
+              "maxLength": 50,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Python"
+        },
+        "transport": {
+          "anyOf": [
+            {
+              "enum": [
+                "stdio",
+                "http"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transport"
+        },
+        "type": {
+          "default": "python",
+          "enum": [
+            "python",
+            "mcp"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "title": "RuntimeSpec",
+      "type": "object"
+    },
+    "ToolContribution": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Description",
+          "type": "string"
+        },
+        "input_schema": {
+          "additionalProperties": true,
+          "title": "Input Schema",
+          "type": "object"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "risk": {
+          "default": "write",
+          "enum": [
+            "read",
+            "write",
+            "admin"
+          ],
+          "title": "Risk",
+          "type": "string"
+        },
+        "schema": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schema"
+        },
+        "timeout_s": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 600,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeout S"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ToolContribution",
+      "type": "object"
+    },
+    "UiPanel": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "mount": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Mount",
+          "type": "string"
+        },
+        "src": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Src",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "type": {
+          "default": "iframe",
+          "enum": [
+            "iframe",
+            "schema-form",
+            "markdown"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "mount"
+      ],
+      "title": "UiPanel",
+      "type": "object"
+    },
+    "Webhook": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "secret": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Secret"
+        },
+        "verify": {
+          "const": "hmac-sha256",
+          "default": "hmac-sha256",
+          "title": "Verify",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "Webhook",
+      "type": "object"
+    }
+  },
+  "$id": "https://titan.dev/schemas/plugin-manifest.v1.json",
+  "additionalProperties": false,
+  "description": "``titan-plugin.yaml`` \u2014 schema ``plugin-manifest.v1``.",
+  "properties": {
+    "author": {
+      "default": "",
+      "maxLength": 200,
+      "title": "Author",
+      "type": "string"
+    },
+    "config_schema": {
+      "anyOf": [
+        {
+          "maxLength": 500,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Config Schema"
+    },
+    "contributes": {
+      "$ref": "#/$defs/Contributes"
+    },
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "homepage": {
+      "default": "",
+      "maxLength": 500,
+      "title": "Homepage",
+      "type": "string"
+    },
+    "id": {
+      "maxLength": 200,
+      "minLength": 3,
+      "title": "Id",
+      "type": "string"
+    },
+    "license": {
+      "default": "",
+      "maxLength": 100,
+      "title": "License",
+      "type": "string"
+    },
+    "manifest_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Manifest Version",
+      "type": "integer"
+    },
+    "name": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "permissions": {
+      "$ref": "#/$defs/Permissions"
+    },
+    "runtime": {
+      "$ref": "#/$defs/RuntimeSpec"
+    },
+    "titan_api": {
+      "default": ">=1.0,<2.0",
+      "maxLength": 100,
+      "title": "Titan Api",
+      "type": "string"
+    },
+    "version": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "version"
+  ],
+  "title": "TITAN plugin manifest (v1)",
+  "type": "object"
+}

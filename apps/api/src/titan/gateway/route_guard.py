@@ -29,6 +29,12 @@ PUBLIC_PATHS: frozenset[str] = frozenset(
         "/api/docs",
         "/api/openapi.json",
         "/docs/oauth2-redirect",
+        # Plugin webhooks (Vol 7 §3.2) are INBOUND calls from external systems (Jira,
+        # GitHub, …) which cannot present a TITAN JWT. They are authenticated instead by
+        # an HMAC-SHA256 signature over the raw body, verified against the plugin's named
+        # secret; an unverified payload is rejected 401 and logged. That signature IS the
+        # guard, so the route is deliberately public to the JWT layer.
+        "/api/v1/plugins/{plugin_id}/hooks/{hook_path:path}",
     }
 )
 

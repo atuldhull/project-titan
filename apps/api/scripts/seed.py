@@ -49,6 +49,10 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # override (Vol 6 §2.1/§2.5, Phase 41).
         "pipeline:advance",
         "pipeline:override",
+        # Install/enable plugins and grant them their declared capabilities. This is an
+        # operator act — never an agent's — so it lives only with Admin/Owner
+        # (Vol 7 §3.3, ADR-INT-04). plugin:read is reachable via *:read for everyone.
+        "plugin:admin",
         "*:read",
     ],
     "maintainer": [

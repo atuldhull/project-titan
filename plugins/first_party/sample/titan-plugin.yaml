@@ -1,0 +1,57 @@
+manifest_version: 1
+id: titan.sample
+name: Sample Connector
+version: 1.0.0
+description: A reference plugin — contributes a tool, a webhook, and a UI panel via manifest only.
+author: TITAN Core Team
+license: Apache-2.0
+titan_api: ">=1.0,<2.0"
+
+runtime:
+  type: python
+  entrypoint: sample_plugin:SamplePlugin
+  python: ">=3.12"
+
+# Deny-by-default: the plugin can touch NOTHING it does not declare here and the
+# operator does not approve at enable time (Vol 7 §3.4, TITAN-INT-015).
+permissions:
+  network:
+    - "https://api.example.com"
+  secrets:
+    - SAMPLE_TOKEN
+    - SAMPLE_WEBHOOK_SECRET
+  events:
+    subscribe: [task.created]
+    publish: [integration.sample.synced]
+  scopes: [task:read]
+  filesystem:
+    - "reports/*.md"
+
+contributes:
+  tools:
+    - name: sample.echo
+      description: Echo the arguments back — proves manifest-only tool contribution.
+      risk: read
+      input_schema:
+        type: object
+        additionalProperties: true
+    - name: sample.probe
+      description: Attempt a capability; used by the permission conformance suite.
+      risk: read
+      input_schema:
+        type: object
+        properties:
+          capability: { type: string }
+          argument: { type: string }
+        required: [capability]
+        additionalProperties: false
+  ui_panels:
+    - id: sample-panel
+      title: Sample
+      mount: project.sidebar
+      type: iframe
+      src: /plugin-ui/titan.sample/panel.html
+  webhooks:
+    - path: /hooks/sample
+      verify: hmac-sha256
+      secret: SAMPLE_WEBHOOK_SECRET

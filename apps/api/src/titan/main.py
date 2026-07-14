@@ -9,6 +9,7 @@ import asyncio
 import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -30,6 +31,7 @@ from titan.gateway.idempotency import IdempotencyMiddleware
 from titan.gateway.middleware import RequestContextMiddleware
 from titan.gateway.openapi import problemify_openapi
 from titan.gateway.problems import register_problem_handlers
+from titan.gateway.rbac import KNOWN_SCOPES
 from titan.gateway.security import (
     BodySizeCapMiddleware,
     DocsAuthGuardMiddleware,
@@ -53,6 +55,8 @@ from titan.observability.metrics import REDMetricsMiddleware
 from titan.observability.metrics import router as metrics_router
 from titan.orchestrator import router as tasks_router
 from titan.planning import router as planning_router
+from titan.plugins import router as plugins_router
+from titan.plugins import service as plugins_service
 from titan.projects import router as projects_router
 from titan.realtime import router as realtime_router
 from titan.realtime import service as realtime_service
@@ -174,6 +178,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             research_client=application.state.research_client,
             redis=application.state.redis,
         )
+        # Phase 52: the manifest-driven plugin runtime (Vol 7 §3). Plugin tools
+        # contribute to the SAME registry the Tool Bus dispatches, so the supervisor is
+        # built right after the bus. It spawns nothing here — workers start only when an
+        # operator enables a plugin (or on resume of one left ENABLED).
+        application.state.plugins_dir = active_settings.plugins_dir
+        application.state.plugin_scopes = KNOWN_SCOPES
+        application.state.plugin_cipher = plugins_service.ConfigCipher(
+            active_settings.plugin_config_key
+        )
+        application.state.plugin_secrets = plugins_service.EnvSecretsProvider()
+        application.state.plugin_supervisor = None
+        application.state.plugin_health_stop = None
+        application.state.plugin_health_task = None
+        if active_settings.plugins_enabled:
+            application.state.plugin_supervisor = plugins_service.PluginSupervisor(
+                application.state.engine,
+                application.state.tool_registry,
+                secrets=application.state.plugin_secrets,
+                http_fetcher=plugins_service.build_http_fetcher(application.state.http),
+                call_timeout_s=active_settings.plugin_call_timeout_seconds,
+                workspace_root=Path(active_settings.sandbox_workspace_root),
+            )
+            # Restore workers for plugins the operator left ENABLED; one that cannot
+            # come back is quarantined rather than silently missing its tools.
+            await plugins_service.resume_enabled(
+                application.state.engine,
+                application.state.plugin_supervisor,
+                known_scopes=KNOWN_SCOPES,
+            )
+            # Periodic healthcheck monitor: the "or a failed healthcheck" half of the
+            # auto-quarantine rule (TITAN-INT-014) — enable only checks health once.
+            application.state.plugin_health_stop = asyncio.Event()
+            application.state.plugin_health_task = asyncio.create_task(
+                plugins_service.run_health_monitor(
+                    application.state.plugin_supervisor,
+                    stop=application.state.plugin_health_stop,
+                )
+            )
         # Realtime WS backend (TITAN-BCK-007): this replica's local connection
         # registry + a pub/sub subscriber forwarding fanned-out frames to its
         # sockets. The domain-stream → pub/sub fan-out consumer runs ONLY in the
@@ -252,6 +294,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             for task in list(application.state.intake_tasks):  # cancel in-flight CEO turns
                 task.cancel()
             await application.state.ws_subscriber.stop()  # stop pub/sub subscriber first
+            if application.state.plugin_health_task is not None:
+                application.state.plugin_health_stop.set()
+                application.state.plugin_health_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await application.state.plugin_health_task
+            if application.state.plugin_supervisor is not None:
+                # Terminate every plugin worker; in-flight calls fail structurally
+                # rather than leaving orphaned subprocesses behind.
+                await application.state.plugin_supervisor.aclose()
             await application.state.sandbox_manager.aclose()  # destroy live sandboxes
             await application.state.dind_manager.aclose()  # destroy DinD sidecars
             await application.state.browser_manager.aclose()  # destroy browser pages
@@ -339,6 +390,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     debt_router.mount(app)  # /projects/{id}/debt — technical-debt ledger (WFL-021)
     planning_router.mount(app)  # /projects/{id}/sprint-plan, ceremonies, milestone, blockers (§4)
     artifacts_router.mount(app)  # /projects/{id}/artifacts — the six derived §5 artifacts
+    plugins_router.mount(app)  # /plugins lifecycle + /hooks (HMAC) + /plugin-ui (Vol 7 §3)
     otel.instrument_app(active_settings, app)
 
     def custom_openapi() -> dict[str, Any]:

@@ -283,8 +283,11 @@ class ToolBus:
         if call.task_id != caller.task_id:
             raise ToolError("PERMISSION_DENIED", "call is outside the agent's current task")
         # Role allowlist (Vol 8 §4.3): out-of-list calls rejected regardless of
-        # what the model asked for.
-        if not allowed_for_role(caller.role, spec.name):
+        # what the model asked for. A plugin/MCP-contributed tool is identified by its
+        # provider (no leaky global state) and gated by the SCOPE check below.
+        if not allowed_for_role(
+            caller.role, spec.name, is_plugin_tool=spec.provider.startswith(("plugin:", "mcp:"))
+        ):
             raise ToolError(
                 "PERMISSION_DENIED", f"tool {spec.name} is not in the {caller.role} role allowlist"
             )

@@ -81,16 +81,33 @@ def granted_tool_defs(registry: ToolRegistry, tool_grants: tuple[str, ...]) -> l
     return defs
 
 
+#: Tool providers whose required_scopes must NEVER contribute to an agent's authority
+#: (ADR-INT-04). A plugin/MCP server is third-party code: if its tool's declared scopes
+#: were folded into the caller's granted set, granting an agent that tool would
+#: SELF-GRANT the scopes and the Tool Bus check would be vacuous — precisely the
+#: "low-privilege agent → high-privilege plugin" laundering path the threat model
+#: forbids. Their scopes must instead be satisfied by the agent's CORE grants.
+_NON_AUTHORITATIVE_PREFIXES = ("plugin:", "mcp:")
+
+
 def granted_scopes(registry: ToolRegistry, tool_grants: tuple[str, ...]) -> frozenset[str]:
     """The RBAC scopes an agent carries this turn: the union of the required
     scopes of its granted, registered tools. Modelling authority as "exactly what
     your granted tools need" keeps the Tool Bus scope check satisfiable for
-    granted calls and unsatisfiable for anything else."""
+    granted calls and unsatisfiable for anything else.
+
+    Tools contributed by a PLUGIN or MCP server are excluded from this union: a
+    third party cannot mint the very authority it is about to be checked against
+    (ADR-INT-04). An agent may call a plugin tool only if its core grants already
+    carry that tool's required scopes."""
     scopes: set[str] = set()
     for name in tool_grants:
         spec = registry.get(name)
-        if spec is not None:
-            scopes.update(spec.required_scopes)
+        if spec is None:
+            continue
+        if spec.provider.startswith(_NON_AUTHORITATIVE_PREFIXES):
+            continue  # never self-granting
+        scopes.update(spec.required_scopes)
     return frozenset(scopes)
 
 

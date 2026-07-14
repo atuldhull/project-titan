@@ -14,6 +14,7 @@ from titan.llm import tables as llm_tables
 from titan.memory import models as memory_models
 from titan.messaging import models as messaging_models
 from titan.orchestrator import models as orchestrator_models
+from titan.plugins import models as plugins_models
 from titan.projects import models as projects_models
 from titan.runs import models as runs_models
 from titan.runtime import models as runtime_models
@@ -29,6 +30,7 @@ __all__ = [
     "memory_models",
     "messaging_models",
     "orchestrator_models",
+    "plugins_models",
     "projects_models",
     "runs_models",
     "runtime_models",
