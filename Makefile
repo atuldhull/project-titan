@@ -115,3 +115,15 @@ eval-baseline:
 # laptop, real PG/Redis/Qdrant; see scripts/bench_retrieval.py for setup).
 bench-memory:
 	cd $(API_DIR) && uv run python scripts/bench_retrieval.py $(BENCH_ARGS)
+
+# Phase 55 (TITAN-FND-007/052): the chaos suite + the Section-7 KPI benchmark over
+# the fixed 10-brief suite. NIGHTLY ONLY (nightly.yml), never per-commit — the
+# chaos scenarios SIMULATE killing each service (in-process) and the runner executes
+# the one executable brief end-to-end while validating the other nine as fixtures.
+# Uses an in-process queue (fakeredis) so no shared Redis is touched; the disposable
+# test DB (TITAN_TEST_DATABASE_URL) receives the benchmark + chaos rows.
+benchmark-suite:
+	cd $(API_DIR) && uv run $(ENV_FILE_FLAG) pytest --no-cov \
+		tests/test_chaos_reconcile.py tests/test_chaos_suite.py \
+		tests/test_benchmark_suite.py tests/test_benchmark_runner.py \
+		tests/test_benchmark_cli.py

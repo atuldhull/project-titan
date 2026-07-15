@@ -1,0 +1,115 @@
+{
+  "version": "1",
+  "briefs": [
+    {
+      "id": "todo-tiny",
+      "title": "Task-tracking web app",
+      "prompt": "Build a task-tracking web app: users create tasks, mark them done, and filter by status. Local-first, canonical stack.",
+      "size": "tiny",
+      "local_only": true,
+      "executable": true,
+      "expected_coverage": 0.6,
+      "expected_features": ["F1"],
+      "tags": ["crud", "reference", "mvp-exit"]
+    },
+    {
+      "id": "url-shortener",
+      "title": "URL shortener service",
+      "prompt": "Build a URL shortener: submit a long URL, get a short code, redirect on lookup, and show a hit counter.",
+      "size": "tiny",
+      "local_only": true,
+      "executable": false,
+      "expected_coverage": 0.6,
+      "expected_features": ["F1", "F2"],
+      "tags": ["crud", "redirect"]
+    },
+    {
+      "id": "markdown-notes-api",
+      "title": "Markdown notes API",
+      "prompt": "Build a REST API for markdown notes with create, read, update, delete, and full-text search over titles and bodies.",
+      "size": "small",
+      "local_only": true,
+      "executable": false,
+      "expected_coverage": 0.65,
+      "expected_features": ["F1", "F2", "F3"],
+      "tags": ["crud", "search"]
+    },
+    {
+      "id": "expense-tracker",
+      "title": "Personal expense tracker",
+      "prompt": "Build an expense tracker: log expenses with category and amount, view monthly totals, and export to CSV.",
+      "size": "small",
+      "local_only": true,
+      "executable": false,
+      "expected_coverage": 0.65,
+      "expected_features": ["F1", "F2", "F3"],
+      "tags": ["crud", "reporting"]
+    },
+    {
+      "id": "bookmark-manager",
+      "title": "Bookmark manager",
+      "prompt": "Build a bookmark manager: save links with tags, list by tag, and dedupe on URL.",
+      "size": "small",
+      "local_only": false,
+      "executable": false,
+      "expected_coverage": 0.65,
+      "expected_features": ["F1", "F2"],
+      "tags": ["crud", "tagging"]
+    },
+    {
+      "id": "kanban-board",
+      "title": "Kanban board",
+      "prompt": "Build a Kanban board: columns and cards, drag a card between columns, and a websocket live-update to other viewers.",
+      "size": "medium",
+      "local_only": false,
+      "executable": false,
+      "expected_coverage": 0.7,
+      "expected_features": ["F1", "F2", "F3", "F4"],
+      "tags": ["realtime", "ui"]
+    },
+    {
+      "id": "recipe-box",
+      "title": "Recipe box",
+      "prompt": "Build a recipe box: store recipes with ingredients and steps, scale servings, and search by ingredient.",
+      "size": "small",
+      "local_only": false,
+      "executable": false,
+      "expected_coverage": 0.65,
+      "expected_features": ["F1", "F2", "F3"],
+      "tags": ["crud", "search"]
+    },
+    {
+      "id": "polls-api",
+      "title": "Polls & voting API",
+      "prompt": "Build a polls API: create a poll with options, cast a vote (one per client), and show live tallies.",
+      "size": "medium",
+      "local_only": false,
+      "executable": false,
+      "expected_coverage": 0.7,
+      "expected_features": ["F1", "F2", "F3"],
+      "tags": ["crud", "voting"]
+    },
+    {
+      "id": "weather-cli",
+      "title": "Weather report CLI",
+      "prompt": "Build a CLI that fetches a weather forecast for a city, caches results for an hour, and prints a formatted report.",
+      "size": "tiny",
+      "local_only": false,
+      "executable": false,
+      "expected_coverage": 0.6,
+      "expected_features": ["F1", "F2"],
+      "tags": ["cli", "cache"]
+    },
+    {
+      "id": "feature-flags",
+      "title": "Feature-flag service",
+      "prompt": "Build a feature-flag service: define flags, target by user cohort, evaluate a flag for a user, and audit changes.",
+      "size": "medium",
+      "local_only": false,
+      "executable": false,
+      "expected_coverage": 0.7,
+      "expected_features": ["F1", "F2", "F3", "F4"],
+      "tags": ["config", "audit"]
+    }
+  ]
+}

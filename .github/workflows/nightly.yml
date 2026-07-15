@@ -1,0 +1,57 @@
+# PROJECT TITAN — nightly suite (Vol 9 §3.2, Phase 55; TITAN-FND-007/052).
+#
+# The nightly tier runs the heavy, non-per-commit checks. Phase 55 wires in the
+# crash-recovery chaos suite and the fixed 10-brief Section-7 KPI benchmark: the
+# chaos scenarios SIMULATE killing each service (orchestrator, worker, API, Redis,
+# Postgres) in-process and assert zero acknowledged data loss + queue redelivery +
+# resume-work within budget, and the runner executes the one executable brief
+# end-to-end while carrying the other nine as fixtures. This is deliberately NOT
+# part of ci.yml (the per-commit pipeline) — the full 10-brief suite belongs to
+# nightly (Vol 9 §3.2). (Live process-kill chaos on real Compose is a later phase.)
+#
+# The remaining Vol 9 §3.2 nightly-tier jobs — full E2E on staging, the k6 load
+# profile, the Trivy re-scan of deployed digests, and backup-restore verification
+# (§8.3) — land with their infra phases; the benchmark job is the Phase-55 slice.
+
+name: nightly
+
+on:
+  schedule:
+    # 02:30 UTC daily — off the per-commit path.
+    - cron: "30 2 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: titan
+          POSTGRES_PASSWORD: titan
+          POSTGRES_DB: titan_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U titan -d titan_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      # Disposable DB for the chaos + benchmark schema suites. The chaos queue is
+      # in-process (fakeredis), so no Redis service is needed.
+      TITAN_TEST_DATABASE_URL: postgresql+asyncpg://titan:titan@localhost:5432/titan_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: cd apps/api && uv sync --frozen
+      # Prove the fixed 10-brief suite loads and enumerates (the fixture wiring).
+      - run: cd apps/api && uv run python -m titan.cli benchmark list
+      # The chaos suite + the Section-7 KPI runner over the full 10-brief suite.
+      - run: make benchmark-suite

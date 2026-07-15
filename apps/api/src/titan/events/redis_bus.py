@@ -137,6 +137,57 @@ class RedisStreamBus:
         summary = await self._redis.xpending(topic, group)
         return int(cast(Any, summary)["pending"]) if summary else 0
 
+    async def stream_event_ids(self, topic: str, *, page: int = 1000) -> list[str]:
+        """Every event_id currently present in the stream (read or unread, acked or
+        not — XACK does not delete the entry). Redis-specific admin helper for the
+        chaos ledger reconciliation: an event still in the stream is recoverable
+        (re-readable/replayable), so it has NOT been lost even if unacked.
+
+        Paginated (exclusive-min cursor) so a MAXLEN-sized stream (~100k) is never
+        pulled into one call — bounded memory per page."""
+        event_ids: list[str] = []
+        cursor = "-"
+        while True:
+            entries = cast(
+                "list[tuple[str, dict[str, str]]]",
+                await self._redis.xrange(topic, min=cursor, max="+", count=page),
+            )
+            if not entries:
+                break
+            for _id, fields in entries:
+                event_ids.append(Envelope.from_wire(fields[_WIRE_FIELD]).event_id)
+            if len(entries) < page:
+                break
+            cursor = f"({entries[-1][0]}"  # exclusive of the last id (Redis 6.2+)
+        return event_ids
+
+    async def pending_event_ids(self, topic: str, group: str) -> list[str]:
+        """The event_ids of every message delivered but not yet acked for ``group``
+        (the PEL). Redis-specific admin helper, not part of the QueueBus protocol —
+        used by the chaos ledger reconciliation to distinguish in-flight work
+        (will be redelivered) from genuinely dropped events. Reads each pending
+        entry's envelope so the caller reconciles against durable event_ids, not
+        broker-opaque stream entry ids. Tolerates a missing stream/group (returns
+        ``[]``) — after a total queue wipe neither exists yet. If a pending entry
+        was trimmed out of the stream (possible at MAXLEN scale), its id is omitted
+        here — the reconciliation then treats it as not-pending, which over-reports
+        (never hides) loss, the fail-safe direction for a zero-loss check."""
+        if not await self._redis.exists(topic):
+            return []
+        try:
+            pending = await self._redis.xpending_range(topic, group, min="-", max="+", count=1000)
+        except ResponseError as exc:
+            if "NOGROUP" in str(exc):
+                return []
+            raise
+        event_ids: list[str] = []
+        for item in cast("list[dict[str, Any]]", pending or []):
+            entry_id = item["message_id"]
+            entries = await self._redis.xrange(topic, min=entry_id, max=entry_id, count=1)
+            for _id, fields in cast("list[tuple[str, dict[str, str]]]", entries):
+                event_ids.append(Envelope.from_wire(fields[_WIRE_FIELD]).event_id)
+        return event_ids
+
     async def forget(self, group: str, event_id: str) -> None:
         """Erase the seen-ledger entry for ``event_id`` (Redis-specific admin
         helper, not part of the QueueBus protocol). A dead-lettered event id is

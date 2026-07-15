@@ -159,6 +159,20 @@ def clear_gates() -> None:
     _GATES.clear()
 
 
+def snapshot_gates() -> dict[str, Gate]:
+    """A copy of the current registry — pair with :func:`restore_gates` so a caller
+    that must (re)register gates can put the process-global registry back exactly as
+    it found it, instead of clearing it to the auto-pass default (which would make a
+    co-running test's gates silently pass)."""
+    return dict(_GATES)
+
+
+def restore_gates(snapshot: dict[str, Gate]) -> None:
+    """Restore the registry to a :func:`snapshot_gates` result."""
+    _GATES.clear()
+    _GATES.update(snapshot)
+
+
 __all__ = [
     "ConfigurableGate",
     "Gate",
@@ -167,5 +181,7 @@ __all__ = [
     "clear_gates",
     "gate_for_stage",
     "register_gate",
+    "restore_gates",
+    "snapshot_gates",
     "validate_schema",
 ]

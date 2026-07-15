@@ -223,6 +223,8 @@ source_modules = [
     "titan.debt",
     "titan.planning",
     "titan.artifacts",
+    "titan.chaos",
+    "titan.benchmark",
     "titan.ci_kit",
     "titan.events",
     "titan.observability",
