@@ -19,12 +19,14 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from titan.agents import repository as repo
 from titan.agents.definition import (
+    CORE_ROSTER,
     AgentDefinition,
     Authority,
     Escalation,
     FailurePolicy,
     MemoryScopes,
     ModelPolicy,
+    roster_id_for_role,
 )
 from titan.agents.loader import RosterError, load_roster_cached
 from titan.agents.model_policy import (
@@ -281,6 +283,7 @@ def resolve_model(
 
 
 __all__ = [
+    "CORE_ROSTER",
     "AgentCreate",
     "AgentDefinition",
     "AgentOut",
@@ -310,6 +313,7 @@ __all__ = [
     "load_model_policy",
     "load_roster",
     "pause_agent",
+    "roster_id_for_role",
     "resolve_model",
     "resume_agent",
     "update_agent",

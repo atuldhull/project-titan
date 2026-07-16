@@ -73,6 +73,32 @@ CORE_ROSTER: frozenset[str] = frozenset(
     }
 )
 
+#: The agents-table role vocabulary (``titan.agents.service.AgentRole``, the §6
+#: free-text roles the REST API constrains) → the CORE_ROSTER runtime id ``run_turn``
+#: expects (Phase 56). ``orchestrator`` and ``critic`` are internal runtime roles
+#: with no agents-table equivalent, so they are absent here.
+ROLE_TO_ROSTER: dict[str, str] = {
+    "ceo": "ceo",
+    "pm": "pm_product",
+    "project_manager": "pm_project",
+    "architect": "architect",
+    "backend": "eng_backend",
+    "frontend": "eng_frontend",
+    "db": "eng_database",
+    "devops": "eng_devops",
+    "qa": "qa",
+    "security": "security",
+    "reviewer": "reviewer",
+    "docs": "docs",
+    "research": "research",
+    "memory": "memory",
+}
+
+
+def roster_id_for_role(role: str | None) -> str | None:
+    """The CORE_ROSTER runtime id for an agents-table role, or None if unmapped."""
+    return ROLE_TO_ROSTER.get(role) if role else None
+
 
 class Escalation(BaseModel):
     """One ``must_escalate`` decision class and where it escalates to (§2.1.3).
@@ -180,6 +206,7 @@ class AgentDefinition(BaseModel):
 
 __all__ = [
     "CORE_ROSTER",
+    "ROLE_TO_ROSTER",
     "SPECIAL_ESCALATION_TARGETS",
     "AgentDefinition",
     "AgentTier",

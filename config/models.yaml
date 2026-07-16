@@ -44,8 +44,11 @@ model_aliases:
     price: { input_per_mtok: 0.30, output_per_mtok: 2.50 }
     context_window: 1000000
   local-default:
+    # Phase 56 (TITAN-AGT-007): the offline profile's single Ollama alias. A 30b
+    # coder OOMs the 16 GB reference laptop; qwen2.5-coder:7b is the largest coder
+    # model that fits and is the one pulled for the acceptance run.
     provider: ollama
-    model: qwen3-coder:30b
+    model: qwen2.5-coder:7b
     context_window: 32768
   embed-default:
     provider: ollama

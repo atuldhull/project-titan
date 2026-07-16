@@ -11,7 +11,10 @@ providers:
 model_aliases:
   local-default:
     provider: ollama
-    model: qwen3-coder:30b
+    # Phase 56 (TITAN-AGT-007): 7b is the largest coder model that fits the 16 GB
+    # reference laptop (a 30b OOMs it) and is the model pulled for the acceptance
+    # run. This fully-local config is what the offline acceptance CLI selects.
+    model: qwen2.5-coder:7b
   embed-default:
     provider: ollama
     model: nomic-embed-text

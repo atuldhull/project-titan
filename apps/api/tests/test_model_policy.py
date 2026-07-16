@@ -130,6 +130,8 @@ def test_shipped_local_free_profile_is_ollama() -> None:
     for agent_id in _EXPECTED_TIER:
         sel = p.resolve(agent_id, profile="local-free")
         assert sel.provider == "ollama", agent_id
-    # The §8 local-free models.
-    assert p.resolve("architect", profile="local-free").model == "qwen2.5-coder:32b"
-    assert p.resolve("pm_project", profile="local-free").model == "llama3.2:3b"
+    # Phase 56 (TITAN-AGT-007): the local-free tiers are sized for the 16 GB
+    # reference laptop — one model (qwen2.5-coder:7b) serves every tier (a 32b OOMs
+    # it, and the Ollama binding routes all tiers to the single local-default model).
+    assert p.resolve("architect", profile="local-free").model == "qwen2.5-coder:7b"
+    assert p.resolve("pm_project", profile="local-free").model == "qwen2.5-coder:7b"

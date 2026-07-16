@@ -14,16 +14,20 @@ import argparse
 import asyncio
 import datetime as dt
 import json
+import os
 import sys
 from pathlib import Path
 
 from titan import clients
+from titan.benchmark.egress_guard import EgressGuard, guarded_client
 from titan.benchmark.kpi import KpiReport
+from titan.benchmark.offline_acceptance import AcceptanceRecord, run_offline_acceptance
 from titan.benchmark.runner import BenchmarkRunner
 from titan.benchmark.suite import load_suite
 from titan.llm.service import build_gateway
 from titan.memory import service as memory
 from titan.observability.logging import configure_logging
+from titan.runtime.service import build_runtime
 from titan.settings import get_settings
 
 
@@ -107,6 +111,67 @@ def _benchmark_run(brief_id: str | None, profile: str, output: str | None, confi
     return 0 if report.meets_mvp else 1
 
 
+async def _run_acceptance(profile: str) -> AcceptanceRecord:
+    base = get_settings()
+    # Force EVERY LLM path offline: model_policy_profile drives the runtime binding
+    # (roster turns), and the fully-local models config drives gateway-DIRECT calls
+    # (the KPI cost shim, embeddings) whose routing.default would otherwise resolve
+    # to a paid provider (the profile alone does not govern those).
+    local_models = str(Path(base.models_config_path).with_name("models.local.yaml"))
+    settings = base.model_copy(
+        update={"model_policy_profile": profile, "models_config_path": local_models}
+    )
+    # Allowlist egress: only loopback + the configured Ollama host may be reached.
+    guard = EgressGuard(ollama_base_url=os.environ.get("TITAN_OLLAMA_BASE_URL"))
+    engine = redis = gateway = None
+    try:
+        engine = clients.create_engine(settings)
+        redis = clients.create_redis(settings)
+        gateway = build_gateway(settings, client=guarded_client(guard), engine=engine, redis=redis)
+        runtime = build_runtime(settings, engine, redis=redis, llm=gateway)
+        return await run_offline_acceptance(
+            engine,
+            runtime,
+            gateway=gateway,
+            profile=profile,
+            egress_guard=guard,
+            generated_at=dt.datetime.now(dt.UTC).isoformat(),
+        )
+    finally:
+        if gateway is not None:
+            await gateway.aclose()
+        if redis is not None:
+            await redis.aclose()
+        if engine is not None:
+            await engine.dispose()
+
+
+_ACCEPTANCE_WARNING = (
+    "acceptance run drives all 16 roster agents as REAL local-model turns and WRITES "
+    "projects/messages to TITAN_DATABASE_URL (no cleanup). Point it at a DISPOSABLE "
+    "database with Ollama running, then re-run with --confirm."
+)
+
+
+def _acceptance_run(profile: str, output: str | None, confirm: bool) -> int:
+    """Run the TITAN-AGT-007 offline full-roster acceptance and emit its record.
+    Exit 0 iff every roster role ran and no paid-provider egress occurred — the
+    honest ``autonomous_app_completed`` verdict is reported, never gating the run."""
+    if not confirm:
+        print(_ACCEPTANCE_WARNING, file=sys.stderr)
+        return 2
+    record = asyncio.run(_run_acceptance(profile))
+    rendered = json.dumps(record.model_dump(), indent=2, default=str)
+    if output:
+        Path(output).write_text(rendered, encoding="utf-8")
+    print(rendered)
+    # Exit 0 = the acceptance HARNESS ran clean: all roster roles ran, the local
+    # model was actually exercised (not a silent all-error run), and egress stayed
+    # offline. It never gates on the model's own output quality.
+    ok = record.all_roles_ran and record.local_model_exercised and record.egress_clean
+    return 0 if ok else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="titan", description="TITAN operator CLI")
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -135,6 +200,19 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Acknowledge that the run writes benchmark/chaos data to a DISPOSABLE database",
     )
+
+    acc_cmd = subcommands.add_parser(
+        "acceptance", help="Full-roster offline acceptance run (TITAN-AGT-007, Vol 2)"
+    )
+    acc_sub = acc_cmd.add_subparsers(dest="acceptance_command", required=True)
+    acc_run = acc_sub.add_parser(
+        "run", help="Run the 16-agent Ollama-only acceptance and record it"
+    )
+    acc_run.add_argument("--profile", default="local-free", help="Model-policy profile (Ollama)")
+    acc_run.add_argument("--output", default=None, help="Write the AcceptanceRecord JSON here")
+    acc_run.add_argument(
+        "--confirm", action="store_true", help="Acknowledge real local-model turns + DB writes"
+    )
     return parser
 
 
@@ -152,6 +230,8 @@ def main(argv: list[str] | None = None) -> int:
             except (ValueError, KeyError) as exc:
                 print(f"benchmark run failed: {exc}", file=sys.stderr)
                 return 2
+    if args.command == "acceptance" and args.acceptance_command == "run":
+        return _acceptance_run(args.profile, args.output, args.confirm)
     return 2  # unreachable: argparse enforces the subcommand set
 
 

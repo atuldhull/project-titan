@@ -38,7 +38,9 @@ from titan.runs.coordinator import (
     run_results_reaper,
 )
 from titan.runs.executor import StubExecutor
+from titan.runs.live_executor import LiveExecutor, make_role_resolver
 from titan.runs.storage import FilesystemStorage
+from titan.runtime.service import build_runtime
 from titan.settings import get_settings
 
 logger = structlog.get_logger("titan.worker")
@@ -147,12 +149,19 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
     drainer = OutboxDrainer(engine, bus)
     ws_fanout = realtime.build_fanout(redis, org=settings.org)
     storage = FilesystemStorage(settings.artifact_root)
-    executor = StubExecutor()
     # Memory embedding pipeline (Phase 35, Vol 5 §5.1): outbox relay → ingest
     # stream → embedder (gateway /embeddings → Qdrant) → reaper. Embeddings go
     # ONLY through the gateway (TITAN-BRN-006).
     qdrant_http = clients.create_http_client(settings)
     llm_gateway = build_gateway(settings, engine=engine, redis=redis)
+    # Phase 56: the real agent turn as the run executor when enabled (offline
+    # acceptance run), else the deterministic placeholder (default CI/cloud).
+    executor: LiveExecutor | StubExecutor
+    if settings.live_executor:
+        runtime = build_runtime(settings, engine, redis=redis, llm=llm_gateway)
+        executor = LiveExecutor(runtime, make_role_resolver(engine))
+    else:
+        executor = StubExecutor()
     ingest_relay = memory.IngestRelay(engine, bus)
     embedder = memory.MemoryEmbedder(engine, bus, memory.QdrantIndex(qdrant_http), llm_gateway)
     stop = asyncio.Event()

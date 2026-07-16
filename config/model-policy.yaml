@@ -14,10 +14,13 @@ tiers:
 profiles:
   # Laptop / offline profile (hard requirement, TITAN-AGT-007): overrides each
   # tier to a local Ollama model. Select it with TITAN_MODEL_POLICY_PROFILE.
+  # Phase 56: sized for the 16 GB reference laptop. The gateway binding routes
+  # every Ollama alias to the single `local-default` model (config/models.yaml),
+  # so these per-tier names are honesty/documentation — one model serves all tiers.
   local-free:
-    reasoning: { provider: ollama, model: qwen2.5-coder:32b }
-    standard: { provider: ollama, model: qwen2.5-coder:14b }
-    fast: { provider: ollama, model: llama3.2:3b }
+    reasoning: { provider: ollama, model: qwen2.5-coder:7b }
+    standard: { provider: ollama, model: qwen2.5-coder:7b }
+    fast: { provider: ollama, model: qwen2.5-coder:7b }
 
 agents:
   ceo: reasoning

@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     worker_concurrency: int = 4
     # Soft per-run timeout; a run exceeding it becomes `timed_out` and retries.
     run_soft_timeout_seconds: float = 900.0
+    # Phase 56: run scheduled task runs through the REAL agent turn (LiveExecutor)
+    # instead of the StubExecutor placeholder. Off by default so the delivery
+    # worker stays deterministic in CI/cloud; the offline acceptance run sets it.
+    live_executor: bool = False
     # Filesystem root for the MVP artifact Storage backend (Vol 3 §6).
     artifact_root: str = "/var/lib/titan/artifacts"
     # Idle poll interval for the outbox drainer. Small so committed events reach
