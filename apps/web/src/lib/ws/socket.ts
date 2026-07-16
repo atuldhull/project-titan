@@ -107,6 +107,9 @@ export class WsClient {
   >();
   /** Last applied seq per project (gap detection + reconnect replay cursor). */
   private readonly lastSeq = new Map<string, number>();
+  /** Extra per-component frame listeners (e.g. the live activity feed), on top
+   *  of the single `onFrame` sink the manager wires to cache invalidation. */
+  private readonly frameListeners = new Set<(frame: ServerFrame) => void>();
 
   constructor(options: WsClientOptions) {
     this.options = options;
@@ -118,6 +121,31 @@ export class WsClient {
 
   get status(): ConnectionStatus {
     return this._status;
+  }
+
+  /**
+   * Observe every delivered domain frame (after dedupe). Returns an unsubscribe.
+   * Used by surfaces that render the event stream itself rather than reacting to
+   * cache invalidation — the live activity feed.
+   */
+  onAnyFrame(listener: (frame: ServerFrame) => void): () => void {
+    this.frameListeners.add(listener);
+    return () => {
+      this.frameListeners.delete(listener);
+    };
+  }
+
+  /** Deliver to the cache-invalidation sink and every extra listener. A throwing
+   *  listener must never take down the socket loop. */
+  private emitFrame(frame: ServerFrame): void {
+    this.options.onFrame(frame);
+    for (const listener of this.frameListeners) {
+      try {
+        listener(frame);
+      } catch {
+        // a bad listener is its own problem
+      }
+    }
   }
 
   connect(): void {
@@ -387,7 +415,7 @@ export class WsClient {
     // reconcile refetches them wholesale instead. Dedupe for them is by entity
     // id downstream (the store and sonner both key by notification id).
     if (pid === null || frame.seq <= 0) {
-      this.options.onFrame(frame);
+      this.emitFrame(frame);
       return;
     }
     const prev = this.lastSeq.get(pid);
@@ -398,14 +426,14 @@ export class WsClient {
         // like a duplicate and the project's feed would stay frozen forever.
         // Re-baseline and refetch to converge.
         this.lastSeq.set(pid, frame.seq);
-        this.options.onFrame(frame);
+        this.emitFrame(frame);
         this.options.onReconcile({ type: "gap", projectId: pid });
         return;
       }
       // Duplicate (replay overlap) — drop so nothing is applied twice.
       return;
     }
-    this.options.onFrame(frame);
+    this.emitFrame(frame);
     if (prev !== undefined && frame.seq > prev + 1) {
       // A gap: some frames were missed — refetch to converge (FRT-019).
       this.options.onReconcile({ type: "gap", projectId: pid });

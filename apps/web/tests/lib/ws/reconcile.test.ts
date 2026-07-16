@@ -31,10 +31,18 @@ describe("queryKeysForFrame", () => {
     ]);
   });
 
-  it("maps notification frames to both notification keys", () => {
+  it("maps notification frames to the notification keys AND approvals", () => {
+    // There is no approval-specific WS frame: a pending tool approval reaches the
+    // UI as an approval/critical notification. So notification.created is also
+    // what refreshes the Overview's attention queue — this is what makes "a new
+    // approval appears within 2 s" real rather than poll-dependent.
     expect(
       queryKeysForFrame(domainFrame("notification.created", null)),
-    ).toEqual([queryKeys.notifications(), queryKeys.notificationsUnread()]);
+    ).toEqual([
+      queryKeys.notifications(),
+      queryKeys.notificationsUnread(),
+      queryKeys.approvalsAll(),
+    ]);
   });
 
   it("maps agent.status to the agents key", () => {

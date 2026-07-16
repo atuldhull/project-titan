@@ -31,7 +31,15 @@ export function queryKeysForFrame(
     case "agent.status":
       return [queryKeys.agents()];
     case "notification.created":
-      return [queryKeys.notifications(), queryKeys.notificationsUnread()];
+      // Approvals ride in as notifications (the gate emits approval/critical on
+      // a new pending row), and there is no dedicated approval frame — so the
+      // Overview's queue refetches off this too, which is what makes "a new
+      // approval appears within 2 s" real rather than poll-dependent.
+      return [
+        queryKeys.notifications(),
+        queryKeys.notificationsUnread(),
+        queryKeys.approvalsAll(),
+      ];
     case "activity.created":
       return [queryKeys.orgActivity()];
     case "decision.recorded":

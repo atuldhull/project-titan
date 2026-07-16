@@ -26,6 +26,19 @@ export const queryKeys = {
   projectRuns: (pid: string) => ["project", pid, "runs"] as const,
   projectDeployments: (pid: string) => ["project", pid, "deployments"] as const,
   projectMessages: (pid: string) => ["project", pid, "messages"] as const,
+  /** The Phase-41 board: columns of tasks by workflow state — the only real
+   *  progress/blocked signal the backend exposes. */
+  projectBoard: (pid: string) => ["project", pid, "board"] as const,
+  projectSprints: (pid: string) => ["project", pid, "sprints"] as const,
+  projectMilestones: (pid: string) => ["project", pid, "milestones"] as const,
+  projectArtifact: (pid: string, kind: string) =>
+    ["project", pid, "artifact", kind] as const,
+  projectClarifications: (pid: string) =>
+    ["project", pid, "clarifications"] as const,
+  projectApprovals: (pid: string) => ["approvals", pid] as const,
+  /** Prefix over every project's approvals — the Overview queue fans out per
+   *  project, and an incoming approval notification invalidates them all. */
+  approvalsAll: () => ["approvals"] as const,
 
   agents: () => ["agents"] as const,
   agent: (agentId: string) => ["agents", agentId] as const,

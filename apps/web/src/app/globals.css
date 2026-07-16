@@ -101,3 +101,80 @@
     @apply bg-background text-foreground text-sm leading-normal antialiased;
   }
 }
+
+/*
+ * Markdown rendering for the Phase-51 derived artifacts (roadmap, risk
+ * register, tech-debt report). Token-only, both themes; deliberately minimal —
+ * the artifacts are plain prose/tables, and react-markdown emits no raw HTML.
+ */
+.prose-titan > * + * {
+  margin-top: 0.75em;
+}
+.prose-titan h1,
+.prose-titan h2,
+.prose-titan h3 {
+  font-weight: 600;
+  line-height: 1.3;
+}
+.prose-titan h1 {
+  font-size: 1.125rem;
+}
+.prose-titan h2 {
+  font-size: 1rem;
+}
+.prose-titan h3 {
+  font-size: 0.875rem;
+}
+.prose-titan ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+.prose-titan ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+}
+.prose-titan li + li {
+  margin-top: 0.25em;
+}
+.prose-titan a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose-titan code {
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 0.85em;
+  background: var(--muted);
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+}
+.prose-titan pre {
+  background: var(--muted);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  overflow-x: auto;
+}
+.prose-titan pre code {
+  background: transparent;
+  padding: 0;
+}
+.prose-titan table {
+  width: 100%;
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+.prose-titan th,
+.prose-titan td {
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+}
+.prose-titan th {
+  font-weight: 600;
+}
+.prose-titan blockquote {
+  border-left: 2px solid var(--border);
+  padding-left: 0.75rem;
+  color: var(--muted-foreground);
+}

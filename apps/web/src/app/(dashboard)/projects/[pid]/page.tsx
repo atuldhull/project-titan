@@ -1,11 +1,14 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 
-import { StubPage } from "@/components/shell/stub-page";
+import { ProjectDetail } from "@/components/projects/project-detail";
 
-export const metadata: Metadata = { title: "Project Overview" };
+export const metadata: Metadata = { title: "Project" };
 
-// The pid comes from the URL — navigational state is URL-encoded and
-// restorable on reload (TITAN-FRT-006).
+/**
+ * Project detail (Vol 4 §6.2). The pid and the active tab live in the URL, so
+ * navigational state is restorable on reload (TITAN-FRT-006).
+ */
 export default async function Page({
   params,
 }: {
@@ -13,13 +16,8 @@ export default async function Page({
 }) {
   const { pid } = await params;
   return (
-    <StubPage
-      title="Project Overview"
-      description="Status, phase progress, recent activity, and cost for this project (Vol 4 §6.2)."
-    >
-      <p className="mt-3 font-mono text-xs text-muted-foreground">
-        project: {pid}
-      </p>
-    </StubPage>
+    <Suspense>
+      <ProjectDetail projectId={pid} />
+    </Suspense>
   );
 }

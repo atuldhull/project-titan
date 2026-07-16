@@ -57,9 +57,17 @@ export type ServerFrameType = DomainFrameType | ControlFrameType;
 
 /**
  * The exact server->client envelope. Field order and names mirror the backend
- * `protocol.build_frame`; `seq` is monotonic per delivery channel (per-project
- * for project frames, `0` for control/user/agent frames), and `project_id` is
- * null for user/agent/org frames.
+ * `protocol.build_frame`.
+ *
+ * `seq` is monotonic PER DELIVERY CHANNEL. Control frames use 0, but the
+ * user/agent/org channels each carry a REAL counter (the backend INCRs a
+ * per-user / per-agent / per-org Redis key in `fanout._publish_*`) — they are
+ * not 0. What they lack is a replay buffer, which is why the client reconciles
+ * them by refetching rather than by cursor.
+ *
+ * `project_id` is null for user/agent/org frames. Note the org channel wraps the
+ * real event: `activity.created` carries `payload = {event, project_id}` and
+ * leaves the envelope's `project_id` null.
  */
 export interface ServerFrame<P = unknown> {
   readonly v: typeof PROTOCOL_VERSION;
