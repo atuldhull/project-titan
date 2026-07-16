@@ -4,13 +4,17 @@ extends: []
 
 rules:
   titan-base-path:
-    description: All paths live under /api/v1 (URI versioning) or are probe/metrics endpoints.
+    # API resources are URI-versioned under /api/v1. The carve-outs are the
+    # non-API surfaces: probe/metrics endpoints, and /plugin-ui/{id}/{path},
+    # which serves plugin UI panel ASSETS at the path Vol 7 §3 mandates
+    # (`src: /plugin-ui/titan.jira/panel.html` — an iframe src, not an API call).
+    description: All paths live under /api/v1 (URI versioning), or are probe/metrics/plugin-UI-asset endpoints.
     severity: error
     given: $.paths[*]~
     then:
       function: pattern
       functionOptions:
-        match: "^/(api/v1/|healthz$|readyz$|metrics$)"
+        match: "^/(api/v1/|plugin-ui/|healthz$|readyz$|metrics$)"
 
   titan-kebab-case-resources:
     description: "Resource segments are plural kebab-case; {params} and :verb actions allowed (AIP-136), including {param}:verb."

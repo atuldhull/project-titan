@@ -261,6 +261,47 @@
         "title": "AgentPatch",
         "type": "object"
       },
+      "AnswerIn": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Answer",
+            "type": "string"
+          },
+          "question_id": {
+            "format": "uuid",
+            "title": "Question Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question_id",
+          "answer"
+        ],
+        "title": "AnswerIn",
+        "type": "object"
+      },
+      "AnswerSubmission": {
+        "additionalProperties": false,
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/AnswerIn"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Answers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "answers"
+        ],
+        "title": "AnswerSubmission",
+        "type": "object"
+      },
       "ApiKeyGrant": {
         "properties": {
           "api_key": {
@@ -402,6 +443,91 @@
         "title": "ArtifactOut",
         "type": "object"
       },
+      "ArtifactSummary": {
+        "properties": {
+          "artifact_version": {
+            "title": "Artifact Version",
+            "type": "integer"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "artifact_version",
+          "content_hash"
+        ],
+        "title": "ArtifactSummary",
+        "type": "object"
+      },
+      "AssembledFor": {
+        "additionalProperties": false,
+        "description": "Who the packet is for \u2014 attribution only, never part of the cache key.",
+        "properties": {
+          "agent": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Agent",
+            "type": "string"
+          },
+          "call_seq": {
+            "default": 0,
+            "title": "Call Seq",
+            "type": "integer"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "title": "AssembledFor",
+        "type": "object"
+      },
+      "AssumptionOut": {
+        "properties": {
+          "high_visibility": {
+            "default": false,
+            "title": "High Visibility",
+            "type": "boolean"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "statement": {
+            "title": "Statement",
+            "type": "string"
+          },
+          "user_overridable": {
+            "default": true,
+            "title": "User Overridable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "statement",
+          "source"
+        ],
+        "title": "AssumptionOut",
+        "type": "object"
+      },
       "Authority": {
         "additionalProperties": false,
         "description": "What the agent decides alone vs. must escalate (\u00a72.1.3).\n\n``veto`` marks a hard blocking power: only the Security agent (\u00a74.11 / \u00a77.4)\nholds it in the default roster, and the runtime enforces it (TITAN-AGT-011).",
@@ -431,6 +557,39 @@
           "must_escalate"
         ],
         "title": "Authority",
+        "type": "object"
+      },
+      "BlockerSweepResult": {
+        "properties": {
+          "advanced": {
+            "title": "Advanced",
+            "type": "integer"
+          },
+          "detected": {
+            "title": "Detected",
+            "type": "integer"
+          },
+          "escalated": {
+            "title": "Escalated",
+            "type": "integer"
+          },
+          "recovered": {
+            "title": "Recovered",
+            "type": "integer"
+          },
+          "scanned": {
+            "title": "Scanned",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scanned",
+          "detected",
+          "advanced",
+          "recovered",
+          "escalated"
+        ],
+        "title": "BlockerSweepResult",
         "type": "object"
       },
       "Board": {
@@ -529,6 +688,29 @@
           "tasks"
         ],
         "title": "BoardColumn",
+        "type": "object"
+      },
+      "CacheMetrics": {
+        "properties": {
+          "hit_rate": {
+            "title": "Hit Rate",
+            "type": "number"
+          },
+          "hits": {
+            "title": "Hits",
+            "type": "number"
+          },
+          "misses": {
+            "title": "Misses",
+            "type": "number"
+          }
+        },
+        "required": [
+          "hits",
+          "misses",
+          "hit_rate"
+        ],
+        "title": "CacheMetrics",
         "type": "object"
       },
       "ChatRequest": {
@@ -704,6 +886,511 @@
         "title": "ChatResponse",
         "type": "object"
       },
+      "ClarificationBatchOut": {
+        "properties": {
+          "assumptions": {
+            "items": {
+              "$ref": "#/components/schemas/AssumptionOut"
+            },
+            "title": "Assumptions",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "deadline_at": {
+            "format": "date-time",
+            "title": "Deadline At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "opened_by": {
+            "title": "Opened By",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/ClarificationQuestionOut"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "timeout_hours": {
+            "title": "Timeout Hours",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "status",
+          "timeout_hours",
+          "deadline_at",
+          "resolved_at",
+          "resolution",
+          "opened_by",
+          "created_at",
+          "updated_at",
+          "questions",
+          "assumptions"
+        ],
+        "title": "ClarificationBatchOut",
+        "type": "object"
+      },
+      "ClarificationQuestionOut": {
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "answered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answered At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ordinal",
+          "topic",
+          "question"
+        ],
+        "title": "ClarificationQuestionOut",
+        "type": "object"
+      },
+      "CloseSprintIn": {
+        "additionalProperties": false,
+        "properties": {
+          "demo_links": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Demo Links",
+            "type": "array"
+          },
+          "estimate_actuals": {
+            "items": {
+              "$ref": "#/components/schemas/EstimateActualIn"
+            },
+            "maxItems": 2000,
+            "title": "Estimate Actuals",
+            "type": "array"
+          },
+          "retrospective_changes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Retrospective Changes",
+            "type": "array"
+          },
+          "sprint_number": {
+            "minimum": 1.0,
+            "title": "Sprint Number",
+            "type": "integer"
+          },
+          "velocity_actual": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Velocity Actual",
+            "type": "number"
+          },
+          "velocity_estimate": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Velocity Estimate",
+            "type": "number"
+          }
+        },
+        "required": [
+          "sprint_number"
+        ],
+        "title": "CloseSprintIn",
+        "type": "object"
+      },
+      "CloseSprintResult": {
+        "properties": {
+          "correction_factor": {
+            "title": "Correction Factor",
+            "type": "number"
+          },
+          "retrospective": {
+            "$ref": "#/components/schemas/SprintCeremonyOut"
+          },
+          "review": {
+            "$ref": "#/components/schemas/SprintCeremonyOut"
+          }
+        },
+        "required": [
+          "review",
+          "retrospective",
+          "correction_factor"
+        ],
+        "title": "CloseSprintResult",
+        "type": "object"
+      },
+      "CollectionRebuild": {
+        "description": "What reconciliation did to one collection. ``quarantined`` chunks were\nskipped (dead-lettered poison awaiting operator replay); ``failed`` chunks\nhit an embed/upsert error during THIS rebuild and were skipped so the\nrecovery command still completes (TITAN-BRN-004).",
+        "properties": {
+          "chunks_embedded": {
+            "title": "Chunks Embedded",
+            "type": "integer"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "points": {
+            "title": "Points",
+            "type": "integer"
+          },
+          "quarantined": {
+            "default": 0,
+            "title": "Quarantined",
+            "type": "integer"
+          },
+          "strays_deleted": {
+            "title": "Strays Deleted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "strays_deleted",
+          "chunks_embedded",
+          "points"
+        ],
+        "title": "CollectionRebuild",
+        "type": "object"
+      },
+      "ConfigIn": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          }
+        },
+        "title": "ConfigIn",
+        "type": "object"
+      },
+      "ConstitutionHistory": {
+        "properties": {
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/ConstitutionOut"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "versions"
+        ],
+        "title": "ConstitutionHistory",
+        "type": "object"
+      },
+      "ConstitutionOut": {
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "checksum": {
+            "title": "Checksum",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "source_ref": {
+            "title": "Source Ref",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "title",
+          "body",
+          "checksum",
+          "source_ref",
+          "created_at"
+        ],
+        "title": "ConstitutionOut",
+        "type": "object"
+      },
+      "CurationReport": {
+        "additionalProperties": false,
+        "description": "What one curation run planned and (unless dry-run) did. Counts only \u2014 the\nledger holds the record ids; this summary carries no memory content\n(TITAN-OPS-016).",
+        "properties": {
+          "archived": {
+            "default": 0,
+            "title": "Archived",
+            "type": "integer"
+          },
+          "compacted": {
+            "default": 0,
+            "title": "Compacted",
+            "type": "integer"
+          },
+          "demoted": {
+            "default": 0,
+            "title": "Demoted",
+            "type": "integer"
+          },
+          "destructive_deferred": {
+            "default": 0,
+            "title": "Destructive Deferred",
+            "type": "integer"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "planned_archive": {
+            "title": "Planned Archive",
+            "type": "integer"
+          },
+          "planned_compact": {
+            "title": "Planned Compact",
+            "type": "integer"
+          },
+          "planned_demote": {
+            "title": "Planned Demote",
+            "type": "integer"
+          },
+          "scanned": {
+            "title": "Scanned",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scanned",
+          "planned_demote",
+          "planned_archive",
+          "planned_compact",
+          "dry_run"
+        ],
+        "title": "CurationReport",
+        "type": "object"
+      },
+      "CurationRunRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "approve_destructive": {
+            "default": false,
+            "title": "Approve Destructive",
+            "type": "boolean"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "title": "CurationRunRequest",
+        "type": "object"
+      },
+      "DebtLedger": {
+        "description": "The project's debt ledger \u2014 the open total for the dashboard plus the\ntickets (TITAN-WFL-021).",
+        "properties": {
+          "open_total": {
+            "title": "Open Total",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "tickets": {
+            "items": {
+              "$ref": "#/components/schemas/DebtTicketOut"
+            },
+            "title": "Tickets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "project_id",
+          "open_total",
+          "tickets"
+        ],
+        "title": "DebtLedger",
+        "type": "object"
+      },
+      "DebtTicketOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "paydown_proposal": {
+            "title": "Paydown Proposal",
+            "type": "string"
+          },
+          "paydown_task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paydown Task Id"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "source",
+          "severity",
+          "title",
+          "detail",
+          "paydown_proposal",
+          "paydown_task_id",
+          "fingerprint",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DebtTicketOut",
+        "type": "object"
+      },
       "DecisionCreate": {
         "additionalProperties": false,
         "properties": {
@@ -711,6 +1398,17 @@
             "minLength": 1,
             "title": "Alternatives",
             "type": "string"
+          },
+          "authority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authority"
           },
           "consequences": {
             "minLength": 1,
@@ -783,6 +1481,17 @@
           "alternatives": {
             "title": "Alternatives",
             "type": "string"
+          },
+          "authority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authority"
           },
           "consequences": {
             "title": "Consequences",
@@ -857,6 +1566,7 @@
           "alternatives",
           "consequences",
           "status",
+          "authority",
           "decided_by_agent_id",
           "supersedes_id",
           "created_at",
@@ -898,6 +1608,148 @@
           "depends_on_id"
         ],
         "title": "DependencyOut",
+        "type": "object"
+      },
+      "DeploymentOut": {
+        "properties": {
+          "compose_file": {
+            "title": "Compose File",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "health": {
+            "title": "Health",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "services": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Services",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "task_id",
+          "name",
+          "compose_file",
+          "status",
+          "url",
+          "port",
+          "services",
+          "health",
+          "detail",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DeploymentOut",
+        "type": "object"
+      },
+      "DerivedArtifactOut": {
+        "properties": {
+          "artifact_version": {
+            "title": "Artifact Version",
+            "type": "integer"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "content_json": {
+            "additionalProperties": true,
+            "title": "Content Json",
+            "type": "object"
+          },
+          "content_md": {
+            "title": "Content Md",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "artifact_version",
+          "content_md",
+          "content_json",
+          "content_hash",
+          "created_at"
+        ],
+        "title": "DerivedArtifactOut",
         "type": "object"
       },
       "EgressHostIn": {
@@ -1072,6 +1924,27 @@
         "title": "Escalation",
         "type": "object"
       },
+      "EstimateActualIn": {
+        "additionalProperties": false,
+        "properties": {
+          "actual": {
+            "minimum": 0.0,
+            "title": "Actual",
+            "type": "number"
+          },
+          "estimate": {
+            "exclusiveMinimum": 0.0,
+            "title": "Estimate",
+            "type": "number"
+          }
+        },
+        "required": [
+          "estimate",
+          "actual"
+        ],
+        "title": "EstimateActualIn",
+        "type": "object"
+      },
       "FailurePolicy": {
         "additionalProperties": false,
         "description": "Overrides to the default \u00a72.2 recovery ladder (\u00a72.1.8).\n\n``mode`` captures the fail-open/closed posture the runtime enforces;\n``escalates_to_human`` (CEO \u00a74.1: no supervisor agent) and\n``watchdog_restart`` (Orchestrator \u00a74.2 / TITAN-AGT-009: non-LLM watchdog)\nare the other mechanically-checkable deltas. ``skip_retries_on`` lists\ndecision classes that bypass the retry rungs and escalate immediately (DB\n\u00a74.8: destructive migrations). ``notes`` records the remaining prose delta\nverbatim for prompt rendering and audit.",
@@ -1117,6 +1990,108 @@
           }
         },
         "title": "FailurePolicy",
+        "type": "object"
+      },
+      "GateEvaluationOut": {
+        "properties": {
+          "artifact_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Id"
+          },
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "constitution_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Constitution Version"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "evaluator_agent": {
+            "title": "Evaluator Agent",
+            "type": "string"
+          },
+          "evaluator_model": {
+            "title": "Evaluator Model",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "prompt_version": {
+            "title": "Prompt Version",
+            "type": "string"
+          },
+          "reasons": {
+            "items": {},
+            "title": "Reasons",
+            "type": "array"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "stage",
+          "artifact_id",
+          "attempt",
+          "verdict",
+          "reasons",
+          "evaluator_agent",
+          "evaluator_model",
+          "prompt_version",
+          "created_at"
+        ],
+        "title": "GateEvaluationOut",
+        "type": "object"
+      },
+      "GateLedger": {
+        "properties": {
+          "evaluations": {
+            "items": {
+              "$ref": "#/components/schemas/GateEvaluationOut"
+            },
+            "title": "Evaluations",
+            "type": "array"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "evaluations"
+        ],
+        "title": "GateLedger",
         "type": "object"
       },
       "Graph": {
@@ -1193,6 +2168,135 @@
         "title": "GraphNode",
         "type": "object"
       },
+      "HandoffArtifactOut": {
+        "properties": {
+          "artifact_type": {
+            "title": "Artifact Type",
+            "type": "string"
+          },
+          "body": {
+            "additionalProperties": true,
+            "title": "Body",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "submitted_by": {
+            "title": "Submitted By",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "stage",
+          "artifact_type",
+          "schema_version",
+          "version",
+          "body",
+          "submitted_by",
+          "created_at"
+        ],
+        "title": "HandoffArtifactOut",
+        "type": "object"
+      },
+      "HandoffOutcome": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Version"
+          },
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "field_errors": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Field Errors",
+            "type": "array"
+          },
+          "gate_reasons": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Gate Reasons",
+            "type": "array"
+          },
+          "next_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Stage"
+          },
+          "outcome": {
+            "enum": [
+              "advanced",
+              "gate_failed_retry",
+              "escalated",
+              "schema_rejected"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "pipeline": {
+            "$ref": "#/components/schemas/PipelineOut"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome",
+          "stage",
+          "attempt",
+          "pipeline"
+        ],
+        "title": "HandoffOutcome",
+        "type": "object"
+      },
       "HealthzResponse": {
         "description": "Liveness probe response.",
         "properties": {
@@ -1245,6 +2349,922 @@
           "data"
         ],
         "title": "ImageSource",
+        "type": "object"
+      },
+      "KbApprovalResult": {
+        "additionalProperties": false,
+        "properties": {
+          "chunk_count": {
+            "title": "Chunk Count",
+            "type": "integer"
+          },
+          "document_id": {
+            "format": "uuid",
+            "title": "Document Id",
+            "type": "string"
+          },
+          "kb_doc_node_id": {
+            "format": "uuid",
+            "title": "Kb Doc Node Id",
+            "type": "string"
+          },
+          "proposal_id": {
+            "format": "uuid",
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "record_id": {
+            "format": "uuid",
+            "title": "Record Id",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "document_id",
+          "slug",
+          "version",
+          "record_id",
+          "chunk_count",
+          "kb_doc_node_id"
+        ],
+        "title": "KbApprovalResult",
+        "type": "object"
+      },
+      "KbDocumentDetail": {
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/KbDocumentOut"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/KbVersionOut"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "document",
+          "versions"
+        ],
+        "title": "KbDocumentDetail",
+        "type": "object"
+      },
+      "KbDocumentOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At"
+          },
+          "current_version": {
+            "title": "Current Version",
+            "type": "integer"
+          },
+          "doc_type": {
+            "title": "Doc Type",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "doc_type",
+          "slug",
+          "title",
+          "current_version",
+          "status",
+          "tags",
+          "created_at"
+        ],
+        "title": "KbDocumentOut",
+        "type": "object"
+      },
+      "KbProposalIn": {
+        "additionalProperties": false,
+        "description": "POST /kb/proposals \u2014 a new doc or a new version of an existing slug.",
+        "properties": {
+          "body_md": {
+            "maxLength": 200000,
+            "minLength": 1,
+            "title": "Body Md",
+            "type": "string"
+          },
+          "change_note": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Change Note",
+            "type": "string"
+          },
+          "doc_type": {
+            "title": "Doc Type",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "rationale": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Rationale",
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Slug",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "doc_type",
+          "slug",
+          "title",
+          "body_md",
+          "change_note",
+          "rationale"
+        ],
+        "title": "KbProposalIn",
+        "type": "object"
+      },
+      "KbProposalOut": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "title": "Created At"
+          },
+          "doc_type": {
+            "title": "Doc Type",
+            "type": "string"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "near_duplicates": {
+            "items": {
+              "$ref": "#/components/schemas/NearDuplicate"
+            },
+            "title": "Near Duplicates",
+            "type": "array"
+          },
+          "requires_human": {
+            "title": "Requires Human",
+            "type": "boolean"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "document_id",
+          "doc_type",
+          "slug",
+          "title",
+          "status",
+          "requires_human",
+          "near_duplicates",
+          "created_at"
+        ],
+        "title": "KbProposalOut",
+        "type": "object"
+      },
+      "KbVersionOut": {
+        "properties": {
+          "approved_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved By"
+          },
+          "body_md": {
+            "title": "Body Md",
+            "type": "string"
+          },
+          "change_note": {
+            "title": "Change Note",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At"
+          },
+          "document_id": {
+            "format": "uuid",
+            "title": "Document Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "proposed_by": {
+            "title": "Proposed By",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "document_id",
+          "version",
+          "body_md",
+          "change_note",
+          "proposed_by",
+          "approved_by",
+          "created_at"
+        ],
+        "title": "KbVersionOut",
+        "type": "object"
+      },
+      "KgEdgeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "dst": {
+            "format": "uuid",
+            "title": "Dst",
+            "type": "string"
+          },
+          "edge_type": {
+            "title": "Edge Type",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "properties": {
+            "additionalProperties": true,
+            "title": "Properties",
+            "type": "object"
+          },
+          "src": {
+            "format": "uuid",
+            "title": "Src",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "src",
+          "dst",
+          "edge_type",
+          "properties"
+        ],
+        "title": "KgEdgeOut",
+        "type": "object"
+      },
+      "KgNodeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "depth": {
+            "title": "Depth",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node_type": {
+            "title": "Node Type",
+            "type": "string"
+          },
+          "properties": {
+            "additionalProperties": true,
+            "title": "Properties",
+            "type": "object"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "node_type",
+          "scope",
+          "name",
+          "properties",
+          "depth"
+        ],
+        "title": "KgNodeOut",
+        "type": "object"
+      },
+      "KgNodeRef": {
+        "additionalProperties": false,
+        "description": "Name a start node by its natural key (scope defaults to the query scope).",
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_type": {
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_type",
+          "name"
+        ],
+        "title": "KgNodeRef",
+        "type": "object"
+      },
+      "KgQueryRequest": {
+        "additionalProperties": false,
+        "description": "POST /memory/kg/query \u2014 typed traversal (start nodes, edge-type filter,\ndepth \u2264 3).",
+        "properties": {
+          "direction": {
+            "default": "both",
+            "title": "Direction",
+            "type": "string"
+          },
+          "edge_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Edge Types",
+            "type": "array"
+          },
+          "max_depth": {
+            "default": 3,
+            "maximum": 3.0,
+            "minimum": 0.0,
+            "title": "Max Depth",
+            "type": "integer"
+          },
+          "scope": {
+            "minLength": 1,
+            "title": "Scope",
+            "type": "string"
+          },
+          "start": {
+            "items": {
+              "$ref": "#/components/schemas/KgNodeRef"
+            },
+            "title": "Start",
+            "type": "array"
+          },
+          "start_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Start Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "scope"
+        ],
+        "title": "KgQueryRequest",
+        "type": "object"
+      },
+      "KgQueryResult": {
+        "additionalProperties": false,
+        "properties": {
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/KgEdgeOut"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/KgNodeOut"
+            },
+            "title": "Nodes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "nodes",
+          "edges"
+        ],
+        "title": "KgQueryResult",
+        "type": "object"
+      },
+      "LagMetrics": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "number"
+          },
+          "p50_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50 Seconds"
+          },
+          "p95_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Seconds"
+          }
+        },
+        "required": [
+          "count",
+          "p50_seconds",
+          "p95_seconds"
+        ],
+        "title": "LagMetrics",
+        "type": "object"
+      },
+      "LessonIn": {
+        "additionalProperties": false,
+        "description": "The \u00a711.2 structured lesson.",
+        "properties": {
+          "applicability": {
+            "default": "org-candidate",
+            "title": "Applicability",
+            "type": "string"
+          },
+          "context": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Context",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "importance": {
+            "default": 0.7,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Importance",
+            "type": "number"
+          },
+          "observation": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Observation",
+            "type": "string"
+          },
+          "recommendation": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Recommendation",
+            "type": "string"
+          },
+          "root_cause": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Root Cause",
+            "type": "string"
+          },
+          "scope": {
+            "minLength": 1,
+            "title": "Scope",
+            "type": "string"
+          },
+          "source_task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Task Id"
+          },
+          "title": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "title",
+          "context",
+          "observation",
+          "root_cause",
+          "recommendation"
+        ],
+        "title": "LessonIn",
+        "type": "object"
+      },
+      "LessonResult": {
+        "additionalProperties": false,
+        "properties": {
+          "chunk_count": {
+            "title": "Chunk Count",
+            "type": "integer"
+          },
+          "node_id": {
+            "format": "uuid",
+            "title": "Node Id",
+            "type": "string"
+          },
+          "record_id": {
+            "format": "uuid",
+            "title": "Record Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "record_id",
+          "node_id",
+          "chunk_count"
+        ],
+        "title": "LessonResult",
+        "type": "object"
+      },
+      "LoopCycleOut": {
+        "properties": {
+          "clean": {
+            "title": "Clean",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "cycle_number": {
+            "title": "Cycle Number",
+            "type": "integer"
+          },
+          "new_findings_count": {
+            "title": "New Findings Count",
+            "type": "integer"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cycle_number",
+          "new_findings_count",
+          "clean",
+          "outcome",
+          "created_at"
+        ],
+        "title": "LoopCycleOut",
+        "type": "object"
+      },
+      "LoopFindingOut": {
+        "properties": {
+          "advisory": {
+            "title": "Advisory",
+            "type": "boolean"
+          },
+          "conflict_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conflict Id"
+          },
+          "disposition": {
+            "title": "Disposition",
+            "type": "string"
+          },
+          "file": {
+            "title": "File",
+            "type": "string"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "line": {
+            "title": "Line",
+            "type": "integer"
+          },
+          "raised_cycle": {
+            "title": "Raised Cycle",
+            "type": "integer"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "refutation_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refutation Reason"
+          },
+          "refute_upheld_count": {
+            "title": "Refute Upheld Count",
+            "type": "integer"
+          },
+          "rule_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Code"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "suggestion": {
+            "title": "Suggestion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "raised_cycle",
+          "severity",
+          "file",
+          "line",
+          "rationale",
+          "suggestion",
+          "fingerprint",
+          "rule_code",
+          "advisory",
+          "disposition",
+          "refutation_reason",
+          "refute_upheld_count",
+          "conflict_id"
+        ],
+        "title": "LoopFindingOut",
+        "type": "object"
+      },
+      "LoopRecordOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "cycle_count": {
+            "title": "Cycle Count",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "iteration": {
+            "title": "Iteration",
+            "type": "integer"
+          },
+          "max_cycles": {
+            "title": "Max Cycles",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "termination_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Termination Reason"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "project_id",
+          "status",
+          "iteration",
+          "cycle_count",
+          "max_cycles",
+          "termination_reason",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "LoopRecordOut",
+        "type": "object"
+      },
+      "LoopStageEventOut": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "cycle_number": {
+            "title": "Cycle Number",
+            "type": "integer"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "title": "Detail",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "cycle_number",
+          "stage",
+          "actor",
+          "verdict",
+          "detail",
+          "at"
+        ],
+        "title": "LoopStageEventOut",
+        "type": "object"
+      },
+      "LoopView": {
+        "properties": {
+          "cycles": {
+            "items": {
+              "$ref": "#/components/schemas/LoopCycleOut"
+            },
+            "title": "Cycles",
+            "type": "array"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/LoopFindingOut"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "record": {
+            "$ref": "#/components/schemas/LoopRecordOut"
+          },
+          "stage_events": {
+            "items": {
+              "$ref": "#/components/schemas/LoopStageEventOut"
+            },
+            "title": "Stage Events",
+            "type": "array"
+          }
+        },
+        "required": [
+          "record",
+          "cycles",
+          "findings",
+          "stage_events"
+        ],
+        "title": "LoopView",
         "type": "object"
       },
       "MarkAllReadResult": {
@@ -1308,6 +3328,456 @@
         "title": "MeResponse",
         "type": "object"
       },
+      "MemoryChunkOut": {
+        "properties": {
+          "embed_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embed Model"
+          },
+          "embedded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedded At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "record_id": {
+            "format": "uuid",
+            "title": "Record Id",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "token_count": {
+            "title": "Token Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "record_id",
+          "seq",
+          "text",
+          "token_count",
+          "embed_model",
+          "embedded_at"
+        ],
+        "title": "MemoryChunkOut",
+        "type": "object"
+      },
+      "MemoryEvent": {
+        "additionalProperties": false,
+        "description": "One durable memory to write (\u00a75.1). ``kind`` and ``scope`` are mandatory\n(TITAN-BRN-001); ``content_type`` selects the chunker (\u00a75.2).",
+        "properties": {
+          "body_md": {
+            "maxLength": 200000,
+            "minLength": 1,
+            "title": "Body Md",
+            "type": "string"
+          },
+          "content_type": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "prose",
+              "code",
+              "conversation",
+              "table"
+            ],
+            "title": "Content Type",
+            "type": "string"
+          },
+          "importance": {
+            "default": 0.5,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Importance",
+            "type": "number"
+          },
+          "kind": {
+            "enum": [
+              "episodic",
+              "semantic",
+              "procedural"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "scope": {
+            "minLength": 1,
+            "title": "Scope",
+            "type": "string"
+          },
+          "source_task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Task Id"
+          },
+          "title": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "scope",
+          "title",
+          "body_md"
+        ],
+        "title": "MemoryEvent",
+        "type": "object"
+      },
+      "MemoryEventBatch": {
+        "additionalProperties": false,
+        "description": "A transactional batch of Memory Events written by one agent turn.",
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryEvent"
+            },
+            "minItems": 1,
+            "title": "Events",
+            "type": "array"
+          },
+          "source_agent": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Source Agent",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "source_agent",
+          "events"
+        ],
+        "title": "MemoryEventBatch",
+        "type": "object"
+      },
+      "MemoryLedgerEntry": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actor_agent": {
+            "title": "Actor Agent",
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "title": "Detail",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "record_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Record Ids",
+            "type": "array"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "id",
+          "at",
+          "actor_agent",
+          "task_id",
+          "action",
+          "record_ids",
+          "detail"
+        ],
+        "title": "MemoryLedgerEntry",
+        "type": "object"
+      },
+      "MemoryMetricsOut": {
+        "description": "The \u00a714 metrics summary: what an operator needs at a glance, computed\nfrom the SAME Prometheus series /metrics exports (single source of truth).\nCounts and seconds only \u2014 never memory content (TITAN-OPS-016).",
+        "properties": {
+          "ingest_lag": {
+            "$ref": "#/components/schemas/LagMetrics"
+          },
+          "packet_cache": {
+            "$ref": "#/components/schemas/CacheMetrics"
+          }
+        },
+        "required": [
+          "packet_cache",
+          "ingest_lag"
+        ],
+        "title": "MemoryMetricsOut",
+        "type": "object"
+      },
+      "MemoryPacketOut": {
+        "additionalProperties": false,
+        "description": "The \u00a76.2 Memory Packet, exactly.",
+        "properties": {
+          "assembled_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssembledFor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "budget_tokens": {
+            "title": "Budget Tokens",
+            "type": "integer"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/PacketCitation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "packet_id": {
+            "format": "uuid",
+            "title": "Packet Id",
+            "type": "string"
+          },
+          "sections": {
+            "$ref": "#/components/schemas/PacketSections"
+          },
+          "token_cost": {
+            "default": 0,
+            "title": "Token Cost",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "budget_tokens"
+        ],
+        "title": "MemoryPacketOut",
+        "type": "object"
+      },
+      "MemoryRecordDetail": {
+        "description": "A record + its chunks + its complete ledger trail (\u00a714 GET endpoint).",
+        "properties": {
+          "chunks": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryChunkOut"
+            },
+            "title": "Chunks",
+            "type": "array"
+          },
+          "ledger": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryLedgerEntry"
+            },
+            "title": "Ledger",
+            "type": "array"
+          },
+          "record": {
+            "$ref": "#/components/schemas/MemoryRecordOut"
+          }
+        },
+        "required": [
+          "record",
+          "chunks",
+          "ledger"
+        ],
+        "title": "MemoryRecordDetail",
+        "type": "object"
+      },
+      "MemoryRecordOut": {
+        "properties": {
+          "access_count": {
+            "title": "Access Count",
+            "type": "integer"
+          },
+          "body_md": {
+            "title": "Body Md",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decay_score": {
+            "title": "Decay Score",
+            "type": "number"
+          },
+          "demoted": {
+            "title": "Demoted",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "importance": {
+            "title": "Importance",
+            "type": "number"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "last_accessed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Accessed At"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "source_agent": {
+            "title": "Source Agent",
+            "type": "string"
+          },
+          "source_task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Task Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded By"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "scope",
+          "project_id",
+          "source_agent",
+          "source_task_id",
+          "title",
+          "body_md",
+          "metadata",
+          "importance",
+          "decay_score",
+          "access_count",
+          "last_accessed_at",
+          "status",
+          "demoted",
+          "superseded_by",
+          "created_at"
+        ],
+        "title": "MemoryRecordOut",
+        "type": "object"
+      },
       "MemoryScopes": {
         "additionalProperties": false,
         "description": "Read/write grants over the Volume 5 memory scopes (\u00a72.1.4).",
@@ -1348,6 +3818,22 @@
           "write"
         ],
         "title": "MemoryScopes",
+        "type": "object"
+      },
+      "MemoryWriteResult": {
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/WrittenRecord"
+            },
+            "title": "Records",
+            "type": "array"
+          }
+        },
+        "required": [
+          "records"
+        ],
+        "title": "MemoryWriteResult",
         "type": "object"
       },
       "Message": {
@@ -1740,6 +4226,237 @@
         "title": "MilestonePatch",
         "type": "object"
       },
+      "MilestoneSignalsIn": {
+        "additionalProperties": false,
+        "properties": {
+          "backlog_accepted": {
+            "default": false,
+            "title": "Backlog Accepted",
+            "type": "boolean"
+          },
+          "brief_accepted": {
+            "default": false,
+            "title": "Brief Accepted",
+            "type": "boolean"
+          },
+          "debt_reviewed": {
+            "default": false,
+            "title": "Debt Reviewed",
+            "type": "boolean"
+          },
+          "docs_live": {
+            "default": false,
+            "title": "Docs Live",
+            "type": "boolean"
+          },
+          "g10_g12_passed": {
+            "default": false,
+            "title": "G10 G12 Passed",
+            "type": "boolean"
+          },
+          "g6_g7_passed": {
+            "default": false,
+            "title": "G6 G7 Passed",
+            "type": "boolean"
+          },
+          "g8_g9_passed": {
+            "default": false,
+            "title": "G8 G9 Passed",
+            "type": "boolean"
+          },
+          "hello_path_green": {
+            "default": false,
+            "title": "Hello Path Green",
+            "type": "boolean"
+          },
+          "must_stories_done": {
+            "default": false,
+            "title": "Must Stories Done",
+            "type": "boolean"
+          },
+          "open_p0_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Open P0 Count",
+            "type": "integer"
+          },
+          "perf_budgets_met": {
+            "default": false,
+            "title": "Perf Budgets Met",
+            "type": "boolean"
+          },
+          "skeleton_deployed": {
+            "default": false,
+            "title": "Skeleton Deployed",
+            "type": "boolean"
+          },
+          "user_notified": {
+            "default": false,
+            "title": "User Notified",
+            "type": "boolean"
+          }
+        },
+        "title": "MilestoneSignalsIn",
+        "type": "object"
+      },
+      "MilestoneStateOut": {
+        "properties": {
+          "current_milestone": {
+            "title": "Current Milestone",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "signals": {
+            "additionalProperties": true,
+            "title": "Signals",
+            "type": "object"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "current_milestone",
+          "signals",
+          "updated_at"
+        ],
+        "title": "MilestoneStateOut",
+        "type": "object"
+      },
+      "MilestoneSyncResult": {
+        "properties": {
+          "current": {
+            "title": "Current",
+            "type": "string"
+          },
+          "defect_task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defect Task Id"
+          },
+          "failed_milestone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed Milestone"
+          },
+          "previous": {
+            "title": "Previous",
+            "type": "string"
+          },
+          "regressed": {
+            "title": "Regressed",
+            "type": "boolean"
+          },
+          "reopen_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reopen Stage"
+          }
+        },
+        "required": [
+          "current",
+          "previous",
+          "regressed",
+          "failed_milestone",
+          "reopen_stage",
+          "defect_task_id"
+        ],
+        "title": "MilestoneSyncResult",
+        "type": "object"
+      },
+      "MineRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "title": "MineRequest",
+        "type": "object"
+      },
+      "MinedPattern": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "record_id": {
+            "format": "uuid",
+            "title": "Record Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "record_id",
+          "name"
+        ],
+        "title": "MinedPattern",
+        "type": "object"
+      },
+      "MinerReport": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "title": "Candidates",
+            "type": "integer"
+          },
+          "decisions_scanned": {
+            "title": "Decisions Scanned",
+            "type": "integer"
+          },
+          "novel": {
+            "title": "Novel",
+            "type": "integer"
+          },
+          "patterns": {
+            "items": {
+              "$ref": "#/components/schemas/MinedPattern"
+            },
+            "title": "Patterns",
+            "type": "array"
+          }
+        },
+        "required": [
+          "decisions_scanned",
+          "candidates",
+          "novel",
+          "patterns"
+        ],
+        "title": "MinerReport",
+        "type": "object"
+      },
       "ModelPolicy": {
         "additionalProperties": false,
         "description": "Which model tier, sampling, and output bounds the agent's turns use\n(\u00a72.1.6). ``structured_output_schema`` is a schema *reference* (a name);\nthe actual schema is composed at call time in Phase 28.",
@@ -1782,6 +4499,24 @@
           "max_output_tokens"
         ],
         "title": "ModelPolicy",
+        "type": "object"
+      },
+      "NearDuplicate": {
+        "properties": {
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "score"
+        ],
+        "title": "NearDuplicate",
         "type": "object"
       },
       "NotificationOut": {
@@ -1865,6 +4600,187 @@
           "version"
         ],
         "title": "NotificationOut",
+        "type": "object"
+      },
+      "OpenSprintIn": {
+        "additionalProperties": false,
+        "properties": {
+          "committed_stories": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Committed Stories",
+            "type": "array"
+          },
+          "goal": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Goal",
+            "type": "string"
+          },
+          "risks": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Risks",
+            "type": "array"
+          },
+          "sprint_number": {
+            "minimum": 1.0,
+            "title": "Sprint Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sprint_number",
+          "goal"
+        ],
+        "title": "OpenSprintIn",
+        "type": "object"
+      },
+      "PacketCitation": {
+        "additionalProperties": false,
+        "description": "Provenance for one included chunk (\u00a76.2 rule a). ``compressed`` marks a\nchunk whose full text no longer fit the budget and was replaced by its\nparent record's summary line (\u00a78.2 mechanism 3) \u2014 the agent knows more\ndetail is one retrieval away, and nothing was dropped silently.",
+        "properties": {
+          "chunk_id": {
+            "format": "uuid",
+            "title": "Chunk Id",
+            "type": "string"
+          },
+          "compressed": {
+            "default": false,
+            "title": "Compressed",
+            "type": "boolean"
+          },
+          "pinned": {
+            "default": false,
+            "title": "Pinned",
+            "type": "boolean"
+          },
+          "record_id": {
+            "format": "uuid",
+            "title": "Record Id",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "record_id",
+          "chunk_id",
+          "score"
+        ],
+        "title": "PacketCitation",
+        "type": "object"
+      },
+      "PacketRequest": {
+        "additionalProperties": false,
+        "description": "POST /memory/packets \u2014 the \u00a76.1 request tuple.",
+        "properties": {
+          "assembled_for": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssembledFor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "budget_tokens": {
+            "default": 4000,
+            "maximum": 32000.0,
+            "minimum": 256.0,
+            "title": "Budget Tokens",
+            "type": "integer"
+          },
+          "deep_search": {
+            "default": false,
+            "title": "Deep Search",
+            "type": "boolean"
+          },
+          "k": {
+            "default": 24,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "K",
+            "type": "integer"
+          },
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "pins": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Pins",
+            "type": "array"
+          },
+          "query": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "scope": {
+            "minLength": 1,
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "scope"
+        ],
+        "title": "PacketRequest",
+        "type": "object"
+      },
+      "PacketSections": {
+        "additionalProperties": false,
+        "description": "\u00a76.2 sections; ordered procedural \u2192 semantic \u2192 episodic on render.",
+        "properties": {
+          "episodic": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Episodic",
+            "type": "array"
+          },
+          "identity_context": {
+            "default": "",
+            "title": "Identity Context",
+            "type": "string"
+          },
+          "procedural": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Procedural",
+            "type": "array"
+          },
+          "semantic": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Semantic",
+            "type": "array"
+          },
+          "working_summary": {
+            "default": "",
+            "title": "Working Summary",
+            "type": "string"
+          }
+        },
+        "title": "PacketSections",
         "type": "object"
       },
       "Page_AgentOut_": {
@@ -2191,6 +5107,487 @@
         "title": "PasswordGrant",
         "type": "object"
       },
+      "PermissionDiff": {
+        "description": "What an upgrade would ADD relative to the operator-approved grant. A non-empty\ndiff blocks activation until re-approved (TITAN-INT-017).",
+        "properties": {
+          "added": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Added",
+            "type": "array"
+          },
+          "widened": {
+            "title": "Widened",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "widened"
+        ],
+        "title": "PermissionDiff",
+        "type": "object"
+      },
+      "PipelineAdvanceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "target_stage": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Target Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_stage"
+        ],
+        "title": "PipelineAdvanceRequest",
+        "type": "object"
+      },
+      "PipelineNotApplicableRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "justification": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Justification",
+            "type": "string"
+          },
+          "target_stage": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Target Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_stage",
+          "justification"
+        ],
+        "title": "PipelineNotApplicableRequest",
+        "type": "object"
+      },
+      "PipelineOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_stage": {
+            "title": "Current Stage",
+            "type": "string"
+          },
+          "current_stage_label": {
+            "description": "Human label for the current stage (dashboard) \u2014 a pure projection.",
+            "readOnly": true,
+            "title": "Current Stage Label",
+            "type": "string"
+          },
+          "iteration": {
+            "title": "Iteration",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "retry_budget": {
+            "title": "Retry Budget",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "current_stage",
+          "iteration",
+          "status",
+          "retry_budget",
+          "version",
+          "created_at",
+          "updated_at",
+          "current_stage_label"
+        ],
+        "title": "PipelineOut",
+        "type": "object"
+      },
+      "PipelineRetryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "PipelineRetryRequest",
+        "type": "object"
+      },
+      "PipelineStageEventOut": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "title": "Detail",
+            "type": "object"
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "iteration": {
+            "title": "Iteration",
+            "type": "integer"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "stage",
+          "event",
+          "iteration",
+          "actor",
+          "detail",
+          "at"
+        ],
+        "title": "PipelineStageEventOut",
+        "type": "object"
+      },
+      "PipelineView": {
+        "properties": {
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineStageEventOut"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "pipeline": {
+            "$ref": "#/components/schemas/PipelineOut"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "stages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "project_id",
+          "pipeline",
+          "stages",
+          "history"
+        ],
+        "title": "PipelineView",
+        "type": "object"
+      },
+      "PlanEdgeIn": {
+        "additionalProperties": false,
+        "properties": {
+          "depends_on_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Depends On Id",
+            "type": "string"
+          },
+          "task_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "depends_on_id"
+        ],
+        "title": "PlanEdgeIn",
+        "type": "object"
+      },
+      "PlanRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "correction_factor": {
+            "default": 1.0,
+            "exclusiveMinimum": 0.0,
+            "maximum": 100.0,
+            "title": "Correction Factor",
+            "type": "number"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/PlanEdgeIn"
+            },
+            "maxItems": 5000,
+            "title": "Edges",
+            "type": "array"
+          },
+          "parallel_capacity": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parallel Capacity"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/PlanTaskIn"
+            },
+            "maxItems": 2000,
+            "minItems": 1,
+            "title": "Tasks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tasks"
+        ],
+        "title": "PlanRequest",
+        "type": "object"
+      },
+      "PlanTaskIn": {
+        "additionalProperties": false,
+        "properties": {
+          "estimate_days": {
+            "default": 0.5,
+            "exclusiveMinimum": 0.0,
+            "maximum": 5.0,
+            "title": "Estimate Days",
+            "type": "number"
+          },
+          "id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "priority": {
+            "default": 3,
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "role": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Role",
+            "type": "string"
+          },
+          "story_id": {
+            "default": "",
+            "maxLength": 100,
+            "title": "Story Id",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "role"
+        ],
+        "title": "PlanTaskIn",
+        "type": "object"
+      },
+      "PlannedSprintOut": {
+        "properties": {
+          "goal": {
+            "title": "Goal",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "task_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Task Ids",
+            "type": "array"
+          },
+          "walking_skeleton": {
+            "title": "Walking Skeleton",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "number",
+          "goal",
+          "task_ids",
+          "walking_skeleton"
+        ],
+        "title": "PlannedSprintOut",
+        "type": "object"
+      },
+      "PluginInstallOut": {
+        "properties": {
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "error_count": {
+            "default": 0,
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "granted_permissions": {
+            "additionalProperties": true,
+            "title": "Granted Permissions",
+            "type": "object"
+          },
+          "installed_version": {
+            "title": "Installed Version",
+            "type": "string"
+          },
+          "last_error": {
+            "default": "",
+            "title": "Last Error",
+            "type": "string"
+          },
+          "manifest": {
+            "additionalProperties": true,
+            "title": "Manifest",
+            "type": "object"
+          },
+          "plugin_dir": {
+            "default": "",
+            "title": "Plugin Dir",
+            "type": "string"
+          },
+          "plugin_id": {
+            "title": "Plugin Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "plugin_id",
+          "installed_version",
+          "state",
+          "content_hash"
+        ],
+        "title": "PluginInstallOut",
+        "type": "object"
+      },
+      "PluginOut": {
+        "properties": {
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "manifest": {
+            "additionalProperties": true,
+            "title": "Manifest",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "default": "",
+            "title": "Origin",
+            "type": "string"
+          },
+          "plugin_id": {
+            "title": "Plugin Id",
+            "type": "string"
+          },
+          "plugin_version": {
+            "title": "Plugin Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plugin_id",
+          "name",
+          "plugin_version",
+          "content_hash"
+        ],
+        "title": "PluginOut",
+        "type": "object"
+      },
       "Problem": {
         "description": "RFC 9457 Problem Details (\u00a74.1 error contract)",
         "properties": {
@@ -2391,6 +5788,113 @@
         "title": "ProjectPatch",
         "type": "object"
       },
+      "PromotionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "human_marked": {
+            "default": false,
+            "title": "Human Marked",
+            "type": "boolean"
+          },
+          "org_candidate_approved": {
+            "default": false,
+            "title": "Org Candidate Approved",
+            "type": "boolean"
+          },
+          "record_id": {
+            "format": "uuid",
+            "title": "Record Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "record_id"
+        ],
+        "title": "PromotionRequest",
+        "type": "object"
+      },
+      "PromotionResult": {
+        "additionalProperties": false,
+        "properties": {
+          "kb_proposal_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kb Proposal Id"
+          },
+          "org_record_id": {
+            "format": "uuid",
+            "title": "Org Record Id",
+            "type": "string"
+          },
+          "signal": {
+            "title": "Signal",
+            "type": "string"
+          },
+          "source_record_id": {
+            "format": "uuid",
+            "title": "Source Record Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_record_id",
+          "org_record_id",
+          "signal"
+        ],
+        "title": "PromotionResult",
+        "type": "object"
+      },
+      "ProposedAssumptionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "statement": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Statement",
+            "type": "string"
+          },
+          "user_overridable": {
+            "default": true,
+            "title": "User Overridable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "statement"
+        ],
+        "title": "ProposedAssumptionIn",
+        "type": "object"
+      },
+      "ProposedQuestionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "question": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "topic": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "question"
+        ],
+        "title": "ProposedQuestionIn",
+        "type": "object"
+      },
       "ReadyzResponse": {
         "description": "Readiness probe response; ``failing`` is non-empty exactly when unready.",
         "properties": {
@@ -2422,6 +5926,106 @@
           "checks"
         ],
         "title": "ReadyzResponse",
+        "type": "object"
+      },
+      "RebuildReport": {
+        "description": "The TITAN-BRN-004 rebuild summary, per collection alias.",
+        "properties": {
+          "collections": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CollectionRebuild"
+            },
+            "title": "Collections",
+            "type": "object"
+          },
+          "collections_created": {
+            "title": "Collections Created",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "collections_created",
+          "collections"
+        ],
+        "title": "RebuildReport",
+        "type": "object"
+      },
+      "ReflectionResult": {
+        "additionalProperties": false,
+        "properties": {
+          "record_id": {
+            "format": "uuid",
+            "title": "Record Id",
+            "type": "string"
+          },
+          "rubric": {
+            "$ref": "#/components/schemas/ReflectionRubric"
+          }
+        },
+        "required": [
+          "record_id",
+          "rubric"
+        ],
+        "title": "ReflectionResult",
+        "type": "object"
+      },
+      "ReflectionRubric": {
+        "additionalProperties": false,
+        "properties": {
+          "do_differently": {
+            "minLength": 1,
+            "title": "Do Differently",
+            "type": "string"
+          },
+          "goal": {
+            "minLength": 1,
+            "title": "Goal",
+            "type": "string"
+          },
+          "org_should_remember": {
+            "minLength": 1,
+            "title": "Org Should Remember",
+            "type": "string"
+          },
+          "what_surprised": {
+            "minLength": 1,
+            "title": "What Surprised",
+            "type": "string"
+          },
+          "what_worked": {
+            "minLength": 1,
+            "title": "What Worked",
+            "type": "string"
+          }
+        },
+        "required": [
+          "goal",
+          "what_worked",
+          "what_surprised",
+          "do_differently",
+          "org_should_remember"
+        ],
+        "title": "ReflectionRubric",
+        "type": "object"
+      },
+      "ReflectionStatusOut": {
+        "additionalProperties": false,
+        "properties": {
+          "has_reflection": {
+            "title": "Has Reflection",
+            "type": "boolean"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "has_reflection"
+        ],
+        "title": "ReflectionStatusOut",
         "type": "object"
       },
       "RefreshRequest": {
@@ -2685,6 +6289,97 @@
         "title": "RunOut",
         "type": "object"
       },
+      "ScheduledTaskOut": {
+        "properties": {
+          "estimate_days": {
+            "title": "Estimate Days",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "integer"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "sprint_number": {
+            "title": "Sprint Number",
+            "type": "integer"
+          },
+          "story_id": {
+            "title": "Story Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "sprint_number",
+          "estimate_days",
+          "story_id",
+          "title",
+          "priority"
+        ],
+        "title": "ScheduledTaskOut",
+        "type": "object"
+      },
+      "SprintCeremonyOut": {
+        "properties": {
+          "body": {
+            "additionalProperties": true,
+            "title": "Body",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "memory_record_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Record Id"
+          },
+          "sprint_number": {
+            "title": "Sprint Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "sprint_number",
+          "kind",
+          "body",
+          "created_at"
+        ],
+        "title": "SprintCeremonyOut",
+        "type": "object"
+      },
       "SprintCreate": {
         "additionalProperties": false,
         "properties": {
@@ -2884,6 +6579,132 @@
         "title": "SprintPatch",
         "type": "object"
       },
+      "SprintPlanOut": {
+        "properties": {
+          "sprints": {
+            "items": {
+              "$ref": "#/components/schemas/PlannedSprintOut"
+            },
+            "title": "Sprints",
+            "type": "array"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduledTaskOut"
+            },
+            "title": "Tasks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sprints",
+          "tasks"
+        ],
+        "title": "SprintPlanOut",
+        "type": "object"
+      },
+      "SprintRetroRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "task_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Task Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "title": "SprintRetroRequest",
+        "type": "object"
+      },
+      "SprintRetroResult": {
+        "additionalProperties": false,
+        "properties": {
+          "record_id": {
+            "format": "uuid",
+            "title": "Record Id",
+            "type": "string"
+          },
+          "reflections_aggregated": {
+            "title": "Reflections Aggregated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "record_id",
+          "reflections_aggregated"
+        ],
+        "title": "SprintRetroResult",
+        "type": "object"
+      },
+      "TaskBlockOut": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "detected_at": {
+            "format": "date-time",
+            "title": "Detected At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "rung": {
+            "title": "Rung",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "reason",
+          "rung",
+          "status",
+          "detail",
+          "detected_at"
+        ],
+        "title": "TaskBlockOut",
+        "type": "object"
+      },
       "TaskCreate": {
         "additionalProperties": false,
         "properties": {
@@ -3062,6 +6883,12 @@
           "version": {
             "title": "Version",
             "type": "integer"
+          },
+          "wfl_lane": {
+            "description": "The Vol 6 \u00a72.5 Kanban lane for this task's status (TITAN-WFL-009) \u2014 a\npure projection of the physical status onto the delivery vocabulary.",
+            "readOnly": true,
+            "title": "Wfl Lane",
+            "type": "string"
           }
         },
         "required": [
@@ -3080,7 +6907,8 @@
           "created_by_agent_id",
           "completed_at",
           "created_at",
-          "version"
+          "version",
+          "wfl_lane"
         ],
         "title": "TaskOut",
         "type": "object"
@@ -3146,6 +6974,41 @@
           }
         },
         "title": "TaskPatch",
+        "type": "object"
+      },
+      "TaskReflectionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "context": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Context",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "task_id",
+          "agent_id",
+          "context"
+        ],
+        "title": "TaskReflectionRequest",
         "type": "object"
       },
       "TextPart": {
@@ -3442,6 +7305,88 @@
         "title": "ToolUsePart",
         "type": "object"
       },
+      "TraceRow": {
+        "additionalProperties": false,
+        "description": "One row of the TITAN-WFL-006 traceability table: a brief feature through\nstories \u2192 tasks \u2192 PRs \u2192 tests \u2192 docs.",
+        "properties": {
+          "doc_refs": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Doc Refs",
+            "type": "array"
+          },
+          "feature_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Feature Id",
+            "type": "string"
+          },
+          "pr_numbers": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 500,
+            "title": "Pr Numbers",
+            "type": "array"
+          },
+          "story_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Story Ids",
+            "type": "array"
+          },
+          "task_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Task Ids",
+            "type": "array"
+          },
+          "test_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "title": "Test Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "feature_id"
+        ],
+        "title": "TraceRow",
+        "type": "object"
+      },
+      "Traceability": {
+        "description": "The generated traceability table + gap list (TITAN-WFL-006).",
+        "properties": {
+          "gaps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/TraceRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows",
+          "gaps"
+        ],
+        "title": "Traceability",
+        "type": "object"
+      },
       "TransitionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3503,6 +7448,78 @@
           }
         },
         "title": "Usage",
+        "type": "object"
+      },
+      "UserRequestSubmission": {
+        "additionalProperties": false,
+        "description": "The H1 UserRequest plus the CEO turn's proposed clarifications. ``topic`` on\neach proposed question is the machine-checkable subject the policy matches\nagainst canonical defaults and ``inferable_topics`` (computed by the CEO from\nthe request + organization memory).",
+        "properties": {
+          "inferable_topics": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Inferable Topics",
+            "type": "array"
+          },
+          "proposed_assumptions": {
+            "items": {
+              "$ref": "#/components/schemas/ProposedAssumptionIn"
+            },
+            "maxItems": 200,
+            "title": "Proposed Assumptions",
+            "type": "array"
+          },
+          "proposed_questions": {
+            "items": {
+              "$ref": "#/components/schemas/ProposedQuestionIn"
+            },
+            "maxItems": 100,
+            "title": "Proposed Questions",
+            "type": "array"
+          },
+          "raw_text": {
+            "maxLength": 100000,
+            "title": "Raw Text",
+            "type": "string"
+          },
+          "timeout_hours": {
+            "anyOf": [
+              {
+                "maximum": 8760.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout Hours"
+          }
+        },
+        "required": [
+          "raw_text"
+        ],
+        "title": "UserRequestSubmission",
+        "type": "object"
+      },
+      "WrittenRecord": {
+        "properties": {
+          "chunk_count": {
+            "title": "Chunk Count",
+            "type": "integer"
+          },
+          "record_id": {
+            "format": "uuid",
+            "title": "Record Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "record_id",
+          "chunk_count"
+        ],
+        "title": "WrittenRecord",
         "type": "object"
       }
     }
@@ -4059,6 +8076,137 @@
         ]
       }
     },
+    "/api/v1/constitution": {
+      "get": {
+        "description": "The active engineering-standards constitution (the version agents retrieve\ninto context and gates judge against).",
+        "operationId": "get_active_constitution_api_v1_constitution_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConstitutionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Active Constitution",
+        "tags": [
+          "constitution"
+        ]
+      }
+    },
+    "/api/v1/constitution/versions": {
+      "get": {
+        "description": "Every committed constitution version, newest first (audit history).",
+        "operationId": "list_constitution_versions_api_v1_constitution_versions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConstitutionHistory"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Constitution Versions",
+        "tags": [
+          "constitution"
+        ]
+      }
+    },
+    "/api/v1/constitution/{version}": {
+      "get": {
+        "description": "A specific committed constitution version by number (404 if unknown).",
+        "operationId": "get_constitution_version_api_v1_constitution__version__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConstitutionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Constitution Version",
+        "tags": [
+          "constitution"
+        ]
+      }
+    },
+    "/api/v1/deployments/{deployment_id}": {
+      "get": {
+        "description": "A single deployment record with its status, reachable URL, and health.",
+        "operationId": "get_deployment_api_v1_deployments__deployment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Deployment",
+        "tags": [
+          "deployments"
+        ]
+      }
+    },
     "/api/v1/healthz": {
       "get": {
         "operationId": "healthz_api_v1_healthz_get",
@@ -4075,6 +8223,194 @@
           }
         },
         "summary": "Healthz"
+      }
+    },
+    "/api/v1/kb/documents": {
+      "post": {
+        "description": "Direct KB writes are forbidden \u2014 always 403 (TITAN-BRN-021). Present so the\ninvariant is explicit and testable, even for an owner (``*``).",
+        "operationId": "create_kb_document_directly_api_v1_kb_documents_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Create Kb Document Directly",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/kb/documents/{slug}": {
+      "get": {
+        "description": "A KB document with its full version history (\u00a710.2) \u2014 older versions stay\nqueryable even though only the current one is chunked into titan_kb.",
+        "operationId": "get_kb_document_api_v1_kb_documents__slug__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbDocumentDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Kb Document",
+        "tags": [
+          "memory"
+        ]
+      },
+      "put": {
+        "description": "Direct KB writes are forbidden \u2014 always 403 (TITAN-BRN-021).",
+        "operationId": "update_kb_document_directly_api_v1_kb_documents__slug__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Kb Document Directly",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/kb/proposals": {
+      "post": {
+        "description": "Submit a KB proposal (\u00a710.3 step 1): a diff + rationale for a new doc or a\nnew version. Never mutates a KB table \u2014 it queues a ``pending`` proposal with\nits type-based routing and a semantic near-duplicate conflict check. Requires\n``kb:propose``. ``proposed_by`` is the authenticated principal, not spoofable\nbody input (provenance, TITAN-BRN-021).",
+        "operationId": "create_kb_proposal_api_v1_kb_proposals_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KbProposalIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbProposalOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Kb Proposal",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/kb/proposals/{proposal_id}/approve": {
+      "post": {
+        "description": "Approve a pending proposal (\u00a710.3 step 3): the new version becomes current,\nis materialised into ``titan_kb`` through the \u00a75.1 pipeline, and KG provenance\nis written. Requires ``kb:approve`` (the Code-Reviewer approval authority);\nprotected types (coding_standard/decision_record) additionally require a\nHUMAN approver \u2014 the \u00a710.3 human sign-off \u2014 enforced in the service.",
+        "operationId": "approve_kb_proposal_api_v1_kb_proposals__proposal_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbApprovalResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Kb Proposal",
+        "tags": [
+          "memory"
+        ]
       }
     },
     "/api/v1/llm/chat": {
@@ -4156,6 +8492,533 @@
         "summary": "Embeddings",
         "tags": [
           "llm"
+        ]
+      }
+    },
+    "/api/v1/memory/admin/curation/run": {
+      "post": {
+        "description": "Trigger one \u00a79 decay/prune/promotion cycle (also the nightly cron). Admin\nonly. Dry-run-first by default: the plan is written to the ledger; pass\n``dry_run=false`` to apply Demote/Archive (and Compact within the approval\nlimit, or with ``approve_destructive``). TITAN-BRN-018.",
+        "operationId": "run_curation_endpoint_api_v1_memory_admin_curation_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CurationRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurationReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Curation Endpoint",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/admin/patterns/mine": {
+      "post": {
+        "description": "\u00a711.1 pattern miner (TITAN-BRN-023): mine novel patterns from a project's\ndecisions into project-scope pattern records. Admin only; the run is\nledger-visible.",
+        "operationId": "mine_patterns_endpoint_api_v1_memory_admin_patterns_mine_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MinerReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mine Patterns Endpoint",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/admin/promote": {
+      "post": {
+        "description": "\u00a711.3 project\u2192org promotion on the multi-signal rule (TITAN-BRN-024). Admin\nonly \u2014 org memory is never filled on a single project's say-so, and agents\ncannot write org scope directly.",
+        "operationId": "promote_endpoint_api_v1_memory_admin_promote_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromotionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Promote Endpoint",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/admin/rebuild-index": {
+      "post": {
+        "description": "Fully reconstruct every Qdrant collection from PostgreSQL, reconciling by\npoint-id == chunk-id set difference (TITAN-BRN-004). Admin-only; runs\nsynchronously \u2014 laptop-scale collections rebuild in seconds, and the caller\ngets the reconciliation report as the response.",
+        "operationId": "rebuild_index_api_v1_memory_admin_rebuild_index_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RebuildReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rebuild Index",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/events": {
+      "post": {
+        "description": "Write a batch of Memory Events in ONE transaction \u2014 a failure anywhere\nrolls back the whole batch (\u00a75.1). ``source_agent`` records WHICH agent role\nauthored the memory (application data); the ledger's actor is the\nauthenticated principal, never spoofable body input (TITAN-BRN-005).\n\nAuthorization is scope-aware (TITAN-BRN-024): a human/service principal\nneeds org-level ``memory:write`` as before; an AGENT principal may write\nONLY project-scoped events into a project where its role bundle grants\n``memory:write`` (its bound project) \u2014 an org-scope event from agent\ncredentials is a flat 403, because org promotion belongs to the curation\nworkflow's multi-signal rule, never to a single agent.",
+        "operationId": "write_memory_events_api_v1_memory_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryEventBatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryWriteResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Write Memory Events",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/kg/query": {
+      "post": {
+        "description": "Typed graph traversal (start nodes, edge-type filter, depth \u2264 3) via a\nrecursive CTE (\u00a77.1). Scope-isolated: org + the caller's own project only\n(TITAN-BRN-003).",
+        "operationId": "query_kg_api_v1_memory_kg_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KgQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KgQueryResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Kg",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/lessons": {
+      "post": {
+        "description": "File a structured lesson (\u00a711.2): a protected episodic record + a lesson KG\nnode with a DERIVED_FROM edge (TITAN-BRN-019/023). Project-scoped\n``memory:write``.",
+        "operationId": "file_lesson_endpoint_api_v1_memory_lessons_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LessonIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "File Lesson Endpoint",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/metrics": {
+      "get": {
+        "description": "Retrieval-quality and ingestion-lag metrics (\u00a714) \u2014 the same series the\nPrometheus ``/metrics`` endpoint exports, summarised for dashboards and\noperators: packet-cache hit rate (TITAN-BRN-012) and ingest-lag quantiles\n(TITAN-BRN-007). Metadata only \u2014 counts and seconds, never content.",
+        "operationId": "memory_metrics_api_v1_memory_metrics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryMetricsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Memory Metrics",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/packets": {
+      "post": {
+        "description": "Assemble a cited \u00a76.2 Memory Packet through the \u00a76.1 hybrid retrieval\npipeline (dense \u2225 lexical \u2192 RRF \u2192 rerank \u2192 budget fill), served from the\n300 s Redis cache for identical (scope, query) requests (TITAN-BRN-012).\nScope isolation is mandatory: org + the caller's named project only\n(TITAN-BRN-003).",
+        "operationId": "assemble_memory_packet_api_v1_memory_packets_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PacketRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryPacketOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assemble Memory Packet",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/records/{record_id}": {
+      "get": {
+        "description": "The canonical record + its chunks + its complete ledger trail (\u00a714). A read\nbumps access metadata and appends a ``read`` ledger row (TITAN-BRN-005), so it\nruns in a transaction.",
+        "operationId": "get_memory_record_api_v1_memory_records__record_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "task_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryRecordDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Memory Record",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/reflections/sprint": {
+      "post": {
+        "description": "\u00a712 sprint retrospective: aggregate a sprint's task reflections into a\nsprint summary record. Project-scoped ``memory:write``.",
+        "operationId": "sprint_retro_endpoint_api_v1_memory_reflections_sprint_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SprintRetroRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SprintRetroResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sprint Retro Endpoint",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/reflections/task": {
+      "post": {
+        "description": "\u00a712 task reflection: one utility-tier LLM call answers the five-question\nrubric and persists it as an episodic record for the task (TITAN-BRN-025).\nProject-scoped ``memory:write``.",
+        "operationId": "task_reflection_endpoint_api_v1_memory_reflections_task_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskReflectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReflectionResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Task Reflection Endpoint",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/tasks/{task_id}/reflection-status": {
+      "get": {
+        "description": "The \u00a712 done-block hook exposed for the task state machine (TITAN-BRN-025):\nwhether the task has a schema-valid reflection record yet.",
+        "operationId": "reflection_status_endpoint_api_v1_memory_tasks__task_id__reflection_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReflectionStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reflection Status Endpoint",
+        "tags": [
+          "memory"
         ]
       }
     },
@@ -4291,6 +9154,486 @@
         "summary": "Mark All Read",
         "tags": [
           "messaging"
+        ]
+      }
+    },
+    "/api/v1/plugins": {
+      "get": {
+        "description": "The discovered catalogue (AVAILABLE).",
+        "operationId": "list_catalogue_api_v1_plugins_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PluginOut"
+                  },
+                  "title": "Response List Catalogue Api V1 Plugins Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Catalogue",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/installs": {
+      "get": {
+        "operationId": "list_installs_api_v1_plugins_installs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PluginInstallOut"
+                  },
+                  "title": "Response List Installs Api V1 Plugins Installs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Installs",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/{plugin_id}": {
+      "delete": {
+        "operationId": "remove_api_v1_plugins__plugin_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginInstallOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove",
+        "tags": [
+          "plugins"
+        ]
+      },
+      "get": {
+        "operationId": "get_install_api_v1_plugins__plugin_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginInstallOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Install",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/{plugin_id}/config": {
+      "put": {
+        "description": "Operator settings from ``config_schema``, encrypted at rest (SEC-063).",
+        "operationId": "configure_api_v1_plugins__plugin_id__config_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginInstallOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Configure",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/{plugin_id}/disable": {
+      "post": {
+        "operationId": "disable_api_v1_plugins__plugin_id__disable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginInstallOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disable",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/{plugin_id}/enable": {
+      "post": {
+        "description": "Grant the manifest's declared permissions and start the sandboxed worker.",
+        "operationId": "enable_api_v1_plugins__plugin_id__enable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginInstallOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enable",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/{plugin_id}/hooks/{hook_path}": {
+      "post": {
+        "description": "Verify HMAC-SHA256 over the RAW body against the plugin's named secret, then\ndeliver to the plugin. An unverified payload is rejected and logged.",
+        "operationId": "webhook_api_v1_plugins__plugin_id__hooks__hook_path__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "hook_path",
+            "required": true,
+            "schema": {
+              "title": "Hook Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Webhook Api V1 Plugins  Plugin Id  Hooks  Hook Path  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Webhook",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/{plugin_id}/install": {
+      "post": {
+        "operationId": "install_api_v1_plugins__plugin_id__install_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginInstallOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Install",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/{plugin_id}/mcp": {
+      "get": {
+        "description": "For an enabled MCP server (\u00a77): the negotiated protocol version, its discovered\ntools (registered as ``mcp.<id>.*``), its resources (read via ``mcp.<id>.read_resource``)\nand its prompts (surfaced to the prompt library, Vol 2).",
+        "operationId": "mcp_introspection_api_v1_plugins__plugin_id__mcp_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Mcp Introspection Api V1 Plugins  Plugin Id  Mcp Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mcp Introspection",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/{plugin_id}/upgrade": {
+      "post": {
+        "description": "Re-pin the on-disk manifest. A permission WIDENING leaves the plugin inactive\npending re-approval (TITAN-INT-017); the diff says exactly what was added.",
+        "operationId": "upgrade_api_v1_plugins__plugin_id__upgrade_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionDiff"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upgrade",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins:discover": {
+      "post": {
+        "operationId": "discover_api_v1_plugins_discover_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PluginOut"
+                  },
+                  "title": "Response Discover Api V1 Plugins Discover Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Discover",
+        "tags": [
+          "plugins"
         ]
       }
     },
@@ -4515,6 +9858,308 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/artifacts": {
+      "get": {
+        "description": "The current version summary of every generated artifact.",
+        "operationId": "list_artifacts_api_v1_projects__project_id__artifacts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ArtifactSummary"
+                  },
+                  "title": "Response List Artifacts Api V1 Projects  Project Id  Artifacts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Artifacts",
+        "tags": [
+          "artifacts"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/artifacts/{kind}": {
+      "get": {
+        "description": "The current version of one artifact (Markdown + JSON + hash).",
+        "operationId": "get_artifact_api_v1_projects__project_id__artifacts__kind__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DerivedArtifactOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Artifact",
+        "tags": [
+          "artifacts"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/artifacts/{kind}/export": {
+      "get": {
+        "description": "Export one artifact as raw Markdown (``format=md``) or JSON (``format=json``).",
+        "operationId": "export_artifact_api_v1_projects__project_id__artifacts__kind__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "md",
+              "title": "Format",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Artifact",
+        "tags": [
+          "artifacts"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/artifacts:regenerate": {
+      "post": {
+        "description": "Regenerate all six \u00a75 artifacts from the current domain state (each versioned\nonly if its content changed).",
+        "operationId": "regenerate_api_v1_projects__project_id__artifacts_regenerate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ArtifactSummary"
+                  },
+                  "title": "Response Regenerate Api V1 Projects  Project Id  Artifacts Regenerate Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Regenerate",
+        "tags": [
+          "artifacts"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/blockers": {
+      "get": {
+        "description": "Every blocker (open, escalated, or recovered) for the project (WFL-019).",
+        "operationId": "list_blockers_api_v1_projects__project_id__blockers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TaskBlockOut"
+                  },
+                  "title": "Response List Blockers Api V1 Projects  Project Id  Blockers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Blockers",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/blockers:sweep": {
+      "post": {
+        "description": "Run one blocker-detection + recovery-ladder tick for this project (WFL-019).",
+        "operationId": "sweep_blockers_api_v1_projects__project_id__blockers_sweep_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlockerSweepResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sweep Blockers",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/board": {
       "get": {
         "operationId": "project_board_api_v1_projects__project_id__board_get",
@@ -4555,6 +10200,248 @@
         "summary": "Project Board",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/ceremonies": {
+      "get": {
+        "description": "Every persisted sprint ceremony for the project (WFL-016).",
+        "operationId": "list_ceremonies_api_v1_projects__project_id__ceremonies_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SprintCeremonyOut"
+                  },
+                  "title": "Response List Ceremonies Api V1 Projects  Project Id  Ceremonies Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ceremonies",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/clarifications": {
+      "get": {
+        "description": "The project's clarification batch with questions + logged assumptions.",
+        "operationId": "get_clarification_api_v1_projects__project_id__clarifications_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClarificationBatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Clarification",
+        "tags": [
+          "clarification"
+        ]
+      },
+      "post": {
+        "description": "Submit the UserRequest (H1) and open the clarification batch. A duplicate of\nan active project is 409 and an empty request is 400 (gate G1); otherwise \u22645\nessential questions are asked and every other unknown is logged as an\nassumption.",
+        "operationId": "open_clarification_api_v1_projects__project_id__clarifications_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserRequestSubmission"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClarificationBatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Clarification",
+        "tags": [
+          "clarification"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/clarifications/answers": {
+      "post": {
+        "description": "Record the user's answers; the batch closes once every question is answered.",
+        "operationId": "answer_clarification_api_v1_projects__project_id__clarifications_answers_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerSubmission"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClarificationBatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Answer Clarification",
+        "tags": [
+          "clarification"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/debt": {
+      "get": {
+        "description": "The project's technical-debt ledger: the open-ticket total + every ticket.",
+        "operationId": "get_debt_ledger_api_v1_projects__project_id__debt_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DebtLedger"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Debt Ledger",
+        "tags": [
+          "debt"
         ]
       }
     },
@@ -4677,6 +10564,54 @@
         "summary": "Create Decision",
         "tags": [
           "messaging"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/deployments": {
+      "get": {
+        "description": "Every local deployment recorded for the project, newest first.",
+        "operationId": "list_project_deployments_api_v1_projects__project_id__deployments_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeploymentOut"
+                  },
+                  "title": "Response List Project Deployments Api V1 Projects  Project Id  Deployments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Project Deployments",
+        "tags": [
+          "deployments"
         ]
       }
     },
@@ -4866,6 +10801,168 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/handoffs/gate-ledger": {
+      "get": {
+        "description": "The complete pass/fail gate ledger for the project (TITAN-WFL-004).",
+        "operationId": "export_gate_ledger_api_v1_projects__project_id__handoffs_gate_ledger_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateLedger"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Gate Ledger",
+        "tags": [
+          "handoffs"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/handoffs/{stage}": {
+      "post": {
+        "description": "Submit the producing stage's \u00a72.3 artifact and run its handoff. On a schema\nvalidation failure the outcome is ``schema_rejected`` with a field-level error\nreport; on a gate failure it retries within budget, then escalates.",
+        "operationId": "submit_handoff_api_v1_projects__project_id__handoffs__stage__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stage",
+            "required": true,
+            "schema": {
+              "title": "Stage",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoffOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Handoff",
+        "tags": [
+          "handoffs"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/handoffs/{stage}/artifact": {
+      "get": {
+        "description": "The most recent artifact submitted for a stage (404 if none).",
+        "operationId": "get_latest_artifact_api_v1_projects__project_id__handoffs__stage__artifact_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stage",
+            "required": true,
+            "schema": {
+              "title": "Stage",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoffArtifactOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Latest Artifact",
+        "tags": [
+          "handoffs"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/messages": {
       "get": {
         "operationId": "list_messages_api_v1_projects__project_id__messages_get",
@@ -5018,6 +11115,104 @@
         "summary": "Create Message",
         "tags": [
           "messaging"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/milestone": {
+      "get": {
+        "description": "The project's current milestone (WFL-018).",
+        "operationId": "get_milestone_api_v1_projects__project_id__milestone_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MilestoneStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Milestone",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/milestone:sync": {
+      "post": {
+        "description": "Re-evaluate the milestone from the given signals; a regression reopens the\nrelevant pipeline stage (WFL-018).",
+        "operationId": "sync_milestone_api_v1_projects__project_id__milestone_sync_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MilestoneSignalsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MilestoneSyncResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync Milestone",
+        "tags": [
+          "planning"
         ]
       }
     },
@@ -5257,6 +11452,310 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/pipeline": {
+      "get": {
+        "description": "The project's pipeline cursor (current stage + iteration) and the full\nappend-only stage history. First read lazily initializes the pipeline.",
+        "operationId": "get_pipeline_api_v1_projects__project_id__pipeline_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Pipeline",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/pipeline:advance": {
+      "post": {
+        "description": "Complete the current stage and enter its immediate successor. An\nout-of-order ``target_stage`` is a 409 with a logged rejected-transition event\nand no state change (TITAN-WFL-002).",
+        "operationId": "advance_pipeline_api_v1_projects__project_id__pipeline_advance_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PipelineAdvanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Advance Pipeline",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/pipeline:not-applicable": {
+      "post": {
+        "description": "Mark the current stage NOT_APPLICABLE with a logged justification \u2014 the\nsingle sanctioned skip (TITAN-WFL-002), gated on pipeline:override.",
+        "operationId": "pipeline_not_applicable_api_v1_projects__project_id__pipeline_not_applicable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PipelineNotApplicableRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pipeline Not Applicable",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/pipeline:resume-budget": {
+      "post": {
+        "description": "Raise the project budget (clear the project hold) so a pipeline paused on\nbudget hold resumes exactly where it paused (\u00a7 point 4).",
+        "operationId": "resume_pipeline_budget_api_v1_projects__project_id__pipeline_resume_budget_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Pipeline Budget",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/pipeline:retry": {
+      "post": {
+        "description": "Re-enter the current stage, bumping its iteration counter (a gate-failure\nrework re-entry). The persisted (stage, iteration) is what a restarted\norchestrator resumes on.",
+        "operationId": "retry_pipeline_api_v1_projects__project_id__pipeline_retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PipelineRetryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Pipeline",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/sprint-plan:preview": {
+      "post": {
+        "description": "Partition a TaskGraph into a walking-skeleton-first sprint plan (WFL-015).\nPure \u2014 a 422 names the cyclic/incomplete/over-capacity backlog.",
+        "operationId": "preview_sprint_plan_api_v1_projects__project_id__sprint_plan_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SprintPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Sprint Plan",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/sprints": {
       "get": {
         "operationId": "list_sprints_api_v1_projects__project_id__sprints_get",
@@ -5490,6 +11989,114 @@
         "summary": "Update Sprint",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/sprints:close": {
+      "post": {
+        "description": "Record the sprint-closing review + retrospective and recalibrate estimates\n(WFL-016/017).",
+        "operationId": "close_sprint_api_v1_projects__project_id__sprints_close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseSprintIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloseSprintResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close Sprint",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/sprints:open": {
+      "post": {
+        "description": "Record the sprint-opening planning ceremony (WFL-016).",
+        "operationId": "open_sprint_api_v1_projects__project_id__sprints_open_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenSprintIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SprintCeremonyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Sprint",
+        "tags": [
+          "planning"
         ]
       }
     },
@@ -5841,6 +12448,50 @@
         "summary": "Deny Tool Call",
         "tags": [
           "tool-approvals"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/traceability": {
+      "get": {
+        "description": "The auto-generated TITAN-WFL-006 traceability table (brief feature \u2192 stories \u2192\ntasks \u2192 PRs \u2192 tests \u2192 docs) with gap detection over the MUST-features.",
+        "operationId": "get_traceability_api_v1_projects__project_id__traceability_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Traceability"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Traceability",
+        "tags": [
+          "handoffs"
         ]
       }
     },
@@ -6290,6 +12941,50 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/loop": {
+      "get": {
+        "description": "The task's self-improvement loop with its cycles, findings, and the\nappend-only stage-event audit trail.",
+        "operationId": "get_task_loop_api_v1_tasks__task_id__loop_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoopView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Task Loop",
+        "tags": [
+          "loop"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/runs": {
       "post": {
         "operationId": "create_run_api_v1_tasks__task_id__runs_post",
@@ -6340,6 +13035,50 @@
         "summary": "Create Run",
         "tags": [
           "runs"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}:resume-budget": {
+      "post": {
+        "description": "Raise a task's budget (clear its task-scoped hold) so a paused task resumes\nexactly where it paused. Object-authorized on task:transition.",
+        "operationId": "resume_task_budget_api_v1_tasks__task_id__resume_budget_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Task Budget",
+        "tags": [
+          "tasks"
         ]
       }
     },
@@ -6413,6 +13152,56 @@
           }
         },
         "summary": "Healthz"
+      }
+    },
+    "/plugin-ui/{plugin_id}/{asset_path}": {
+      "get": {
+        "description": "Serve a plugin's UI asset from its own ``ui/`` directory.",
+        "operationId": "plugin_ui_plugin_ui__plugin_id___asset_path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_path",
+            "required": true,
+            "schema": {
+              "title": "Asset Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Plugin Ui",
+        "tags": [
+          "plugins"
+        ]
       }
     },
     "/readyz": {

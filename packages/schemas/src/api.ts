@@ -196,6 +196,87 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/constitution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Active Constitution
+         * @description The active engineering-standards constitution (the version agents retrieve
+         *     into context and gates judge against).
+         */
+        get: operations["get_active_constitution_api_v1_constitution_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/constitution/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Constitution Versions
+         * @description Every committed constitution version, newest first (audit history).
+         */
+        get: operations["list_constitution_versions_api_v1_constitution_versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/constitution/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Constitution Version
+         * @description A specific committed constitution version by number (404 if unknown).
+         */
+        get: operations["get_constitution_version_api_v1_constitution__version__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/deployments/{deployment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Deployment
+         * @description A single deployment record with its status, reachable URL, and health.
+         */
+        get: operations["get_deployment_api_v1_deployments__deployment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/healthz": {
         parameters: {
             query?: never;
@@ -207,6 +288,100 @@ export interface paths {
         get: operations["healthz_api_v1_healthz_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/kb/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Kb Document Directly
+         * @description Direct KB writes are forbidden — always 403 (TITAN-BRN-021). Present so the
+         *     invariant is explicit and testable, even for an owner (``*``).
+         */
+        post: operations["create_kb_document_directly_api_v1_kb_documents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/kb/documents/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Kb Document
+         * @description A KB document with its full version history (§10.2) — older versions stay
+         *     queryable even though only the current one is chunked into titan_kb.
+         */
+        get: operations["get_kb_document_api_v1_kb_documents__slug__get"];
+        /**
+         * Update Kb Document Directly
+         * @description Direct KB writes are forbidden — always 403 (TITAN-BRN-021).
+         */
+        put: operations["update_kb_document_directly_api_v1_kb_documents__slug__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/kb/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Kb Proposal
+         * @description Submit a KB proposal (§10.3 step 1): a diff + rationale for a new doc or a
+         *     new version. Never mutates a KB table — it queues a ``pending`` proposal with
+         *     its type-based routing and a semantic near-duplicate conflict check. Requires
+         *     ``kb:propose``. ``proposed_by`` is the authenticated principal, not spoofable
+         *     body input (provenance, TITAN-BRN-021).
+         */
+        post: operations["create_kb_proposal_api_v1_kb_proposals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/kb/proposals/{proposal_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Kb Proposal
+         * @description Approve a pending proposal (§10.3 step 3): the new version becomes current,
+         *     is materialised into ``titan_kb`` through the §5.1 pipeline, and KG provenance
+         *     is written. Requires ``kb:approve`` (the Code-Reviewer approval authority);
+         *     protected types (coding_standard/decision_record) additionally require a
+         *     HUMAN approver — the §10.3 human sign-off — enforced in the service.
+         */
+        post: operations["approve_kb_proposal_api_v1_kb_proposals__proposal_id__approve_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -241,6 +416,303 @@ export interface paths {
         put?: never;
         /** Embeddings */
         post: operations["embeddings_api_v1_llm_embeddings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/admin/curation/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Curation Endpoint
+         * @description Trigger one §9 decay/prune/promotion cycle (also the nightly cron). Admin
+         *     only. Dry-run-first by default: the plan is written to the ledger; pass
+         *     ``dry_run=false`` to apply Demote/Archive (and Compact within the approval
+         *     limit, or with ``approve_destructive``). TITAN-BRN-018.
+         */
+        post: operations["run_curation_endpoint_api_v1_memory_admin_curation_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/admin/patterns/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mine Patterns Endpoint
+         * @description §11.1 pattern miner (TITAN-BRN-023): mine novel patterns from a project's
+         *     decisions into project-scope pattern records. Admin only; the run is
+         *     ledger-visible.
+         */
+        post: operations["mine_patterns_endpoint_api_v1_memory_admin_patterns_mine_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/admin/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Promote Endpoint
+         * @description §11.3 project→org promotion on the multi-signal rule (TITAN-BRN-024). Admin
+         *     only — org memory is never filled on a single project's say-so, and agents
+         *     cannot write org scope directly.
+         */
+        post: operations["promote_endpoint_api_v1_memory_admin_promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/admin/rebuild-index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rebuild Index
+         * @description Fully reconstruct every Qdrant collection from PostgreSQL, reconciling by
+         *     point-id == chunk-id set difference (TITAN-BRN-004). Admin-only; runs
+         *     synchronously — laptop-scale collections rebuild in seconds, and the caller
+         *     gets the reconciliation report as the response.
+         */
+        post: operations["rebuild_index_api_v1_memory_admin_rebuild_index_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Write Memory Events
+         * @description Write a batch of Memory Events in ONE transaction — a failure anywhere
+         *     rolls back the whole batch (§5.1). ``source_agent`` records WHICH agent role
+         *     authored the memory (application data); the ledger's actor is the
+         *     authenticated principal, never spoofable body input (TITAN-BRN-005).
+         *
+         *     Authorization is scope-aware (TITAN-BRN-024): a human/service principal
+         *     needs org-level ``memory:write`` as before; an AGENT principal may write
+         *     ONLY project-scoped events into a project where its role bundle grants
+         *     ``memory:write`` (its bound project) — an org-scope event from agent
+         *     credentials is a flat 403, because org promotion belongs to the curation
+         *     workflow's multi-signal rule, never to a single agent.
+         */
+        post: operations["write_memory_events_api_v1_memory_events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/kg/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Query Kg
+         * @description Typed graph traversal (start nodes, edge-type filter, depth ≤ 3) via a
+         *     recursive CTE (§7.1). Scope-isolated: org + the caller's own project only
+         *     (TITAN-BRN-003).
+         */
+        post: operations["query_kg_api_v1_memory_kg_query_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/lessons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * File Lesson Endpoint
+         * @description File a structured lesson (§11.2): a protected episodic record + a lesson KG
+         *     node with a DERIVED_FROM edge (TITAN-BRN-019/023). Project-scoped
+         *     ``memory:write``.
+         */
+        post: operations["file_lesson_endpoint_api_v1_memory_lessons_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Metrics
+         * @description Retrieval-quality and ingestion-lag metrics (§14) — the same series the
+         *     Prometheus ``/metrics`` endpoint exports, summarised for dashboards and
+         *     operators: packet-cache hit rate (TITAN-BRN-012) and ingest-lag quantiles
+         *     (TITAN-BRN-007). Metadata only — counts and seconds, never content.
+         */
+        get: operations["memory_metrics_api_v1_memory_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/packets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assemble Memory Packet
+         * @description Assemble a cited §6.2 Memory Packet through the §6.1 hybrid retrieval
+         *     pipeline (dense ∥ lexical → RRF → rerank → budget fill), served from the
+         *     300 s Redis cache for identical (scope, query) requests (TITAN-BRN-012).
+         *     Scope isolation is mandatory: org + the caller's named project only
+         *     (TITAN-BRN-003).
+         */
+        post: operations["assemble_memory_packet_api_v1_memory_packets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/records/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Memory Record
+         * @description The canonical record + its chunks + its complete ledger trail (§14). A read
+         *     bumps access metadata and appends a ``read`` ledger row (TITAN-BRN-005), so it
+         *     runs in a transaction.
+         */
+        get: operations["get_memory_record_api_v1_memory_records__record_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/reflections/sprint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sprint Retro Endpoint
+         * @description §12 sprint retrospective: aggregate a sprint's task reflections into a
+         *     sprint summary record. Project-scoped ``memory:write``.
+         */
+        post: operations["sprint_retro_endpoint_api_v1_memory_reflections_sprint_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/reflections/task": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Task Reflection Endpoint
+         * @description §12 task reflection: one utility-tier LLM call answers the five-question
+         *     rubric and persists it as an episodic record for the task (TITAN-BRN-025).
+         *     Project-scoped ``memory:write``.
+         */
+        post: operations["task_reflection_endpoint_api_v1_memory_reflections_task_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/tasks/{task_id}/reflection-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reflection Status Endpoint
+         * @description The §12 done-block hook exposed for the task state machine (TITAN-BRN-025):
+         *     whether the task has a schema-valid reflection record yet.
+         */
+        get: operations["reflection_status_endpoint_api_v1_memory_tasks__task_id__reflection_status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -298,6 +770,216 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/plugins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Catalogue
+         * @description The discovered catalogue (AVAILABLE).
+         */
+        get: operations["list_catalogue_api_v1_plugins_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugins/installs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Installs */
+        get: operations["list_installs_api_v1_plugins_installs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugins/{plugin_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Install */
+        get: operations["get_install_api_v1_plugins__plugin_id__get"];
+        put?: never;
+        post?: never;
+        /** Remove */
+        delete: operations["remove_api_v1_plugins__plugin_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugins/{plugin_id}/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Configure
+         * @description Operator settings from ``config_schema``, encrypted at rest (SEC-063).
+         */
+        put: operations["configure_api_v1_plugins__plugin_id__config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugins/{plugin_id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable */
+        post: operations["disable_api_v1_plugins__plugin_id__disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugins/{plugin_id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable
+         * @description Grant the manifest's declared permissions and start the sandboxed worker.
+         */
+        post: operations["enable_api_v1_plugins__plugin_id__enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugins/{plugin_id}/hooks/{hook_path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Webhook
+         * @description Verify HMAC-SHA256 over the RAW body against the plugin's named secret, then
+         *     deliver to the plugin. An unverified payload is rejected and logged.
+         */
+        post: operations["webhook_api_v1_plugins__plugin_id__hooks__hook_path__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugins/{plugin_id}/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Install */
+        post: operations["install_api_v1_plugins__plugin_id__install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugins/{plugin_id}/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mcp Introspection
+         * @description For an enabled MCP server (§7): the negotiated protocol version, its discovered
+         *     tools (registered as ``mcp.<id>.*``), its resources (read via ``mcp.<id>.read_resource``)
+         *     and its prompts (surfaced to the prompt library, Vol 2).
+         */
+        get: operations["mcp_introspection_api_v1_plugins__plugin_id__mcp_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugins/{plugin_id}/upgrade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upgrade
+         * @description Re-pin the on-disk manifest. A permission WIDENING leaves the plugin inactive
+         *     pending re-approval (TITAN-INT-017); the diff says exactly what was added.
+         */
+        post: operations["upgrade_api_v1_plugins__plugin_id__upgrade_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugins:discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discover */
+        post: operations["discover_api_v1_plugins_discover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects": {
         parameters: {
             query?: never;
@@ -334,6 +1016,127 @@ export interface paths {
         patch: operations["update_project_api_v1_projects__project_id__patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Artifacts
+         * @description The current version summary of every generated artifact.
+         */
+        get: operations["list_artifacts_api_v1_projects__project_id__artifacts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/artifacts/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Artifact
+         * @description The current version of one artifact (Markdown + JSON + hash).
+         */
+        get: operations["get_artifact_api_v1_projects__project_id__artifacts__kind__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/artifacts/{kind}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Artifact
+         * @description Export one artifact as raw Markdown (``format=md``) or JSON (``format=json``).
+         */
+        get: operations["export_artifact_api_v1_projects__project_id__artifacts__kind__export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/artifacts:regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate
+         * @description Regenerate all six §5 artifacts from the current domain state (each versioned
+         *     only if its content changed).
+         */
+        post: operations["regenerate_api_v1_projects__project_id__artifacts_regenerate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/blockers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Blockers
+         * @description Every blocker (open, escalated, or recovered) for the project (WFL-019).
+         */
+        get: operations["list_blockers_api_v1_projects__project_id__blockers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/blockers:sweep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sweep Blockers
+         * @description Run one blocker-detection + recovery-ladder tick for this project (WFL-019).
+         */
+        post: operations["sweep_blockers_api_v1_projects__project_id__blockers_sweep_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/board": {
         parameters: {
             query?: never;
@@ -343,6 +1146,93 @@ export interface paths {
         };
         /** Project Board */
         get: operations["project_board_api_v1_projects__project_id__board_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/ceremonies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Ceremonies
+         * @description Every persisted sprint ceremony for the project (WFL-016).
+         */
+        get: operations["list_ceremonies_api_v1_projects__project_id__ceremonies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/clarifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Clarification
+         * @description The project's clarification batch with questions + logged assumptions.
+         */
+        get: operations["get_clarification_api_v1_projects__project_id__clarifications_get"];
+        put?: never;
+        /**
+         * Open Clarification
+         * @description Submit the UserRequest (H1) and open the clarification batch. A duplicate of
+         *     an active project is 409 and an empty request is 400 (gate G1); otherwise ≤5
+         *     essential questions are asked and every other unknown is logged as an
+         *     assumption.
+         */
+        post: operations["open_clarification_api_v1_projects__project_id__clarifications_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/clarifications/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer Clarification
+         * @description Record the user's answers; the batch closes once every question is answered.
+         */
+        post: operations["answer_clarification_api_v1_projects__project_id__clarifications_answers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/debt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Debt Ledger
+         * @description The project's technical-debt ledger: the open-ticket total + every ticket.
+         */
+        get: operations["get_debt_ledger_api_v1_projects__project_id__debt_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -363,6 +1253,26 @@ export interface paths {
         put?: never;
         /** Create Decision */
         post: operations["create_decision_api_v1_projects__project_id__decisions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deployments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Project Deployments
+         * @description Every local deployment recorded for the project, newest first.
+         */
+        get: operations["list_project_deployments_api_v1_projects__project_id__deployments_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -421,6 +1331,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/handoffs/gate-ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Gate Ledger
+         * @description The complete pass/fail gate ledger for the project (TITAN-WFL-004).
+         */
+        get: operations["export_gate_ledger_api_v1_projects__project_id__handoffs_gate_ledger_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/handoffs/{stage}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit Handoff
+         * @description Submit the producing stage's §2.3 artifact and run its handoff. On a schema
+         *     validation failure the outcome is ``schema_rejected`` with a field-level error
+         *     report; on a gate failure it retries within budget, then escalates.
+         */
+        post: operations["submit_handoff_api_v1_projects__project_id__handoffs__stage__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/handoffs/{stage}/artifact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Latest Artifact
+         * @description The most recent artifact submitted for a stage (404 if none).
+         */
+        get: operations["get_latest_artifact_api_v1_projects__project_id__handoffs__stage__artifact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/messages": {
         parameters: {
             query?: never;
@@ -433,6 +1405,47 @@ export interface paths {
         put?: never;
         /** Create Message */
         post: operations["create_message_api_v1_projects__project_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/milestone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Milestone
+         * @description The project's current milestone (WFL-018).
+         */
+        get: operations["get_milestone_api_v1_projects__project_id__milestone_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/milestone:sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Milestone
+         * @description Re-evaluate the milestone from the given signals; a regression reopens the
+         *     relevant pipeline stage (WFL-018).
+         */
+        post: operations["sync_milestone_api_v1_projects__project_id__milestone_sync_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -475,6 +1488,134 @@ export interface paths {
         patch: operations["update_milestone_api_v1_projects__project_id__milestones__milestone_id__patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/pipeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pipeline
+         * @description The project's pipeline cursor (current stage + iteration) and the full
+         *     append-only stage history. First read lazily initializes the pipeline.
+         */
+        get: operations["get_pipeline_api_v1_projects__project_id__pipeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/pipeline:advance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Advance Pipeline
+         * @description Complete the current stage and enter its immediate successor. An
+         *     out-of-order ``target_stage`` is a 409 with a logged rejected-transition event
+         *     and no state change (TITAN-WFL-002).
+         */
+        post: operations["advance_pipeline_api_v1_projects__project_id__pipeline_advance_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/pipeline:not-applicable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pipeline Not Applicable
+         * @description Mark the current stage NOT_APPLICABLE with a logged justification — the
+         *     single sanctioned skip (TITAN-WFL-002), gated on pipeline:override.
+         */
+        post: operations["pipeline_not_applicable_api_v1_projects__project_id__pipeline_not_applicable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/pipeline:resume-budget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Pipeline Budget
+         * @description Raise the project budget (clear the project hold) so a pipeline paused on
+         *     budget hold resumes exactly where it paused (§ point 4).
+         */
+        post: operations["resume_pipeline_budget_api_v1_projects__project_id__pipeline_resume_budget_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/pipeline:retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Pipeline
+         * @description Re-enter the current stage, bumping its iteration counter (a gate-failure
+         *     rework re-entry). The persisted (stage, iteration) is what a restarted
+         *     orchestrator resumes on.
+         */
+        post: operations["retry_pipeline_api_v1_projects__project_id__pipeline_retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/sprint-plan:preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Sprint Plan
+         * @description Partition a TaskGraph into a walking-skeleton-first sprint plan (WFL-015).
+         *     Pure — a 422 names the cyclic/incomplete/over-capacity backlog.
+         */
+        post: operations["preview_sprint_plan_api_v1_projects__project_id__sprint_plan_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/sprints": {
         parameters: {
             query?: never;
@@ -509,6 +1650,47 @@ export interface paths {
         head?: never;
         /** Update Sprint */
         patch: operations["update_sprint_api_v1_projects__project_id__sprints__sprint_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/sprints:close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close Sprint
+         * @description Record the sprint-closing review + retrospective and recalibrate estimates
+         *     (WFL-016/017).
+         */
+        post: operations["close_sprint_api_v1_projects__project_id__sprints_close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/sprints:open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open Sprint
+         * @description Record the sprint-opening planning ceremony (WFL-016).
+         */
+        post: operations["open_sprint_api_v1_projects__project_id__sprints_open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/projects/{project_id}/tasks": {
@@ -574,6 +1756,27 @@ export interface paths {
         put?: never;
         /** Deny Tool Call */
         post: operations["deny_tool_call_api_v1_projects__project_id__tool_approvals__approval_id__deny_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/traceability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Traceability
+         * @description The auto-generated TITAN-WFL-006 traceability table (brief feature → stories →
+         *     tasks → PRs → tests → docs) with gap detection over the MUST-features.
+         */
+        get: operations["get_traceability_api_v1_projects__project_id__traceability_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -717,6 +1920,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tasks/{task_id}/loop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Task Loop
+         * @description The task's self-improvement loop with its cycles, findings, and the
+         *     append-only stage-event audit trail.
+         */
+        get: operations["get_task_loop_api_v1_tasks__task_id__loop_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks/{task_id}/runs": {
         parameters: {
             query?: never;
@@ -728,6 +1952,27 @@ export interface paths {
         put?: never;
         /** Create Run */
         post: operations["create_run_api_v1_tasks__task_id__runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks/{task_id}:resume-budget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Task Budget
+         * @description Raise a task's budget (clear its task-scoped hold) so a paused task resumes
+         *     exactly where it paused. Object-authorized on task:transition.
+         */
+        post: operations["resume_task_budget_api_v1_tasks__task_id__resume_budget_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -765,6 +2010,26 @@ export interface paths {
         };
         /** Healthz */
         get: operations["healthz_healthz_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugin-ui/{plugin_id}/{asset_path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Plugin Ui
+         * @description Serve a plugin's UI asset from its own ``ui/`` directory.
+         */
+        get: operations["plugin_ui_plugin_ui__plugin_id___asset_path__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -891,6 +2156,21 @@ export interface components {
             /** Name */
             name?: string | null;
         };
+        /** AnswerIn */
+        AnswerIn: {
+            /** Answer */
+            answer: string;
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+        };
+        /** AnswerSubmission */
+        AnswerSubmission: {
+            /** Answers */
+            answers: components["schemas"]["AnswerIn"][];
+        };
         /** ApiKeyGrant */
         ApiKeyGrant: {
             /** Api Key */
@@ -955,6 +2235,47 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** ArtifactSummary */
+        ArtifactSummary: {
+            /** Artifact Version */
+            artifact_version: number;
+            /** Content Hash */
+            content_hash: string;
+            /** Kind */
+            kind: string;
+        };
+        /**
+         * AssembledFor
+         * @description Who the packet is for — attribution only, never part of the cache key.
+         */
+        AssembledFor: {
+            /** Agent */
+            agent: string;
+            /**
+             * Call Seq
+             * @default 0
+             */
+            call_seq: number;
+            /** Task Id */
+            task_id?: string | null;
+        };
+        /** AssumptionOut */
+        AssumptionOut: {
+            /**
+             * High Visibility
+             * @default false
+             */
+            high_visibility: boolean;
+            /** Source */
+            source: string;
+            /** Statement */
+            statement: string;
+            /**
+             * User Overridable
+             * @default true
+             */
+            user_overridable: boolean;
+        };
         /**
          * Authority
          * @description What the agent decides alone vs. must escalate (§2.1.3).
@@ -972,6 +2293,19 @@ export interface components {
              * @default false
              */
             veto: boolean;
+        };
+        /** BlockerSweepResult */
+        BlockerSweepResult: {
+            /** Advanced */
+            advanced: number;
+            /** Detected */
+            detected: number;
+            /** Escalated */
+            escalated: number;
+            /** Recovered */
+            recovered: number;
+            /** Scanned */
+            scanned: number;
         };
         /** Board */
         Board: {
@@ -1007,6 +2341,15 @@ export interface components {
             status: string;
             /** Tasks */
             tasks: components["schemas"]["BoardCard"][];
+        };
+        /** CacheMetrics */
+        CacheMetrics: {
+            /** Hit Rate */
+            hit_rate: number;
+            /** Hits */
+            hits: number;
+            /** Misses */
+            misses: number;
         };
         /**
          * ChatRequest
@@ -1068,10 +2411,266 @@ export interface components {
             tool_calls?: components["schemas"]["ToolCall"][];
             usage: components["schemas"]["Usage"];
         };
+        /** ClarificationBatchOut */
+        ClarificationBatchOut: {
+            /** Assumptions */
+            assumptions: components["schemas"]["AssumptionOut"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Deadline At
+             * Format: date-time
+             */
+            deadline_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Opened By */
+            opened_by: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Questions */
+            questions: components["schemas"]["ClarificationQuestionOut"][];
+            /** Resolution */
+            resolution: string | null;
+            /** Resolved At */
+            resolved_at: string | null;
+            /** Status */
+            status: string;
+            /** Timeout Hours */
+            timeout_hours: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ClarificationQuestionOut */
+        ClarificationQuestionOut: {
+            /** Answer */
+            answer?: string | null;
+            /** Answered At */
+            answered_at?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Ordinal */
+            ordinal: number;
+            /** Question */
+            question: string;
+            /** Topic */
+            topic: string;
+        };
+        /** CloseSprintIn */
+        CloseSprintIn: {
+            /** Demo Links */
+            demo_links?: string[];
+            /** Estimate Actuals */
+            estimate_actuals?: components["schemas"]["EstimateActualIn"][];
+            /** Retrospective Changes */
+            retrospective_changes?: string[];
+            /** Sprint Number */
+            sprint_number: number;
+            /**
+             * Velocity Actual
+             * @default 0
+             */
+            velocity_actual: number;
+            /**
+             * Velocity Estimate
+             * @default 0
+             */
+            velocity_estimate: number;
+        };
+        /** CloseSprintResult */
+        CloseSprintResult: {
+            /** Correction Factor */
+            correction_factor: number;
+            retrospective: components["schemas"]["SprintCeremonyOut"];
+            review: components["schemas"]["SprintCeremonyOut"];
+        };
+        /**
+         * CollectionRebuild
+         * @description What reconciliation did to one collection. ``quarantined`` chunks were
+         *     skipped (dead-lettered poison awaiting operator replay); ``failed`` chunks
+         *     hit an embed/upsert error during THIS rebuild and were skipped so the
+         *     recovery command still completes (TITAN-BRN-004).
+         */
+        CollectionRebuild: {
+            /** Chunks Embedded */
+            chunks_embedded: number;
+            /**
+             * Failed
+             * @default 0
+             */
+            failed: number;
+            /** Points */
+            points: number;
+            /**
+             * Quarantined
+             * @default 0
+             */
+            quarantined: number;
+            /** Strays Deleted */
+            strays_deleted: number;
+        };
+        /** ConfigIn */
+        ConfigIn: {
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            };
+        };
+        /** ConstitutionHistory */
+        ConstitutionHistory: {
+            /** Versions */
+            versions: components["schemas"]["ConstitutionOut"][];
+        };
+        /** ConstitutionOut */
+        ConstitutionOut: {
+            /** Body */
+            body: string;
+            /** Checksum */
+            checksum: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Source Ref */
+            source_ref: string;
+            /** Title */
+            title: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * CurationReport
+         * @description What one curation run planned and (unless dry-run) did. Counts only — the
+         *     ledger holds the record ids; this summary carries no memory content
+         *     (TITAN-OPS-016).
+         */
+        CurationReport: {
+            /**
+             * Archived
+             * @default 0
+             */
+            archived: number;
+            /**
+             * Compacted
+             * @default 0
+             */
+            compacted: number;
+            /**
+             * Demoted
+             * @default 0
+             */
+            demoted: number;
+            /**
+             * Destructive Deferred
+             * @default 0
+             */
+            destructive_deferred: number;
+            /** Dry Run */
+            dry_run: boolean;
+            /** Planned Archive */
+            planned_archive: number;
+            /** Planned Compact */
+            planned_compact: number;
+            /** Planned Demote */
+            planned_demote: number;
+            /** Scanned */
+            scanned: number;
+        };
+        /** CurationRunRequest */
+        CurationRunRequest: {
+            /**
+             * Approve Destructive
+             * @default false
+             */
+            approve_destructive: boolean;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+        };
+        /**
+         * DebtLedger
+         * @description The project's debt ledger — the open total for the dashboard plus the
+         *     tickets (TITAN-WFL-021).
+         */
+        DebtLedger: {
+            /** Open Total */
+            open_total: number;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Tickets */
+            tickets: components["schemas"]["DebtTicketOut"][];
+        };
+        /** DebtTicketOut */
+        DebtTicketOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Detail */
+            detail: string;
+            /** Fingerprint */
+            fingerprint: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Paydown Proposal */
+            paydown_proposal: string;
+            /** Paydown Task Id */
+            paydown_task_id: string | null;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Severity */
+            severity: string;
+            /** Source */
+            source: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** DecisionCreate */
         DecisionCreate: {
             /** Alternatives */
             alternatives: string;
+            /** Authority */
+            authority?: string | null;
             /** Consequences */
             consequences: string;
             /** Context */
@@ -1095,6 +2694,8 @@ export interface components {
         DecisionOut: {
             /** Alternatives */
             alternatives: string;
+            /** Authority */
+            authority: string | null;
             /** Consequences */
             consequences: string;
             /** Context */
@@ -1147,6 +2748,67 @@ export interface components {
              * Format: uuid
              */
             task_id: string;
+        };
+        /** DeploymentOut */
+        DeploymentOut: {
+            /** Compose File */
+            compose_file: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Detail */
+            detail: string;
+            /** Health */
+            health: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Port */
+            port: number | null;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Services */
+            services: string[];
+            /** Status */
+            status: string;
+            /** Task Id */
+            task_id: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Url */
+            url: string | null;
+        };
+        /** DerivedArtifactOut */
+        DerivedArtifactOut: {
+            /** Artifact Version */
+            artifact_version: number;
+            /** Content Hash */
+            content_hash: string;
+            /** Content Json */
+            content_json: {
+                [key: string]: unknown;
+            };
+            /** Content Md */
+            content_md: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Kind */
+            kind: string;
         };
         /** EgressHostIn */
         EgressHostIn: {
@@ -1215,6 +2877,13 @@ export interface components {
             /** To */
             to: string[];
         };
+        /** EstimateActualIn */
+        EstimateActualIn: {
+            /** Actual */
+            actual: number;
+            /** Estimate */
+            estimate: number;
+        };
         /**
          * FailurePolicy
          * @description Overrides to the default §2.2 recovery ladder (§2.1.8).
@@ -1251,6 +2920,47 @@ export interface components {
              * @default false
              */
             watchdog_restart: boolean;
+        };
+        /** GateEvaluationOut */
+        GateEvaluationOut: {
+            /** Artifact Id */
+            artifact_id: string | null;
+            /** Attempt */
+            attempt: number;
+            /** Constitution Version */
+            constitution_version?: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Evaluator Agent */
+            evaluator_agent: string;
+            /** Evaluator Model */
+            evaluator_model: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Prompt Version */
+            prompt_version: string;
+            /** Reasons */
+            reasons: unknown[];
+            /** Stage */
+            stage: string;
+            /** Verdict */
+            verdict: string;
+        };
+        /** GateLedger */
+        GateLedger: {
+            /** Evaluations */
+            evaluations: components["schemas"]["GateEvaluationOut"][];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
         };
         /** Graph */
         Graph: {
@@ -1289,6 +2999,65 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** HandoffArtifactOut */
+        HandoffArtifactOut: {
+            /** Artifact Type */
+            artifact_type: string;
+            /** Body */
+            body: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Schema Version */
+            schema_version: number;
+            /** Stage */
+            stage: string;
+            /** Submitted By */
+            submitted_by: string;
+            /** Version */
+            version: number;
+        };
+        /** HandoffOutcome */
+        HandoffOutcome: {
+            /** Artifact Version */
+            artifact_version?: number | null;
+            /** Attempt */
+            attempt: number;
+            /**
+             * Field Errors
+             * @default []
+             */
+            field_errors: string[];
+            /**
+             * Gate Reasons
+             * @default []
+             */
+            gate_reasons: string[];
+            /** Next Stage */
+            next_stage?: string | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "advanced" | "gate_failed_retry" | "escalated" | "schema_rejected";
+            pipeline: components["schemas"]["PipelineOut"];
+            /** Stage */
+            stage: string;
+        };
         /**
          * HealthzResponse
          * @description Liveness probe response.
@@ -1319,6 +3088,396 @@ export interface components {
             /** Media Type */
             media_type: string;
         };
+        /** KbApprovalResult */
+        KbApprovalResult: {
+            /** Chunk Count */
+            chunk_count: number;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /**
+             * Kb Doc Node Id
+             * Format: uuid
+             */
+            kb_doc_node_id: string;
+            /**
+             * Proposal Id
+             * Format: uuid
+             */
+            proposal_id: string;
+            /**
+             * Record Id
+             * Format: uuid
+             */
+            record_id: string;
+            /** Slug */
+            slug: string;
+            /** Version */
+            version: number;
+        };
+        /** KbDocumentDetail */
+        KbDocumentDetail: {
+            document: components["schemas"]["KbDocumentOut"];
+            /** Versions */
+            versions: components["schemas"]["KbVersionOut"][];
+        };
+        /** KbDocumentOut */
+        KbDocumentOut: {
+            /** Created At */
+            created_at: unknown;
+            /** Current Version */
+            current_version: number;
+            /** Doc Type */
+            doc_type: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Slug */
+            slug: string;
+            /** Status */
+            status: string;
+            /** Tags */
+            tags: string[];
+            /** Title */
+            title: string;
+        };
+        /**
+         * KbProposalIn
+         * @description POST /kb/proposals — a new doc or a new version of an existing slug.
+         */
+        KbProposalIn: {
+            /** Body Md */
+            body_md: string;
+            /** Change Note */
+            change_note: string;
+            /** Doc Type */
+            doc_type: string;
+            /** Language */
+            language?: string | null;
+            /** Rationale */
+            rationale: string;
+            /** Slug */
+            slug: string;
+            /** Tags */
+            tags?: string[];
+            /** Title */
+            title: string;
+        };
+        /** KbProposalOut */
+        KbProposalOut: {
+            /** Created At */
+            created_at: unknown;
+            /** Doc Type */
+            doc_type: string;
+            /** Document Id */
+            document_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Near Duplicates */
+            near_duplicates: components["schemas"]["NearDuplicate"][];
+            /** Requires Human */
+            requires_human: boolean;
+            /** Slug */
+            slug: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+        };
+        /** KbVersionOut */
+        KbVersionOut: {
+            /** Approved By */
+            approved_by: string | null;
+            /** Body Md */
+            body_md: string;
+            /** Change Note */
+            change_note: string;
+            /** Created At */
+            created_at: unknown;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Proposed By */
+            proposed_by: string;
+            /** Version */
+            version: number;
+        };
+        /** KgEdgeOut */
+        KgEdgeOut: {
+            /**
+             * Dst
+             * Format: uuid
+             */
+            dst: string;
+            /** Edge Type */
+            edge_type: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Properties */
+            properties: {
+                [key: string]: unknown;
+            };
+            /**
+             * Src
+             * Format: uuid
+             */
+            src: string;
+        };
+        /** KgNodeOut */
+        KgNodeOut: {
+            /** Depth */
+            depth: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Node Type */
+            node_type: string;
+            /** Properties */
+            properties: {
+                [key: string]: unknown;
+            };
+            /** Scope */
+            scope: string;
+        };
+        /**
+         * KgNodeRef
+         * @description Name a start node by its natural key (scope defaults to the query scope).
+         */
+        KgNodeRef: {
+            /** Name */
+            name: string;
+            /** Node Type */
+            node_type: string;
+        };
+        /**
+         * KgQueryRequest
+         * @description POST /memory/kg/query — typed traversal (start nodes, edge-type filter,
+         *     depth ≤ 3).
+         */
+        KgQueryRequest: {
+            /**
+             * Direction
+             * @default both
+             */
+            direction: string;
+            /** Edge Types */
+            edge_types?: string[];
+            /**
+             * Max Depth
+             * @default 3
+             */
+            max_depth: number;
+            /** Scope */
+            scope: string;
+            /** Start */
+            start?: components["schemas"]["KgNodeRef"][];
+            /** Start Ids */
+            start_ids?: string[];
+        };
+        /** KgQueryResult */
+        KgQueryResult: {
+            /** Edges */
+            edges: components["schemas"]["KgEdgeOut"][];
+            /** Nodes */
+            nodes: components["schemas"]["KgNodeOut"][];
+        };
+        /** LagMetrics */
+        LagMetrics: {
+            /** Count */
+            count: number;
+            /** P50 Seconds */
+            p50_seconds: number | null;
+            /** P95 Seconds */
+            p95_seconds: number | null;
+        };
+        /**
+         * LessonIn
+         * @description The §11.2 structured lesson.
+         */
+        LessonIn: {
+            /**
+             * Applicability
+             * @default org-candidate
+             */
+            applicability: string;
+            /** Context */
+            context: string;
+            /** Evidence */
+            evidence?: string[];
+            /**
+             * Importance
+             * @default 0.7
+             */
+            importance: number;
+            /** Observation */
+            observation: string;
+            /** Recommendation */
+            recommendation: string;
+            /** Root Cause */
+            root_cause: string;
+            /** Scope */
+            scope: string;
+            /** Source Task Id */
+            source_task_id?: string | null;
+            /** Title */
+            title: string;
+        };
+        /** LessonResult */
+        LessonResult: {
+            /** Chunk Count */
+            chunk_count: number;
+            /**
+             * Node Id
+             * Format: uuid
+             */
+            node_id: string;
+            /**
+             * Record Id
+             * Format: uuid
+             */
+            record_id: string;
+        };
+        /** LoopCycleOut */
+        LoopCycleOut: {
+            /** Clean */
+            clean: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Cycle Number */
+            cycle_number: number;
+            /** New Findings Count */
+            new_findings_count: number;
+            /** Outcome */
+            outcome: string;
+        };
+        /** LoopFindingOut */
+        LoopFindingOut: {
+            /** Advisory */
+            advisory: boolean;
+            /** Conflict Id */
+            conflict_id: string | null;
+            /** Disposition */
+            disposition: string;
+            /** File */
+            file: string;
+            /** Fingerprint */
+            fingerprint: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Line */
+            line: number;
+            /** Raised Cycle */
+            raised_cycle: number;
+            /** Rationale */
+            rationale: string;
+            /** Refutation Reason */
+            refutation_reason: string | null;
+            /** Refute Upheld Count */
+            refute_upheld_count: number;
+            /** Rule Code */
+            rule_code: string | null;
+            /** Severity */
+            severity: string;
+            /** Suggestion */
+            suggestion: string;
+        };
+        /** LoopRecordOut */
+        LoopRecordOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Cycle Count */
+            cycle_count: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Iteration */
+            iteration: number;
+            /** Max Cycles */
+            max_cycles: number;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Status */
+            status: string;
+            /**
+             * Task Id
+             * Format: uuid
+             */
+            task_id: string;
+            /** Termination Reason */
+            termination_reason: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** LoopStageEventOut */
+        LoopStageEventOut: {
+            /** Actor */
+            actor: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Cycle Number */
+            cycle_number: number;
+            /** Detail */
+            detail: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: number;
+            /** Stage */
+            stage: string;
+            /** Verdict */
+            verdict: string;
+        };
+        /** LoopView */
+        LoopView: {
+            /** Cycles */
+            cycles: components["schemas"]["LoopCycleOut"][];
+            /** Findings */
+            findings: components["schemas"]["LoopFindingOut"][];
+            record: components["schemas"]["LoopRecordOut"];
+            /** Stage Events */
+            stage_events: components["schemas"]["LoopStageEventOut"][];
+        };
         /** MarkAllReadResult */
         MarkAllReadResult: {
             /** Marked Read */
@@ -1343,6 +3502,186 @@ export interface components {
              */
             sub: string;
         };
+        /** MemoryChunkOut */
+        MemoryChunkOut: {
+            /** Embed Model */
+            embed_model: string | null;
+            /** Embedded At */
+            embedded_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Record Id
+             * Format: uuid
+             */
+            record_id: string;
+            /** Seq */
+            seq: number;
+            /** Text */
+            text: string;
+            /** Token Count */
+            token_count: number;
+        };
+        /**
+         * MemoryEvent
+         * @description One durable memory to write (§5.1). ``kind`` and ``scope`` are mandatory
+         *     (TITAN-BRN-001); ``content_type`` selects the chunker (§5.2).
+         */
+        MemoryEvent: {
+            /** Body Md */
+            body_md: string;
+            /**
+             * Content Type
+             * @default markdown
+             * @enum {string}
+             */
+            content_type: "markdown" | "prose" | "code" | "conversation" | "table";
+            /**
+             * Importance
+             * @default 0.5
+             */
+            importance: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "episodic" | "semantic" | "procedural";
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** Scope */
+            scope: string;
+            /** Source Task Id */
+            source_task_id?: string | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * MemoryEventBatch
+         * @description A transactional batch of Memory Events written by one agent turn.
+         */
+        MemoryEventBatch: {
+            /** Events */
+            events: components["schemas"]["MemoryEvent"][];
+            /** Source Agent */
+            source_agent: string;
+            /** Task Id */
+            task_id?: string | null;
+        };
+        /** MemoryLedgerEntry */
+        MemoryLedgerEntry: {
+            /** Action */
+            action: string;
+            /** Actor Agent */
+            actor_agent: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Detail */
+            detail: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: number;
+            /** Record Ids */
+            record_ids: string[];
+            /** Task Id */
+            task_id: string | null;
+        };
+        /**
+         * MemoryMetricsOut
+         * @description The §14 metrics summary: what an operator needs at a glance, computed
+         *     from the SAME Prometheus series /metrics exports (single source of truth).
+         *     Counts and seconds only — never memory content (TITAN-OPS-016).
+         */
+        MemoryMetricsOut: {
+            ingest_lag: components["schemas"]["LagMetrics"];
+            packet_cache: components["schemas"]["CacheMetrics"];
+        };
+        /**
+         * MemoryPacketOut
+         * @description The §6.2 Memory Packet, exactly.
+         */
+        MemoryPacketOut: {
+            assembled_for?: components["schemas"]["AssembledFor"] | null;
+            /** Budget Tokens */
+            budget_tokens: number;
+            /** Citations */
+            citations?: components["schemas"]["PacketCitation"][];
+            /**
+             * Packet Id
+             * Format: uuid
+             */
+            packet_id?: string;
+            sections?: components["schemas"]["PacketSections"];
+            /**
+             * Token Cost
+             * @default 0
+             */
+            token_cost: number;
+        };
+        /**
+         * MemoryRecordDetail
+         * @description A record + its chunks + its complete ledger trail (§14 GET endpoint).
+         */
+        MemoryRecordDetail: {
+            /** Chunks */
+            chunks: components["schemas"]["MemoryChunkOut"][];
+            /** Ledger */
+            ledger: components["schemas"]["MemoryLedgerEntry"][];
+            record: components["schemas"]["MemoryRecordOut"];
+        };
+        /** MemoryRecordOut */
+        MemoryRecordOut: {
+            /** Access Count */
+            access_count: number;
+            /** Body Md */
+            body_md: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decay Score */
+            decay_score: number;
+            /** Demoted */
+            demoted: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Importance */
+            importance: number;
+            /** Kind */
+            kind: string;
+            /** Last Accessed At */
+            last_accessed_at: string | null;
+            /** Metadata */
+            metadata: {
+                [key: string]: unknown;
+            };
+            /** Project Id */
+            project_id: string | null;
+            /** Scope */
+            scope: string;
+            /** Source Agent */
+            source_agent: string;
+            /** Source Task Id */
+            source_task_id: string | null;
+            /** Status */
+            status: string;
+            /** Superseded By */
+            superseded_by: string | null;
+            /** Title */
+            title: string;
+        };
         /**
          * MemoryScopes
          * @description Read/write grants over the Volume 5 memory scopes (§2.1.4).
@@ -1352,6 +3691,11 @@ export interface components {
             read: ("short_term" | "project" | "organization" | "code_patterns" | "architecture" | "lessons_learned")[];
             /** Write */
             write: ("short_term" | "project" | "organization" | "code_patterns" | "architecture" | "lessons_learned")[];
+        };
+        /** MemoryWriteResult */
+        MemoryWriteResult: {
+            /** Records */
+            records: components["schemas"]["WrittenRecord"][];
         };
         /**
          * Message
@@ -1480,6 +3824,137 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /** MilestoneSignalsIn */
+        MilestoneSignalsIn: {
+            /**
+             * Backlog Accepted
+             * @default false
+             */
+            backlog_accepted: boolean;
+            /**
+             * Brief Accepted
+             * @default false
+             */
+            brief_accepted: boolean;
+            /**
+             * Debt Reviewed
+             * @default false
+             */
+            debt_reviewed: boolean;
+            /**
+             * Docs Live
+             * @default false
+             */
+            docs_live: boolean;
+            /**
+             * G10 G12 Passed
+             * @default false
+             */
+            g10_g12_passed: boolean;
+            /**
+             * G6 G7 Passed
+             * @default false
+             */
+            g6_g7_passed: boolean;
+            /**
+             * G8 G9 Passed
+             * @default false
+             */
+            g8_g9_passed: boolean;
+            /**
+             * Hello Path Green
+             * @default false
+             */
+            hello_path_green: boolean;
+            /**
+             * Must Stories Done
+             * @default false
+             */
+            must_stories_done: boolean;
+            /**
+             * Open P0 Count
+             * @default 0
+             */
+            open_p0_count: number;
+            /**
+             * Perf Budgets Met
+             * @default false
+             */
+            perf_budgets_met: boolean;
+            /**
+             * Skeleton Deployed
+             * @default false
+             */
+            skeleton_deployed: boolean;
+            /**
+             * User Notified
+             * @default false
+             */
+            user_notified: boolean;
+        };
+        /** MilestoneStateOut */
+        MilestoneStateOut: {
+            /** Current Milestone */
+            current_milestone: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Signals */
+            signals: {
+                [key: string]: unknown;
+            };
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** MilestoneSyncResult */
+        MilestoneSyncResult: {
+            /** Current */
+            current: string;
+            /** Defect Task Id */
+            defect_task_id: string | null;
+            /** Failed Milestone */
+            failed_milestone: string | null;
+            /** Previous */
+            previous: string;
+            /** Regressed */
+            regressed: boolean;
+            /** Reopen Stage */
+            reopen_stage: string | null;
+        };
+        /** MineRequest */
+        MineRequest: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+        };
+        /** MinedPattern */
+        MinedPattern: {
+            /** Name */
+            name: string;
+            /**
+             * Record Id
+             * Format: uuid
+             */
+            record_id: string;
+        };
+        /** MinerReport */
+        MinerReport: {
+            /** Candidates */
+            candidates: number;
+            /** Decisions Scanned */
+            decisions_scanned: number;
+            /** Novel */
+            novel: number;
+            /** Patterns */
+            patterns: components["schemas"]["MinedPattern"][];
+        };
         /**
          * ModelPolicy
          * @description Which model tier, sampling, and output bounds the agent's turns use
@@ -1498,6 +3973,13 @@ export interface components {
              * @enum {string}
              */
             tier: "reasoning" | "standard" | "fast";
+        };
+        /** NearDuplicate */
+        NearDuplicate: {
+            /** Score */
+            score: number;
+            /** Slug */
+            slug: string;
         };
         /** NotificationOut */
         NotificationOut: {
@@ -1530,6 +4012,100 @@ export interface components {
             user_id: string;
             /** Version */
             version: number;
+        };
+        /** OpenSprintIn */
+        OpenSprintIn: {
+            /** Committed Stories */
+            committed_stories?: string[];
+            /** Goal */
+            goal: string;
+            /** Risks */
+            risks?: string[];
+            /** Sprint Number */
+            sprint_number: number;
+        };
+        /**
+         * PacketCitation
+         * @description Provenance for one included chunk (§6.2 rule a). ``compressed`` marks a
+         *     chunk whose full text no longer fit the budget and was replaced by its
+         *     parent record's summary line (§8.2 mechanism 3) — the agent knows more
+         *     detail is one retrieval away, and nothing was dropped silently.
+         */
+        PacketCitation: {
+            /**
+             * Chunk Id
+             * Format: uuid
+             */
+            chunk_id: string;
+            /**
+             * Compressed
+             * @default false
+             */
+            compressed: boolean;
+            /**
+             * Pinned
+             * @default false
+             */
+            pinned: boolean;
+            /**
+             * Record Id
+             * Format: uuid
+             */
+            record_id: string;
+            /** Score */
+            score: number;
+        };
+        /**
+         * PacketRequest
+         * @description POST /memory/packets — the §6.1 request tuple.
+         */
+        PacketRequest: {
+            assembled_for?: components["schemas"]["AssembledFor"] | null;
+            /**
+             * Budget Tokens
+             * @default 4000
+             */
+            budget_tokens: number;
+            /**
+             * Deep Search
+             * @default false
+             */
+            deep_search: boolean;
+            /**
+             * K
+             * @default 24
+             */
+            k: number;
+            /** Kinds */
+            kinds?: string[];
+            /** Pins */
+            pins?: string[];
+            /** Query */
+            query: string;
+            /** Scope */
+            scope: string;
+        };
+        /**
+         * PacketSections
+         * @description §6.2 sections; ordered procedural → semantic → episodic on render.
+         */
+        PacketSections: {
+            /** Episodic */
+            episodic?: string[];
+            /**
+             * Identity Context
+             * @default
+             */
+            identity_context: string;
+            /** Procedural */
+            procedural?: string[];
+            /** Semantic */
+            semantic?: string[];
+            /**
+             * Working Summary
+             * @default
+             */
+            working_summary: string;
         };
         /** Page[AgentOut] */
         Page_AgentOut_: {
@@ -1622,6 +4198,224 @@ export interface components {
             password: string;
         };
         /**
+         * PermissionDiff
+         * @description What an upgrade would ADD relative to the operator-approved grant. A non-empty
+         *     diff blocks activation until re-approved (TITAN-INT-017).
+         */
+        PermissionDiff: {
+            /** Added */
+            added?: string[];
+            /** Widened */
+            widened: boolean;
+        };
+        /** PipelineAdvanceRequest */
+        PipelineAdvanceRequest: {
+            /** Note */
+            note?: string | null;
+            /** Target Stage */
+            target_stage: string;
+        };
+        /** PipelineNotApplicableRequest */
+        PipelineNotApplicableRequest: {
+            /** Justification */
+            justification: string;
+            /** Target Stage */
+            target_stage: string;
+        };
+        /** PipelineOut */
+        PipelineOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Current Stage */
+            current_stage: string;
+            /**
+             * Current Stage Label
+             * @description Human label for the current stage (dashboard) — a pure projection.
+             */
+            readonly current_stage_label: string;
+            /** Iteration */
+            iteration: number;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Retry Budget */
+            retry_budget: number;
+            /** Status */
+            status: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: number;
+        };
+        /** PipelineRetryRequest */
+        PipelineRetryRequest: {
+            /** Reason */
+            reason?: string | null;
+        };
+        /** PipelineStageEventOut */
+        PipelineStageEventOut: {
+            /** Actor */
+            actor: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Detail */
+            detail: {
+                [key: string]: unknown;
+            };
+            /** Event */
+            event: string;
+            /** Id */
+            id: number;
+            /** Iteration */
+            iteration: number;
+            /** Stage */
+            stage: string;
+        };
+        /** PipelineView */
+        PipelineView: {
+            /** History */
+            history: components["schemas"]["PipelineStageEventOut"][];
+            pipeline: components["schemas"]["PipelineOut"];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Stages */
+            stages: string[];
+        };
+        /** PlanEdgeIn */
+        PlanEdgeIn: {
+            /** Depends On Id */
+            depends_on_id: string;
+            /** Task Id */
+            task_id: string;
+        };
+        /** PlanRequest */
+        PlanRequest: {
+            /**
+             * Correction Factor
+             * @default 1
+             */
+            correction_factor: number;
+            /** Edges */
+            edges?: components["schemas"]["PlanEdgeIn"][];
+            /** Parallel Capacity */
+            parallel_capacity?: number | null;
+            /** Tasks */
+            tasks: components["schemas"]["PlanTaskIn"][];
+        };
+        /** PlanTaskIn */
+        PlanTaskIn: {
+            /**
+             * Estimate Days
+             * @default 0.5
+             */
+            estimate_days: number;
+            /** Id */
+            id: string;
+            /**
+             * Priority
+             * @default 3
+             */
+            priority: number;
+            /** Role */
+            role: string;
+            /**
+             * Story Id
+             * @default
+             */
+            story_id: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+        };
+        /** PlannedSprintOut */
+        PlannedSprintOut: {
+            /** Goal */
+            goal: string;
+            /** Number */
+            number: number;
+            /** Task Ids */
+            task_ids: string[];
+            /** Walking Skeleton */
+            walking_skeleton: boolean;
+        };
+        /** PluginInstallOut */
+        PluginInstallOut: {
+            /** Content Hash */
+            content_hash: string;
+            /**
+             * Error Count
+             * @default 0
+             */
+            error_count: number;
+            /** Granted Permissions */
+            granted_permissions?: {
+                [key: string]: unknown;
+            };
+            /** Installed Version */
+            installed_version: string;
+            /**
+             * Last Error
+             * @default
+             */
+            last_error: string;
+            /** Manifest */
+            manifest?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Plugin Dir
+             * @default
+             */
+            plugin_dir: string;
+            /** Plugin Id */
+            plugin_id: string;
+            /** State */
+            state: string;
+            /** Tools */
+            tools?: string[];
+        };
+        /** PluginOut */
+        PluginOut: {
+            /** Content Hash */
+            content_hash: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Manifest */
+            manifest?: {
+                [key: string]: unknown;
+            };
+            /** Name */
+            name: string;
+            /**
+             * Origin
+             * @default
+             */
+            origin: string;
+            /** Plugin Id */
+            plugin_id: string;
+            /** Plugin Version */
+            plugin_version: string;
+        };
+        /**
          * Problem
          * @description RFC 9457 Problem Details (§4.1 error contract)
          */
@@ -1697,6 +4491,58 @@ export interface components {
             /** Mode */
             mode?: ("autonomous" | "supervised") | null;
         };
+        /** PromotionRequest */
+        PromotionRequest: {
+            /**
+             * Human Marked
+             * @default false
+             */
+            human_marked: boolean;
+            /**
+             * Org Candidate Approved
+             * @default false
+             */
+            org_candidate_approved: boolean;
+            /**
+             * Record Id
+             * Format: uuid
+             */
+            record_id: string;
+        };
+        /** PromotionResult */
+        PromotionResult: {
+            /** Kb Proposal Id */
+            kb_proposal_id?: string | null;
+            /**
+             * Org Record Id
+             * Format: uuid
+             */
+            org_record_id: string;
+            /** Signal */
+            signal: string;
+            /**
+             * Source Record Id
+             * Format: uuid
+             */
+            source_record_id: string;
+        };
+        /** ProposedAssumptionIn */
+        ProposedAssumptionIn: {
+            /** Statement */
+            statement: string;
+            /**
+             * User Overridable
+             * @default true
+             */
+            user_overridable: boolean;
+        };
+        /** ProposedQuestionIn */
+        ProposedQuestionIn: {
+            /** Question */
+            question: string;
+            /** Topic */
+            topic: string;
+        };
         /**
          * ReadyzResponse
          * @description Readiness probe response; ``failing`` is non-empty exactly when unready.
@@ -1713,6 +4559,50 @@ export interface components {
              * @enum {string}
              */
             status: "ready" | "unready";
+        };
+        /**
+         * RebuildReport
+         * @description The TITAN-BRN-004 rebuild summary, per collection alias.
+         */
+        RebuildReport: {
+            /** Collections */
+            collections: {
+                [key: string]: components["schemas"]["CollectionRebuild"];
+            };
+            /** Collections Created */
+            collections_created: number;
+        };
+        /** ReflectionResult */
+        ReflectionResult: {
+            /**
+             * Record Id
+             * Format: uuid
+             */
+            record_id: string;
+            rubric: components["schemas"]["ReflectionRubric"];
+        };
+        /** ReflectionRubric */
+        ReflectionRubric: {
+            /** Do Differently */
+            do_differently: string;
+            /** Goal */
+            goal: string;
+            /** Org Should Remember */
+            org_should_remember: string;
+            /** What Surprised */
+            what_surprised: string;
+            /** What Worked */
+            what_worked: string;
+        };
+        /** ReflectionStatusOut */
+        ReflectionStatusOut: {
+            /** Has Reflection */
+            has_reflection: boolean;
+            /**
+             * Task Id
+             * Format: uuid
+             */
+            task_id: string;
         };
         /** RefreshRequest */
         RefreshRequest: {
@@ -1799,6 +4689,46 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** ScheduledTaskOut */
+        ScheduledTaskOut: {
+            /** Estimate Days */
+            estimate_days: number;
+            /** Id */
+            id: string;
+            /** Priority */
+            priority: number;
+            /** Role */
+            role: string;
+            /** Sprint Number */
+            sprint_number: number;
+            /** Story Id */
+            story_id: string;
+            /** Title */
+            title: string;
+        };
+        /** SprintCeremonyOut */
+        SprintCeremonyOut: {
+            /** Body */
+            body: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Memory Record Id */
+            memory_record_id?: string | null;
+            /** Sprint Number */
+            sprint_number: number;
+        };
         /** SprintCreate */
         SprintCreate: {
             /** Ends At */
@@ -1856,6 +4786,61 @@ export interface components {
             starts_at?: string | null;
             /** Status */
             status?: ("planned" | "active" | "closed") | null;
+        };
+        /** SprintPlanOut */
+        SprintPlanOut: {
+            /** Sprints */
+            sprints: components["schemas"]["PlannedSprintOut"][];
+            /** Tasks */
+            tasks: components["schemas"]["ScheduledTaskOut"][];
+        };
+        /** SprintRetroRequest */
+        SprintRetroRequest: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Task Ids */
+            task_ids?: string[];
+        };
+        /** SprintRetroResult */
+        SprintRetroResult: {
+            /**
+             * Record Id
+             * Format: uuid
+             */
+            record_id: string;
+            /** Reflections Aggregated */
+            reflections_aggregated: number;
+        };
+        /** TaskBlockOut */
+        TaskBlockOut: {
+            /** Detail */
+            detail: string;
+            /**
+             * Detected At
+             * Format: date-time
+             */
+            detected_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Reason */
+            reason: string;
+            /** Resolved At */
+            resolved_at?: string | null;
+            /** Rung */
+            rung: string;
+            /** Status */
+            status: string;
+            /**
+             * Task Id
+             * Format: uuid
+             */
+            task_id: string;
         };
         /** TaskCreate */
         TaskCreate: {
@@ -1917,6 +4902,12 @@ export interface components {
             title: string;
             /** Version */
             version: number;
+            /**
+             * Wfl Lane
+             * @description The Vol 6 §2.5 Kanban lane for this task's status (TITAN-WFL-009) — a
+             *     pure projection of the physical status onto the delivery vocabulary.
+             */
+            readonly wfl_lane: string;
         };
         /** TaskPatch */
         TaskPatch: {
@@ -1928,6 +4919,23 @@ export interface components {
             spec?: string | null;
             /** Title */
             title?: string | null;
+        };
+        /** TaskReflectionRequest */
+        TaskReflectionRequest: {
+            /** Agent Id */
+            agent_id: string;
+            /** Context */
+            context: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /**
+             * Task Id
+             * Format: uuid
+             */
+            task_id: string;
         };
         /**
          * TextPart
@@ -2089,6 +5097,35 @@ export interface components {
              */
             type: "tool_use";
         };
+        /**
+         * TraceRow
+         * @description One row of the TITAN-WFL-006 traceability table: a brief feature through
+         *     stories → tasks → PRs → tests → docs.
+         */
+        TraceRow: {
+            /** Doc Refs */
+            doc_refs?: string[];
+            /** Feature Id */
+            feature_id: string;
+            /** Pr Numbers */
+            pr_numbers?: number[];
+            /** Story Ids */
+            story_ids?: string[];
+            /** Task Ids */
+            task_ids?: string[];
+            /** Test Ids */
+            test_ids?: string[];
+        };
+        /**
+         * Traceability
+         * @description The generated traceability table + gap list (TITAN-WFL-006).
+         */
+        Traceability: {
+            /** Gaps */
+            gaps: string[];
+            /** Rows */
+            rows: components["schemas"]["TraceRow"][];
+        };
         /** TransitionRequest */
         TransitionRequest: {
             /** Action */
@@ -2119,6 +5156,35 @@ export interface components {
              * @default 0
              */
             output_tokens: number;
+        };
+        /**
+         * UserRequestSubmission
+         * @description The H1 UserRequest plus the CEO turn's proposed clarifications. ``topic`` on
+         *     each proposed question is the machine-checkable subject the policy matches
+         *     against canonical defaults and ``inferable_topics`` (computed by the CEO from
+         *     the request + organization memory).
+         */
+        UserRequestSubmission: {
+            /** Inferable Topics */
+            inferable_topics?: string[];
+            /** Proposed Assumptions */
+            proposed_assumptions?: components["schemas"]["ProposedAssumptionIn"][];
+            /** Proposed Questions */
+            proposed_questions?: components["schemas"]["ProposedQuestionIn"][];
+            /** Raw Text */
+            raw_text: string;
+            /** Timeout Hours */
+            timeout_hours?: number | null;
+        };
+        /** WrittenRecord */
+        WrittenRecord: {
+            /** Chunk Count */
+            chunk_count: number;
+            /**
+             * Record Id
+             * Format: uuid
+             */
+            record_id: string;
         };
     };
     responses: never;
@@ -2512,6 +5578,108 @@ export interface operations {
             };
         };
     };
+    get_active_constitution_api_v1_constitution_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConstitutionOut"];
+                };
+            };
+        };
+    };
+    list_constitution_versions_api_v1_constitution_versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConstitutionHistory"];
+                };
+            };
+        };
+    };
+    get_constitution_version_api_v1_constitution__version__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConstitutionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_deployment_api_v1_deployments__deployment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     healthz_api_v1_healthz_get: {
         parameters: {
             query?: never;
@@ -2528,6 +5696,152 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthzResponse"];
+                };
+            };
+        };
+    };
+    create_kb_document_directly_api_v1_kb_documents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_kb_document_api_v1_kb_documents__slug__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KbDocumentDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    update_kb_document_directly_api_v1_kb_documents__slug__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    create_kb_proposal_api_v1_kb_proposals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KbProposalIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KbProposalOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    approve_kb_proposal_api_v1_kb_proposals__proposal_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KbApprovalResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
@@ -2585,6 +5899,407 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EmbeddingsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    run_curation_endpoint_api_v1_memory_admin_curation_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CurationRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurationReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    mine_patterns_endpoint_api_v1_memory_admin_patterns_mine_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MineRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MinerReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    promote_endpoint_api_v1_memory_admin_promote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromotionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    rebuild_index_api_v1_memory_admin_rebuild_index_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RebuildReport"];
+                };
+            };
+        };
+    };
+    write_memory_events_api_v1_memory_events_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryEventBatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryWriteResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    query_kg_api_v1_memory_kg_query_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KgQueryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KgQueryResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    file_lesson_endpoint_api_v1_memory_lessons_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LessonIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    memory_metrics_api_v1_memory_metrics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryMetricsOut"];
+                };
+            };
+        };
+    };
+    assemble_memory_packet_api_v1_memory_packets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PacketRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryPacketOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_memory_record_api_v1_memory_records__record_id__get: {
+        parameters: {
+            query?: {
+                task_id?: string | null;
+            };
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryRecordDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    sprint_retro_endpoint_api_v1_memory_reflections_sprint_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SprintRetroRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SprintRetroResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    task_reflection_endpoint_api_v1_memory_reflections_task_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskReflectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReflectionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    reflection_status_endpoint_api_v1_memory_tasks__task_id__reflection_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReflectionStatusOut"];
                 };
             };
             /** @description Validation Error */
@@ -2678,6 +6393,354 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarkAllReadResult"];
+                };
+            };
+        };
+    };
+    list_catalogue_api_v1_plugins_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginOut"][];
+                };
+            };
+        };
+    };
+    list_installs_api_v1_plugins_installs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginInstallOut"][];
+                };
+            };
+        };
+    };
+    get_install_api_v1_plugins__plugin_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plugin_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginInstallOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    remove_api_v1_plugins__plugin_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plugin_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginInstallOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    configure_api_v1_plugins__plugin_id__config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plugin_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginInstallOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    disable_api_v1_plugins__plugin_id__disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plugin_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginInstallOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    enable_api_v1_plugins__plugin_id__enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plugin_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginInstallOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    webhook_api_v1_plugins__plugin_id__hooks__hook_path__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plugin_id: string;
+                hook_path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    install_api_v1_plugins__plugin_id__install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plugin_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginInstallOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    mcp_introspection_api_v1_plugins__plugin_id__mcp_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plugin_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    upgrade_api_v1_plugins__plugin_id__upgrade_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plugin_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionDiff"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    discover_api_v1_plugins_discover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginOut"][];
                 };
             };
         };
@@ -2815,6 +6878,196 @@ export interface operations {
             };
         };
     };
+    list_artifacts_api_v1_projects__project_id__artifacts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_artifact_api_v1_projects__project_id__artifacts__kind__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DerivedArtifactOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    export_artifact_api_v1_projects__project_id__artifacts__kind__export_get: {
+        parameters: {
+            query?: {
+                format?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    regenerate_api_v1_projects__project_id__artifacts_regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_blockers_api_v1_projects__project_id__blockers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskBlockOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    sweep_blockers_api_v1_projects__project_id__blockers_sweep_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlockerSweepResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     project_board_api_v1_projects__project_id__board_get: {
         parameters: {
             query?: never;
@@ -2833,6 +7086,169 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Board"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_ceremonies_api_v1_projects__project_id__ceremonies_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SprintCeremonyOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_clarification_api_v1_projects__project_id__clarifications_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClarificationBatchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    open_clarification_api_v1_projects__project_id__clarifications_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserRequestSubmission"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClarificationBatchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    answer_clarification_api_v1_projects__project_id__clarifications_answers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerSubmission"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClarificationBatchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_debt_ledger_api_v1_projects__project_id__debt_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DebtLedger"];
                 };
             };
             /** @description Validation Error */
@@ -2902,6 +7318,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DecisionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_project_deployments_api_v1_projects__project_id__deployments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentOut"][];
                 };
             };
             /** @description Validation Error */
@@ -3042,6 +7489,107 @@ export interface operations {
             };
         };
     };
+    export_gate_ledger_api_v1_projects__project_id__handoffs_gate_ledger_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateLedger"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    submit_handoff_api_v1_projects__project_id__handoffs__stage__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                stage: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandoffOutcome"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_latest_artifact_api_v1_projects__project_id__handoffs__stage__artifact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                stage: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandoffArtifactOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     list_messages_api_v1_projects__project_id__messages_get: {
         parameters: {
             query?: {
@@ -3100,6 +7648,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_milestone_api_v1_projects__project_id__milestone_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MilestoneStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    sync_milestone_api_v1_projects__project_id__milestone_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MilestoneSignalsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MilestoneSyncResult"];
                 };
             };
             /** @description Validation Error */
@@ -3250,6 +7864,208 @@ export interface operations {
             };
         };
     };
+    get_pipeline_api_v1_projects__project_id__pipeline_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    advance_pipeline_api_v1_projects__project_id__pipeline_advance_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PipelineAdvanceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    pipeline_not_applicable_api_v1_projects__project_id__pipeline_not_applicable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PipelineNotApplicableRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    resume_pipeline_budget_api_v1_projects__project_id__pipeline_resume_budget_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    retry_pipeline_api_v1_projects__project_id__pipeline_retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PipelineRetryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    preview_sprint_plan_api_v1_projects__project_id__sprint_plan_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SprintPlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     list_sprints_api_v1_projects__project_id__sprints_get: {
         parameters: {
             query?: {
@@ -3374,6 +8190,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SprintOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    close_sprint_api_v1_projects__project_id__sprints_close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloseSprintIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloseSprintResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    open_sprint_api_v1_projects__project_id__sprints_open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpenSprintIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SprintCeremonyOut"];
                 };
             };
             /** @description Validation Error */
@@ -3551,6 +8437,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ToolApprovalOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_traceability_api_v1_projects__project_id__traceability_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Traceability"];
                 };
             };
             /** @description Validation Error */
@@ -3854,6 +8771,37 @@ export interface operations {
             };
         };
     };
+    get_task_loop_api_v1_tasks__task_id__loop_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoopView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     create_run_api_v1_tasks__task_id__runs_post: {
         parameters: {
             query?: never;
@@ -3876,6 +8824,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    resume_task_budget_api_v1_tasks__task_id__resume_budget_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskOut"];
                 };
             };
             /** @description Validation Error */
@@ -3940,6 +8919,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthzResponse"];
+                };
+            };
+        };
+    };
+    plugin_ui_plugin_ui__plugin_id___asset_path__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plugin_id: string;
+                asset_path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
