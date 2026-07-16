@@ -344,3 +344,61 @@ def test_raise_budget_resets_the_spend_counter(api: dict[str, Any]) -> None:
     counter_cleared, hold = run_async(scenario)
     assert counter_cleared  # spend counter reset so reserve() won't re-breach
     assert hold is None  # DB hold cleared too
+
+
+def test_kanban_event_names_the_agent_the_transition_named(api: dict[str, Any]) -> None:
+    """Phase 59 / Vol 4 §6.3: the frame carries the agent the transition NAMED, so
+    a board can attribute and animate an agent-involved move.
+
+    Be precise about what this pins, because it is easy to overclaim. The field is
+    the request's `actor_agent_id` verbatim. It is NOT reliably "who moved it":
+    `assign` names the ASSIGNEE, and a human may name it. What IS pinned:
+
+    * it is derivable from nothing else in the frame — the `ready` move leaves it
+      null while the others set it;
+    * it is a genuinely SEPARATE question from the assignee, which only `approve`
+      can demonstrate (BCK-016 forces the reviewer to differ from the assignee, so
+      that is the one action where the two fields must disagree). Asserting it on
+      `assign` alone would prove nothing: there they are the same agent.
+    """
+    pid = _project(api)
+    tid = _task(api, pid)
+    dev = _agent(api, "backend")
+    reviewer = _agent(api, "reviewer")
+    assert _transition(api, tid, "ready").status_code == 200
+    assert _transition(api, tid, "assign", actor=dev).status_code == 200
+    assert _transition(api, tid, "start").status_code == 200
+    assert _transition(api, tid, "submit_review").status_code == 200
+    assert _transition(api, tid, "approve", actor=reviewer).status_code == 200
+
+    async def _kanban_rows() -> list[dict[str, Any]]:
+        async with api["engine"].connect() as conn:
+            rows = (
+                await conn.execute(
+                    text("SELECT payload FROM outbox WHERE topic = :t ORDER BY created_at"),
+                    {"t": "stream:events.domain"},
+                )
+            ).all()
+        out = []
+        for r in rows:
+            wrapper = json.loads(r.payload) if isinstance(r.payload, str) else r.payload
+            data = wrapper.get("data", {})
+            if data.get("type") == "task.kanban" and data["kanban"]["task_id"] == tid:
+                out.append(data["kanban"])
+        return out
+
+    cards = run_async(_kanban_rows)
+    by_action = {c["action"]: c for c in cards}
+
+    # THE load-bearing assertion: on `approve` the named agent is the REVIEWER
+    # while the assignee is someone else. Nothing but the named agent could
+    # produce this value, so the field carries real information.
+    assert by_action["approve"]["actor_agent_id"] == reviewer
+    assert by_action["approve"]["assignee_agent_id"] == dev
+    assert reviewer != dev
+
+    # No agent named -> null. This is how a client tells a purely human move.
+    assert by_action["ready"]["actor_agent_id"] is None
+    # `assign` names the assignee (a human named it here) — same agent, which is
+    # exactly why `approve` above is what proves the two fields are distinct.
+    assert by_action["assign"]["actor_agent_id"] == dev

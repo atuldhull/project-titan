@@ -61,12 +61,27 @@ async def list_messages(
     principal: _ReadProject,
     thread_id: Annotated[uuid.UUID | None, Query()] = None,
     kind: Annotated[str | None, Query()] = None,
+    task_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> Page[MessageOut]:
+    """List a project's messages. ``task_id`` narrows to one task's thread — every
+    state change writes a transition message here (``orchestrator.service.
+    _write_transition_message``), so this doubles as the task's event history.
+
+    Two caveats a reader MUST know. The log is HOLEY: a transition whose
+    ``message_kind`` is None (the scheduler's backlog->ready) writes nothing. And
+    it is LOSSY: many actions collapse onto one kind (start/block/merge/fail/...
+    all become ``progress_report``), so what happened is ``body.action``, never
+    ``kind``."""
     keyset = keyset_from(pagination)
     async with request.app.state.engine.connect() as conn:
         await projects.get_project(conn, project_id)
         return await service.list_messages(
-            conn, project_id=project_id, keyset=keyset, thread_id=thread_id, kind=kind
+            conn,
+            project_id=project_id,
+            keyset=keyset,
+            thread_id=thread_id,
+            kind=kind,
+            task_id=task_id,
         )
 
 

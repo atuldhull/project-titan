@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
@@ -35,9 +35,19 @@ function isTab(value: string | null): value is Tab {
 export function ProjectDetail({ projectId }: { projectId: string }) {
   const router = useRouter();
   const params = useSearchParams();
-  const tab: Tab = isTab(params.get("tab"))
-    ? (params.get("tab") as Tab)
-    : "overview";
+  const requested = params.get("tab");
+  // `board` is a tab TRIGGER but not a tab PANE — it routes to the real board
+  // (see setTab). A bookmarked `?tab=board` must therefore go there too, not
+  // select a pane that does not exist and render blank. Fall back to overview
+  // for the render that precedes the redirect.
+  const tab: Tab =
+    isTab(requested) && requested !== "board" ? requested : "overview";
+
+  useEffect(() => {
+    if (requested === "board") {
+      router.replace(`/projects/${projectId}/board`);
+    }
+  }, [requested, projectId, router]);
 
   // Live: task/pipeline frames for this project keep the caches fresh.
   useTopic("projectTasks", projectId);
@@ -59,6 +69,13 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   }, [sprints.data]);
 
   const setTab = (next: string) => {
+    // The board is a real route of its own (Vol 4 §6.3/§11), not a tab pane.
+    // Route to it rather than render a second copy here: two board URLs would
+    // mean two homes for the `?task=` deep link and two live subscriptions.
+    if (next === "board") {
+      router.push(`/projects/${projectId}/board`);
+      return;
+    }
     const qs = new URLSearchParams(params.toString());
     if (next === "overview") {
       qs.delete("tab");
@@ -152,13 +169,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           </div>
         </TabsContent>
 
-        <TabsContent value="board">
-          <StubPage
-            title="Board"
-            description="The Kanban board with drag-and-drop, WIP limits and the task detail sheet (Vol 4 §6.3)."
-            milestone="Phase 59"
-          />
-        </TabsContent>
+        {/* No "board" TabsContent: selecting that tab navigates to
+            /projects/{pid}/board, the canonical board route. */}
         <TabsContent value="graph">
           <StubPage
             title="Dependency graph"

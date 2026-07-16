@@ -1,3 +1,4 @@
+import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -68,5 +69,75 @@ describe("queryKeysForProject", () => {
     expect(keys).toContainEqual(queryKeys.projectTasksAll("p1"));
     expect(keys).toContainEqual(queryKeys.projectRuns("p1"));
     expect(keys).toContainEqual(queryKeys.project("p1"));
+  });
+});
+
+describe("board invalidation (Phase 59)", () => {
+  // The board query must refetch when a task moves. It does — but only via the
+  // PREFIX relationship: queryKeys.project(pid) is ["project", pid], which
+  // partial-matches ["project", pid, "board"]. That is load-bearing and entirely
+  // implicit, so pin it against a real QueryClient rather than by reading the
+  // key list: projectTasksAll(pid) does NOT match the board, so if project(pid)
+  // were ever dropped from the task case the board would silently go static.
+  it("a task.kanban frame invalidates the board query", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    let fetches = 0;
+    await qc.fetchQuery({
+      queryKey: queryKeys.projectBoard("p1"),
+      queryFn: () => {
+        fetches += 1;
+        return Promise.resolve({ project_id: "p1", columns: [] });
+      },
+    });
+    expect(fetches).toBe(1);
+    expect(qc.getQueryState(queryKeys.projectBoard("p1"))?.isInvalidated).toBe(
+      false,
+    );
+
+    for (const queryKey of queryKeysForFrame(
+      domainFrame("task.kanban", "p1"),
+    )) {
+      await qc.invalidateQueries({ queryKey });
+    }
+
+    expect(qc.getQueryState(queryKeys.projectBoard("p1"))?.isInvalidated).toBe(
+      true,
+    );
+  });
+
+  it("a reconnect reconciliation invalidates the board query", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    await qc.fetchQuery({
+      queryKey: queryKeys.projectBoard("p1"),
+      queryFn: () => Promise.resolve({ project_id: "p1", columns: [] }),
+    });
+    for (const queryKey of queryKeysForProject("p1")) {
+      await qc.invalidateQueries({ queryKey });
+    }
+    expect(qc.getQueryState(queryKeys.projectBoard("p1"))?.isInvalidated).toBe(
+      true,
+    );
+  });
+
+  it("another project's task frame leaves our board alone", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    await qc.fetchQuery({
+      queryKey: queryKeys.projectBoard("p1"),
+      queryFn: () => Promise.resolve({ project_id: "p1", columns: [] }),
+    });
+    for (const queryKey of queryKeysForFrame(
+      domainFrame("task.kanban", "p2"),
+    )) {
+      await qc.invalidateQueries({ queryKey });
+    }
+    expect(qc.getQueryState(queryKeys.projectBoard("p1"))?.isInvalidated).toBe(
+      false,
+    );
   });
 });

@@ -163,6 +163,7 @@ async def list_messages(
     keyset: Keyset,
     thread_id: uuid.UUID | None,
     kind: str | None,
+    task_id: uuid.UUID | None = None,
 ) -> Sequence[Row[Any]]:
     clauses = ["project_id = :pid"]
     params: dict[str, Any] = {"pid": project_id, "limit": keyset.fetch}
@@ -172,6 +173,9 @@ async def list_messages(
     if kind is not None:
         clauses.append("kind = :kind")
         params["kind"] = kind
+    if task_id is not None:
+        clauses.append("task_id = :task_id")
+        params["task_id"] = task_id
     seek, seek_params = keyset.where()
     if seek:
         clauses.append(seek)

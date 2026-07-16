@@ -213,7 +213,7 @@ async def ready_pool_rows(conn: AsyncConnection, project_id: uuid.UUID) -> Seque
 async def board_rows(conn: AsyncConnection, project_id: uuid.UUID) -> Sequence[Row[Any]]:
     result = await conn.execute(
         text(
-            "SELECT id, title, status, priority, assignee_agent_id, sprint_id "
+            "SELECT id, title, status, priority, estimate_points, assignee_agent_id, sprint_id "
             "FROM tasks WHERE project_id = :pid ORDER BY priority ASC, created_at ASC"
         ),
         {"pid": project_id},

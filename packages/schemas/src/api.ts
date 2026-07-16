@@ -1400,7 +1400,18 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Messages */
+        /**
+         * List Messages
+         * @description List a project's messages. ``task_id`` narrows to one task's thread — every
+         *     state change writes a transition message here (``orchestrator.service.
+         *     _write_transition_message``), so this doubles as the task's event history.
+         *
+         *     Two caveats a reader MUST know. The log is HOLEY: a transition whose
+         *     ``message_kind`` is None (the scheduler's backlog->ready) writes nothing. And
+         *     it is LOSSY: many actions collapse onto one kind (start/block/merge/fail/...
+         *     all become ``progress_report``), so what happened is ``body.action``, never
+         *     ``kind``.
+         */
         get: operations["list_messages_api_v1_projects__project_id__messages_get"];
         put?: never;
         /** Create Message */
@@ -2001,6 +2012,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workflow
+         * @description The task state machine: the board's columns and its legal moves.
+         *
+         *     Static, project-independent metadata compiled into the app — no DB read and
+         *     no project in the path to scope against, so this authenticates only. It
+         *     describes the MACHINE, never a task: it discloses nothing about any project's
+         *     data, and every role that can reach the API already holds `*:read`.
+         */
+        get: operations["get_workflow_api_v1_workflow_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -2321,6 +2357,8 @@ export interface components {
         BoardCard: {
             /** Assignee Agent Id */
             assignee_agent_id: string | null;
+            /** Estimate Points */
+            estimate_points: number | null;
             /**
              * Id
              * Format: uuid
@@ -5176,6 +5214,49 @@ export interface components {
             /** Timeout Hours */
             timeout_hours?: number | null;
         };
+        /**
+         * WorkflowDefinition
+         * @description The task state machine (TITAN-BCK-012), served as data.
+         *
+         *     Vol 4 §6.3 wants a Kanban whose columns are "the workflow states" and whose
+         *     drags are legal moves. Both are THIS table, which until now lived only inside
+         *     the API: a client either hardcoded a copy (guaranteed to drift from
+         *     `transitions.py`) or discovered the rules from 409s. Publishing it is the
+         *     honest fix — one source of truth, read by both.
+         *
+         *     `states` is the canonical column order. `transitions` is exhaustive, so a
+         *     (from_status, to_status) pair absent from it is a move the board must refuse
+         *     to offer. It carries NO per-project configuration and no WIP limits: the
+         *     machine is global, and neither Vol 6 nor the backend defines either concept.
+         *
+         *     Legality here is necessary, not sufficient — actions additionally carry
+         *     server-side preconditions (`ready` needs its dependencies done, `complete`
+         *     needs a reflection on record, done-entry needs no unflushed working memory
+         *     and no Security veto). Those stay server-side and surface as a 409 with a
+         *     human-readable detail; a client cannot pre-compute them.
+         */
+        WorkflowDefinition: {
+            /** States */
+            states: string[];
+            /** Transitions */
+            transitions: components["schemas"]["WorkflowTransition"][];
+        };
+        /**
+         * WorkflowTransition
+         * @description One legal edge of the task state machine, as published to clients.
+         */
+        WorkflowTransition: {
+            /** Action */
+            action: string;
+            /** From Status */
+            from_status: string;
+            /** Required Permission */
+            required_permission: string;
+            /** Requires Actor Agent */
+            requires_actor_agent: boolean;
+            /** To Status */
+            to_status: string;
+        };
         /** WrittenRecord */
         WrittenRecord: {
             /** Chunk Count */
@@ -7595,6 +7676,7 @@ export interface operations {
             query?: {
                 thread_id?: string | null;
                 kind?: string | null;
+                task_id?: string | null;
                 limit?: number;
                 cursor?: string | null;
             };
@@ -8899,6 +8981,26 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_workflow_api_v1_workflow_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDefinition"];
                 };
             };
         };

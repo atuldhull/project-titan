@@ -84,6 +84,77 @@ export interface ErrorFramePayload {
   readonly message?: string;
 }
 
+/**
+ * `task.kanban` payload — the ONLY frame a task state change puts on the wire.
+ *
+ * Worth stating plainly, because Vol 4 §6.3 says otherwise: there is no
+ * `task.moved` event. A transition also writes a durable `task.{action}` domain
+ * event, but the fan-out republishes only a fixed subset of types and that is not
+ * one of them, so a board that waits for `task.moved` or for a `task.updated` on
+ * a move waits forever.
+ *
+ * `status` is the new PHYSICAL status and is what a board reconciles on. `lane` /
+ * `from_lane` are the coarser Vol 6 §2.5 projection, on which intra-lane moves
+ * (assigned -> in_progress) are EQUAL — they cannot be used to detect a move.
+ * There is no old status and no `version`: per-project `seq` is the only ordering.
+ *
+ * `actor_agent_id` is the agent the transition NAMED, not reliably "who moved
+ * it": for most actions an agent names itself, but `assign` names the assignee
+ * and the review actions name the reviewer — and a HUMAN may have named either.
+ * It is null only when no agent was named at all. It is also not the assignee (a
+ * reviewer approves someone else's task). The API cannot narrow this further —
+ * supplying `actor_agent_id` clears `actor_user_id` server-side, so by the time
+ * a frame is built, "a human named an agent" and "an agent acted" are already
+ * indistinguishable.
+ */
+export interface TaskKanbanPayload {
+  readonly task_id: string;
+  readonly project_id: string;
+  readonly title: string;
+  readonly status: string;
+  readonly lane: string;
+  readonly from_lane: string;
+  readonly action: string;
+  readonly priority: number;
+  readonly assignee_agent_id: string | null;
+  readonly actor_agent_id: string | null;
+}
+
+/**
+ * Narrow a `task.kanban` frame's payload, or null if it is not well-formed.
+ * Never throws: a malformed frame must not take down a board.
+ */
+export function parseTaskKanban(payload: unknown): TaskKanbanPayload | null {
+  if (typeof payload !== "object" || payload === null) {
+    return null;
+  }
+  const p = payload as Record<string, unknown>;
+  if (
+    typeof p.task_id !== "string" ||
+    typeof p.project_id !== "string" ||
+    typeof p.title !== "string" ||
+    typeof p.status !== "string" ||
+    typeof p.action !== "string" ||
+    typeof p.priority !== "number"
+  ) {
+    return null;
+  }
+  const nullableId = (v: unknown): string | null =>
+    typeof v === "string" ? v : null;
+  return {
+    task_id: p.task_id,
+    project_id: p.project_id,
+    title: p.title,
+    status: p.status,
+    lane: typeof p.lane === "string" ? p.lane : "",
+    from_lane: typeof p.from_lane === "string" ? p.from_lane : "",
+    action: p.action,
+    priority: p.priority,
+    assignee_agent_id: nullableId(p.assignee_agent_id),
+    actor_agent_id: nullableId(p.actor_agent_id),
+  };
+}
+
 /** `subscribed` / `unsubscribed` ack payload. */
 export interface SubscriptionAckPayload {
   readonly project_id: string | null;
@@ -120,11 +191,7 @@ export interface AuthenticateFrame {
 }
 
 export type ClientFrame =
-  | SubscribeFrame
-  | UnsubscribeFrame
-  | PingFrame
-  | PongFrame
-  | AuthenticateFrame;
+  SubscribeFrame | UnsubscribeFrame | PingFrame | PongFrame | AuthenticateFrame;
 
 // --- Topics -----------------------------------------------------------------
 

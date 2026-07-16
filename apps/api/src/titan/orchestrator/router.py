@@ -34,6 +34,7 @@ from titan.orchestrator.service import (
     TaskOut,
     TaskPatch,
     TransitionRequest,
+    WorkflowDefinition,
 )
 from titan.projects import service as projects
 
@@ -61,6 +62,21 @@ async def _authorize_task(request: Request, task: TaskOut, permission: str) -> N
     """Object-level authorization for an object-addressed task route: authorize
     against the task's own project (404 out-of-scope, 403 underpowered)."""
     await authorize_in_project(request, task.project_id, permission, resource="task")
+
+
+# --- the workflow definition (Vol 4 §6.3) ----------------------------------
+
+
+@router.get("/workflow", response_model=WorkflowDefinition)
+async def get_workflow(principal: _Authenticated) -> WorkflowDefinition:
+    """The task state machine: the board's columns and its legal moves.
+
+    Static, project-independent metadata compiled into the app — no DB read and
+    no project in the path to scope against, so this authenticates only. It
+    describes the MACHINE, never a task: it discloses nothing about any project's
+    data, and every role that can reach the API already holds `*:read`.
+    """
+    return service.workflow_definition()
 
 
 # --- project-nested task routes --------------------------------------------

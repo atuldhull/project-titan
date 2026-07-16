@@ -66,21 +66,41 @@ class Transition:
     #: job (Phase 14); the review path enforces reviewer != assignee directly, so
     #: this stays advisory here and completes the BCK-012 tuple shape.
     required_actor_role: str | None = None
+    #: Whether the action is meaningless without an ``actor_agent_id``: `assign`
+    #: names the assignee, the review actions name the reviewer. `apply_transition`
+    #: raises the 409 from THIS flag, so it can never drift from the code path —
+    #: and exposing it lets a client (the Kanban board) collect the agent up front
+    #: instead of discovering the requirement as a failed move.
+    requires_actor_agent: bool = False
 
 
 _TABLE: list[Transition] = [
     # Scheduling: deps met -> ready (system/scheduler-driven; no actor message).
     Transition("ready", "backlog", "ready", "task:transition", None),
     # Assignment (race-safe; sets assignee) and execution.
-    Transition("assign", "ready", "assigned", "task:assign", "task_assignment"),
+    Transition(
+        "assign", "ready", "assigned", "task:assign", "task_assignment", requires_actor_agent=True
+    ),
     Transition("start", "assigned", "in_progress", "task:transition", "progress_report"),
     Transition("start", "reopened", "in_progress", "task:transition", "progress_report"),
     Transition("submit_review", "in_progress", "in_review", "task:transition", "review_request"),
     # Review outcomes (reviewer must differ from the assignee — enforced in the
     # service, not the table).
-    Transition("approve", "in_review", "done", "task:transition", "review_request"),
     Transition(
-        "request_changes", "in_review", "changes_requested", "task:transition", "review_request"
+        "approve",
+        "in_review",
+        "done",
+        "task:transition",
+        "review_request",
+        requires_actor_agent=True,
+    ),
+    Transition(
+        "request_changes",
+        "in_review",
+        "changes_requested",
+        "task:transition",
+        "review_request",
+        requires_actor_agent=True,
     ),
     Transition("resubmit", "changes_requested", "in_review", "task:transition", "progress_report"),
     # Reopen a completed task (new run attempt; task:reopen).

@@ -116,6 +116,9 @@ class BoardCard(BaseModel):
     title: str
     status: str
     priority: int
+    #: Story points (§6.3 renders them on the card). Always been a `tasks` column;
+    #: it was simply never projected onto the board.
+    estimate_points: int | None
     assignee_agent_id: uuid.UUID | None
     sprint_id: uuid.UUID | None
 
@@ -128,6 +131,47 @@ class BoardColumn(BaseModel):
 class Board(BaseModel):
     project_id: uuid.UUID
     columns: list[BoardColumn]
+
+
+# --- the task workflow definition (Vol 4 §6.3) ------------------------------
+
+
+class WorkflowTransition(BaseModel):
+    """One legal edge of the task state machine, as published to clients."""
+
+    action: str
+    from_status: str
+    to_status: str
+    #: The RBAC permission the caller needs — a board gates the drag on this.
+    required_permission: str
+    #: True when the action is meaningless without naming an agent (`assign` names
+    #: the assignee; the review actions name the reviewer).
+    requires_actor_agent: bool
+
+
+class WorkflowDefinition(BaseModel):
+    """The task state machine (TITAN-BCK-012), served as data.
+
+    Vol 4 §6.3 wants a Kanban whose columns are "the workflow states" and whose
+    drags are legal moves. Both are THIS table, which until now lived only inside
+    the API: a client either hardcoded a copy (guaranteed to drift from
+    `transitions.py`) or discovered the rules from 409s. Publishing it is the
+    honest fix — one source of truth, read by both.
+
+    `states` is the canonical column order. `transitions` is exhaustive, so a
+    (from_status, to_status) pair absent from it is a move the board must refuse
+    to offer. It carries NO per-project configuration and no WIP limits: the
+    machine is global, and neither Vol 6 nor the backend defines either concept.
+
+    Legality here is necessary, not sufficient — actions additionally carry
+    server-side preconditions (`ready` needs its dependencies done, `complete`
+    needs a reflection on record, done-entry needs no unflushed working memory
+    and no Security veto). Those stay server-side and surface as a 409 with a
+    human-readable detail; a client cannot pre-compute them.
+    """
+
+    states: list[str]
+    transitions: list[WorkflowTransition]
 
 
 class GraphNode(BaseModel):
@@ -168,12 +212,32 @@ async def _emit_kanban(
     to_status: str,
     action: str,
     actor: str,
+    actor_agent_id: uuid.UUID | None = None,
 ) -> None:
     """Emit the Vol 6 §2.5 Kanban event every task state change SHALL produce
     (TITAN-WFL-009). One outbox row on the domain stream; the Phase-24 fan-out
     republishes it to ``ws.project.{id}`` as a ``task.kanban`` frame so the Kanban
     artifact updates live. Carries the §2.5 lane so the board never has to know
-    the fine-grained engineering statuses."""
+    the fine-grained engineering statuses.
+
+    ``actor_agent_id`` is the agent this transition NAMES — the request's
+    ``actor_agent_id`` verbatim, which is also what the row records as its actor.
+    Be precise about what that does and does not mean:
+
+    * For most actions an agent names ITSELF, so it is the mover.
+    * For ``assign``/``approve``/``request_changes`` it is the agent the action
+      names — the assignee or the reviewer — and a HUMAN may have named it. So it
+      is not reliably "who moved this", and a client must not say so.
+    * It is None only when NO agent was named (a human or system move with no
+      actor_agent_id), which is what lets a client tell a move that involves an
+      agent from a purely human one.
+
+    The API cannot do better here: the router sets ``actor_user_id`` to None the
+    moment a caller supplies ``actor_agent_id``, so by this point "a human named
+    an agent" and "an agent acted" are already indistinguishable.
+
+    It is still worth publishing: the outbox row's ``actor`` is an untyped id
+    string a subscriber cannot tell apart from a user's, and this is typed."""
     await write_event(
         conn,
         STREAM_EVENTS_DOMAIN,
@@ -191,6 +255,7 @@ async def _emit_kanban(
                 "assignee_agent_id": (
                     str(task.assignee_agent_id) if task.assignee_agent_id is not None else None
                 ),
+                "actor_agent_id": (str(actor_agent_id) if actor_agent_id is not None else None),
             },
         },
         actor=actor,
@@ -375,6 +440,16 @@ async def _write_transition_message(
     )
 
 
+#: The 409 detail for an actor-requiring action invoked without an agent. Keyed
+#: by action so each says what the agent is FOR; the requirement itself is the
+#: table's `requires_actor_agent`, never this map's membership.
+_ACTOR_REQUIRED_DETAIL: dict[str, str] = {
+    "assign": "assign requires actor_agent_id (the agent to assign).",
+    "approve": "A review action requires a reviewer agent (actor_agent_id).",
+    "request_changes": "A review action requires a reviewer agent (actor_agent_id).",
+}
+
+
 async def apply_transition(
     conn: AsyncConnection,
     task: TaskOut,
@@ -446,20 +521,25 @@ async def apply_transition(
 
     if action == "ready" and not await repo.dependencies_all_done(conn, task.id):
         raise _conflict("Cannot mark ready: not all dependencies are done.")
-    if action == "assign":
+    # The actor-agent requirement is READ from the transition table rather than
+    # re-listed here: `requires_actor_agent` is exactly what /api/v1/workflow
+    # publishes, so a client that pre-collects the agent and this 409 cannot
+    # disagree about which actions need one.
+    if transition.requires_actor_agent:
         if actor_agent_id is None:
-            raise _conflict("assign requires actor_agent_id (the agent to assign).")
+            raise _conflict(
+                _ACTOR_REQUIRED_DETAIL.get(action, f"{action} requires actor_agent_id.")
+            )
+        # Every actor-requiring action names an agent that must be in the project.
         await _require_actor_in_project(conn, actor_agent_id, task.project_id)
-        columns["assignee_agent_id"] = actor_agent_id
-    if action in ("approve", "request_changes"):
-        if actor_agent_id is None:
-            raise _conflict("A review action requires a reviewer agent (actor_agent_id).")
-        await _require_actor_in_project(conn, actor_agent_id, task.project_id)
-        # TITAN-BCK-016: the reviewer MUST differ from the assignee — a task can
-        # never reach done on a self-review.
-        if task.assignee_agent_id is not None and actor_agent_id == task.assignee_agent_id:
-            raise _conflict("The reviewer must be different from the assignee.")
-        columns["reviewer_agent_id"] = actor_agent_id
+        if action == "assign":
+            columns["assignee_agent_id"] = actor_agent_id
+        elif action in ("approve", "request_changes"):
+            # TITAN-BCK-016: the reviewer MUST differ from the assignee — a task can
+            # never reach done on a self-review.
+            if task.assignee_agent_id is not None and actor_agent_id == task.assignee_agent_id:
+                raise _conflict("The reviewer must be different from the assignee.")
+            columns["reviewer_agent_id"] = actor_agent_id
     if is_done_entry:
         # §7.4 / TITAN-AGT-018: reaching `done` is the merge. A Security veto
         # blocks it regardless of this (or any) approval — the gate consults ONLY
@@ -515,6 +595,7 @@ async def apply_transition(
         to_status=updated.status,
         action=action,
         actor=event_actor,
+        actor_agent_id=actor_agent_id,
     )
     if updated.status == "ready":
         await _enqueue_ready(conn, updated)
@@ -1160,6 +1241,29 @@ async def board_for_project(conn: AsyncConnection, project_id: uuid.UUID) -> Boa
         if s not in TASK_STATUSES
     ]
     return Board(project_id=project_id, columns=columns)
+
+
+def workflow_definition() -> WorkflowDefinition:
+    """The task state machine as data (see :class:`WorkflowDefinition`).
+
+    Pure — a projection of ``transitions._TABLE``, no DB, no I/O. Sorted for a
+    stable response: `states` keeps the canonical board order from ``STATES``
+    (NOT alphabetical), transitions by (from_status, action)."""
+    return WorkflowDefinition(
+        states=list(transitions.STATES),
+        transitions=[
+            WorkflowTransition(
+                action=t.action,
+                from_status=t.from_status,
+                to_status=t.to_status,
+                required_permission=t.required_permission,
+                requires_actor_agent=t.requires_actor_agent,
+            )
+            for t in sorted(
+                transitions.TRANSITIONS.values(), key=lambda t: (t.from_status, t.action)
+            )
+        ],
+    )
 
 
 async def graph_for_project(conn: AsyncConnection, project_id: uuid.UUID) -> Graph:

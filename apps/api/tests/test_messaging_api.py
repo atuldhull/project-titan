@@ -277,3 +277,115 @@ def test_read_state_persists_across_restart(api: dict[str, Any]) -> None:
         one = fresh.get("/api/v1/notifications", headers=headers).json()
         persisted = {n["id"]: n for n in one["items"]}[nid]
         assert persisted["read_at"] is not None
+
+
+def test_list_messages_filters_by_task(api: dict[str, Any]) -> None:
+    """Phase 59 / Vol 4 §6.3: the task Sheet's conversation AND its event history.
+
+    `messages.task_id` has been a real FK since 0003 and every transition writes
+    one (`orchestrator.service._write_transition_message`) — the data was durable
+    all along, just unreadable without this filter."""
+    owner = api["token_for"]("owner")
+    pid = _project(api)
+    tid = str(
+        api["client"]
+        .post(f"/api/v1/projects/{pid}/tasks", json={"title": "t"}, headers=owner)
+        .json()["id"]
+    )
+    other = str(
+        api["client"]
+        .post(f"/api/v1/projects/{pid}/tasks", json={"title": "other"}, headers=owner)
+        .json()["id"]
+    )
+    # Project chatter with no task at all — must never leak into a task's thread.
+    api["client"].post(
+        f"/api/v1/projects/{pid}/messages",
+        json={"kind": "human", "body": {"text": "unrelated"}},
+        headers=owner,
+    )
+    api["client"].post(
+        f"/api/v1/projects/{pid}/messages",
+        json={"kind": "human", "body": {"text": "about other"}, "task_id": other},
+        headers=owner,
+    )
+    # backlog -> ready is the SYSTEM transition: its message_kind is None, so it
+    # writes NOTHING. This is the documented hole in the history — pinned here so
+    # no Sheet is ever built assuming every move leaves a trace.
+    assert (
+        api["client"]
+        .post(f"/api/v1/tasks/{tid}:transition", json={"action": "ready"}, headers=owner)
+        .status_code
+        == 200
+    )
+    after_system_move = api["client"].get(
+        f"/api/v1/projects/{pid}/messages?task_id={tid}", headers=owner
+    )
+    assert after_system_move.json()["items"] == []
+
+    # ready -> blocked DOES carry a kind: the history entry the Sheet renders.
+    assert (
+        api["client"]
+        .post(f"/api/v1/tasks/{tid}:transition", json={"action": "block"}, headers=owner)
+        .status_code
+        == 200
+    )
+
+    r = api["client"].get(f"/api/v1/projects/{pid}/messages?task_id={tid}", headers=owner)
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    assert {i["task_id"] for i in items} == {tid}
+    # What happened is body.action — `kind` is lossy (block/start/merge/fail all
+    # collapse onto progress_report), so a Sheet reading `kind` would misreport.
+    assert [i["body"]["action"] for i in items] == ["block"]
+    assert items[0]["kind"] == "progress_report"
+    assert items[0]["body"]["from"] == "ready"
+    assert items[0]["body"]["to"] == "blocked"
+
+    # Unfiltered still returns everything (the filter is opt-in, not a default).
+    everything = api["client"].get(f"/api/v1/projects/{pid}/messages", headers=owner).json()
+    assert len(everything["items"]) == 3
+
+
+def test_list_messages_task_filter_composes_with_kind(api: dict[str, Any]) -> None:
+    owner = api["token_for"]("owner")
+    pid = _project(api)
+    tid = str(
+        api["client"]
+        .post(f"/api/v1/projects/{pid}/tasks", json={"title": "t"}, headers=owner)
+        .json()["id"]
+    )
+    api["client"].post(
+        f"/api/v1/projects/{pid}/messages",
+        json={"kind": "human", "body": {"text": "hi"}, "task_id": tid},
+        headers=owner,
+    )
+    api["client"].post(
+        f"/api/v1/projects/{pid}/messages",
+        json={"kind": "bug_report", "body": {"text": "bug"}, "task_id": tid},
+        headers=owner,
+    )
+    # A message matching the KIND but on a DIFFERENT task. Without it the kind
+    # filter alone yields the asserted result and the test proves nothing about
+    # composition — it would pass against a build with no task filter at all.
+    other = str(
+        api["client"]
+        .post(f"/api/v1/projects/{pid}/tasks", json={"title": "other"}, headers=owner)
+        .json()["id"]
+    )
+    api["client"].post(
+        f"/api/v1/projects/{pid}/messages",
+        json={"kind": "bug_report", "body": {"text": "other bug"}, "task_id": other},
+        headers=owner,
+    )
+
+    r = api["client"].get(
+        f"/api/v1/projects/{pid}/messages?task_id={tid}&kind=bug_report", headers=owner
+    )
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    assert [i["kind"] for i in items] == ["bug_report"]
+    assert [i["body"]["text"] for i in items] == ["bug"]  # not "other bug"
+
+    # Both predicates are load-bearing: kind alone would return two.
+    kind_only = api["client"].get(f"/api/v1/projects/{pid}/messages?kind=bug_report", headers=owner)
+    assert len(kind_only.json()["items"]) == 2

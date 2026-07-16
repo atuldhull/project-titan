@@ -628,6 +628,17 @@
             ],
             "title": "Assignee Agent Id"
           },
+          "estimate_points": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate Points"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -663,6 +674,7 @@
           "title",
           "status",
           "priority",
+          "estimate_points",
           "assignee_agent_id",
           "sprint_id"
         ],
@@ -7503,6 +7515,65 @@
         "title": "UserRequestSubmission",
         "type": "object"
       },
+      "WorkflowDefinition": {
+        "description": "The task state machine (TITAN-BCK-012), served as data.\n\nVol 4 \u00a76.3 wants a Kanban whose columns are \"the workflow states\" and whose\ndrags are legal moves. Both are THIS table, which until now lived only inside\nthe API: a client either hardcoded a copy (guaranteed to drift from\n`transitions.py`) or discovered the rules from 409s. Publishing it is the\nhonest fix \u2014 one source of truth, read by both.\n\n`states` is the canonical column order. `transitions` is exhaustive, so a\n(from_status, to_status) pair absent from it is a move the board must refuse\nto offer. It carries NO per-project configuration and no WIP limits: the\nmachine is global, and neither Vol 6 nor the backend defines either concept.\n\nLegality here is necessary, not sufficient \u2014 actions additionally carry\nserver-side preconditions (`ready` needs its dependencies done, `complete`\nneeds a reflection on record, done-entry needs no unflushed working memory\nand no Security veto). Those stay server-side and surface as a 409 with a\nhuman-readable detail; a client cannot pre-compute them.",
+        "properties": {
+          "states": {
+            "items": {
+              "type": "string"
+            },
+            "title": "States",
+            "type": "array"
+          },
+          "transitions": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowTransition"
+            },
+            "title": "Transitions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "states",
+          "transitions"
+        ],
+        "title": "WorkflowDefinition",
+        "type": "object"
+      },
+      "WorkflowTransition": {
+        "description": "One legal edge of the task state machine, as published to clients.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "from_status": {
+            "title": "From Status",
+            "type": "string"
+          },
+          "required_permission": {
+            "title": "Required Permission",
+            "type": "string"
+          },
+          "requires_actor_agent": {
+            "title": "Requires Actor Agent",
+            "type": "boolean"
+          },
+          "to_status": {
+            "title": "To Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "from_status",
+          "to_status",
+          "required_permission",
+          "requires_actor_agent"
+        ],
+        "title": "WorkflowTransition",
+        "type": "object"
+      },
       "WrittenRecord": {
         "properties": {
           "chunk_count": {
@@ -10965,6 +11036,7 @@
     },
     "/api/v1/projects/{project_id}/messages": {
       "get": {
+        "description": "List a project's messages. ``task_id`` narrows to one task's thread \u2014 every\nstate change writes a transition message here (``orchestrator.service.\n_write_transition_message``), so this doubles as the task's event history.\n\nTwo caveats a reader MUST know. The log is HOLEY: a transition whose\n``message_kind`` is None (the scheduler's backlog->ready) writes nothing. And\nit is LOSSY: many actions collapse onto one kind (start/block/merge/fail/...\nall become ``progress_report``), so what happened is ``body.action``, never\n``kind``.",
         "operationId": "list_messages_api_v1_projects__project_id__messages_get",
         "parameters": [
           {
@@ -11008,6 +11080,23 @@
                 }
               ],
               "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "task_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Id"
             }
           },
           {
@@ -13131,6 +13220,28 @@
           }
         },
         "summary": "Transition Task",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/workflow": {
+      "get": {
+        "description": "The task state machine: the board's columns and its legal moves.\n\nStatic, project-independent metadata compiled into the app \u2014 no DB read and\nno project in the path to scope against, so this authenticates only. It\ndescribes the MACHINE, never a task: it discloses nothing about any project's\ndata, and every role that can reach the API already holds `*:read`.",
+        "operationId": "get_workflow_api_v1_workflow_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDefinition"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Workflow",
         "tags": [
           "tasks"
         ]

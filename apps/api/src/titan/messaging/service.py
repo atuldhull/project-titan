@@ -265,9 +265,10 @@ async def list_messages(
     keyset: Keyset,
     thread_id: uuid.UUID | None,
     kind: str | None,
+    task_id: uuid.UUID | None = None,
 ) -> Page[MessageOut]:
     rows = await repo.list_messages(
-        conn, project_id=project_id, keyset=keyset, thread_id=thread_id, kind=kind
+        conn, project_id=project_id, keyset=keyset, thread_id=thread_id, kind=kind, task_id=task_id
     )
     page, cursor = keyset.paginate(rows)
     return Page(items=[MessageOut.model_validate(r) for r in page], next_cursor=cursor)
