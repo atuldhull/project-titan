@@ -68,7 +68,9 @@ def upgrade() -> None:
             name="ck_derived_artifacts_kind",
         ),
     )
-    op.create_index("ix_derived_artifacts_project_kind", "derived_artifacts", ["project_id", "kind"])
+    op.create_index(
+        "ix_derived_artifacts_project_kind", "derived_artifacts", ["project_id", "kind"]
+    )
     op.execute(
         "CREATE TRIGGER trg_derived_artifacts_updated_at BEFORE UPDATE ON derived_artifacts "
         "FOR EACH ROW EXECUTE FUNCTION set_updated_at()"

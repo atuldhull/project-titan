@@ -14,6 +14,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from titan.intake.parsing import extract_balanced
+
 MAX_STORIES = 12
 # Task.title is capped at 500 chars (orchestrator TaskCreate); clamp here so one
 # verbose/hostile story can never raise a validation error at persist time.
@@ -43,7 +45,7 @@ def parse_stories(text: str) -> list[Story]:
 
 
 def _from_json(text: str) -> list[Story]:
-    raw = _extract_json_array(text)
+    raw = extract_balanced(text, "[", "]")
     if raw is None:
         return []
     try:
@@ -74,35 +76,6 @@ def _story_from_item(item: Any) -> Story | None:
     else:
         criteria = []
     return Story(title=title, acceptance=tuple(criteria))
-
-
-def _extract_json_array(text: str) -> str | None:
-    """The first balanced ``[ … ]`` in the text (tolerating prose/fences around it)."""
-    start = text.find("[")
-    if start == -1:
-        return None
-    depth = 0
-    in_str = False
-    escape = False
-    for i in range(start, len(text)):
-        ch = text[i]
-        if in_str:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == "[":
-            depth += 1
-        elif ch == "]":
-            depth -= 1
-            if depth == 0:
-                return text[start : i + 1]
-    return None
 
 
 def _from_lines(text: str) -> list[Story]:

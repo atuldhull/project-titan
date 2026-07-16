@@ -1,7 +1,9 @@
-"""Phase 25 (walking skeleton) tests: the story parser, the direct WS publisher,
-the gateway's metered streaming (usage lands in llm_usage), and the CEO intake
-handler end to end against a fake gateway. Hermetic parts run over fakeredis in a
-single loop; the persistence/metering parts are ``schema``-marked (Postgres)."""
+"""Phase 25 (walking skeleton) tests: the story + clarification parsers, the direct
+WS publisher, the gateway's metered streaming (usage lands in llm_usage), and the
+CEO intake handler end to end against a fake gateway — including the §2.4
+clarification batch it opens through the Phase-43 engine. Hermetic parts run over
+fakeredis in a single loop; the persistence/metering parts are ``schema``-marked
+(Postgres)."""
 
 import json
 import uuid
@@ -15,7 +17,10 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from titan.clarification import service as clarification
+from titan.clarification.engine import MAX_CLARIFICATION_QUESTIONS
 from titan.db import uuid7
+from titan.intake.questions import MAX_PROPOSED_QUESTIONS, parse_clarification_draft
 from titan.intake.service import run_intake
 from titan.intake.stories import MAX_STORIES, parse_stories
 from titan.llm.config import ConfigLoader
@@ -71,6 +76,80 @@ def test_parse_stories_clamps_over_length_title() -> None:
     long = "As a user, I want " + "x" * 800 + ", so that Y"
     stories = parse_stories(json.dumps([{"title": long}]))
     assert len(stories) == 1 and len(stories[0].title) == 500
+
+
+# --- clarification-question parser ------------------------------------------
+
+
+def test_parse_clarification_draft_from_object_with_prose_and_fence() -> None:
+    text_out = (
+        "Sure! Here is what I need to know:\n```json\n"
+        '{"questions": [{"topic": "content licensing", "question": "Real licensing or mocked?"},'
+        '{"topic": "scale", "question": "How many users?"}],'
+        '"inferable_topics": ["region", "team size"]}'
+        "\n```\nLet me know."
+    )
+    draft = parse_clarification_draft(text_out)
+    assert [(q.topic, q.question) for q in draft.questions] == [
+        ("content licensing", "Real licensing or mocked?"),
+        ("scale", "How many users?"),
+    ]
+    assert draft.inferable_topics == ("region", "team size")
+
+
+def test_parse_clarification_draft_falls_back_to_bare_array() -> None:
+    # A model that dropped the envelope: the first balanced `{…}` is the first ITEM,
+    # not the envelope, so the object parse must decline and the array win.
+    text_out = '[{"topic": "scope", "question": "How big?"}]'
+    draft = parse_clarification_draft(text_out)
+    assert [q.topic for q in draft.questions] == ["scope"]
+    assert draft.inferable_topics == ()
+
+
+def test_parse_clarification_draft_drops_untopiced_and_malformed() -> None:
+    # No topic → the §2.4 policy could not check it against the canonical defaults,
+    # so it is never asked. Same for a question with no text, and for non-objects.
+    text_out = json.dumps(
+        {
+            "questions": [
+                {"question": "Which cloud?"},
+                {"topic": "scope", "question": "   "},
+                "not an object",
+                {"topic": "payments", "question": "Real payments or mocked?"},
+            ]
+        }
+    )
+    draft = parse_clarification_draft(text_out)
+    assert [q.topic for q in draft.questions] == ["payments"]
+
+
+def test_parse_clarification_draft_is_bounded() -> None:
+    # The runaway guard — NOT the policy cap. The engine still owns the ≤5 decision.
+    many = json.dumps({"questions": [{"topic": f"t{i}", "question": f"q{i}?"} for i in range(40)]})
+    assert len(parse_clarification_draft(many).questions) == MAX_PROPOSED_QUESTIONS
+    assert MAX_PROPOSED_QUESTIONS > MAX_CLARIFICATION_QUESTIONS
+
+
+def test_parse_clarification_draft_clamps_over_length_fields() -> None:
+    # Clamped to the clarification DTO's caps so a verbose model cannot raise a
+    # validation error at submit time (mirrors the story title clamp).
+    payload = json.dumps(
+        {
+            "questions": [{"topic": "t" * 400, "question": "q" * 4000}],
+            "inferable_topics": ["i" * 400],
+        }
+    )
+    draft = parse_clarification_draft(payload)
+    assert len(draft.questions[0].topic) == 200 and len(draft.questions[0].question) == 2000
+    assert len(draft.inferable_topics[0]) == 200
+
+
+def test_parse_clarification_draft_empty_on_garbage() -> None:
+    # An unparseable turn yields nothing to ask — a safe outcome, not a failure.
+    assert parse_clarification_draft("I have no questions, let's build!") == (
+        parse_clarification_draft("")
+    )
+    assert parse_clarification_draft("nope").questions == ()
 
 
 # --- RealtimePublisher -----------------------------------------------------
@@ -173,16 +252,29 @@ def test_gateway_stream_meters_usage(migrated_engine: AsyncEngine, tmp_path: Pat
 
 
 class _FakeGateway:
-    """A gateway double whose ``stream`` yields a scripted delta sequence."""
+    """A gateway double whose ``stream`` yields a scripted delta sequence. Intake
+    makes TWO turns per run (clarification, then stories): ``turns`` scripts each
+    successive call, while a bare ``script`` is replayed for every call. Requests
+    are recorded so a test can assert which prompt drove which turn."""
 
-    def __init__(self, script: list[StreamDelta], *, raises: bool = False) -> None:
-        self._script = script
+    def __init__(
+        self,
+        script: list[StreamDelta] | None = None,
+        *,
+        turns: list[list[StreamDelta]] | None = None,
+        raises: bool = False,
+    ) -> None:
+        self._script = script or []
+        self._turns = list(turns) if turns is not None else None
         self._raises = raises
+        self.calls: list[ChatRequest] = []
 
     async def stream(
         self, req: ChatRequest, *, run_id: uuid.UUID | None = None
     ) -> AsyncIterator[StreamDelta]:
-        for delta in self._script:
+        self.calls.append(req)
+        script = self._turns.pop(0) if self._turns else self._script
+        for delta in script:
             yield delta
         if self._raises:
             raise RuntimeError("provider exploded")
@@ -213,9 +305,53 @@ _STORY_JSON = (
     '{"title": "As a user, I want to filter by status, so that I focus"}]'
 )
 
+_CLARIFY_JSON = json.dumps(
+    {
+        "questions": [{"topic": "sharing", "question": "Are task lists shared between users?"}],
+        "inferable_topics": ["region"],
+    }
+)
+
+
+def _story_script() -> list[StreamDelta]:
+    return [
+        StreamDelta(type="text", text=_STORY_JSON[:40]),
+        StreamDelta(type="text", text=_STORY_JSON[40:]),
+        StreamDelta(
+            type="done", finish_reason="stop", usage=Usage(input_tokens=12, output_tokens=30)
+        ),
+    ]
+
+
+def _clarify_script(payload: str = _CLARIFY_JSON) -> list[StreamDelta]:
+    return [
+        StreamDelta(type="text", text=payload),
+        StreamDelta(
+            type="done", finish_reason="stop", usage=Usage(input_tokens=8, output_tokens=9)
+        ),
+    ]
+
+
+async def _clarification_events(engine: AsyncEngine, project_id: uuid.UUID) -> list[dict[str, Any]]:
+    """The clarification.updated events the engine wrote to the outbox for a project."""
+    async with engine.connect() as conn:
+        rows = await conn.execute(
+            text(
+                "SELECT payload FROM outbox "
+                "WHERE payload->'data'->>'type' = 'clarification.updated' "
+                "AND payload->'data'->'clarification'->>'project_id' = :p"
+            ),
+            {"p": str(project_id)},
+        )
+        raw = [r.payload for r in rows]
+    return [cast(dict[str, Any], json.loads(p) if isinstance(p, str) else p) for p in raw]
+
 
 @pytest.mark.schema
 def test_run_intake_streams_and_persists(migrated_engine: AsyncEngine) -> None:
+    """One run, two CEO turns: the clarification questions stream first, then the
+    backlog — both under a single run.started/run.finished envelope."""
+
     async def scenario() -> None:
         redis = _fake()
         pid = uuid7()
@@ -224,33 +360,42 @@ def test_run_intake_streams_and_persists(migrated_engine: AsyncEngine) -> None:
         await ps.subscribe(channels.project_channel(str(pid)))
         await ps.get_message(timeout=0.05)
 
-        script = [
-            StreamDelta(type="text", text=_STORY_JSON[:40]),
-            StreamDelta(type="text", text=_STORY_JSON[40:]),
-            StreamDelta(
-                type="done", finish_reason="stop", usage=Usage(input_tokens=12, output_tokens=30)
-            ),
-        ]
+        gateway = _FakeGateway(turns=[_clarify_script(), _story_script()])
         count = await run_intake(
             engine=migrated_engine,
-            gateway=cast(Any, _FakeGateway(script)),
+            gateway=cast(Any, gateway),
             publisher=RealtimePublisher(redis),
             project_id=pid,
             brief="Build a task tracker",
             model_alias="local-default",
         )
         assert count == 2
+        assert len(gateway.calls) == 2  # clarification turn, then the backlog turn
 
         frames = []
-        for _ in range(10):
+        for _ in range(12):
             message = await ps.get_message(timeout=0.1)
             if message and message["type"] == "message":
                 frames.append(json.loads(message["data"]))
         types = [f["type"] for f in frames]
         assert types[0] == "run.started"
-        assert types.count("run.output.delta") == 2
+        assert types.count("run.output.delta") == 3  # 1 clarification + 2 backlog
+        # ONE envelope for the whole run: the UI's stream flips to done exactly once.
+        assert types.count("run.started") == 1 and types.count("run.finished") == 1
         assert types[-1] == "run.finished"
         assert frames[-1]["payload"]["status"] == "succeeded"
+        assert frames[-1]["payload"] == {
+            "run_id": frames[-1]["payload"]["run_id"],
+            "agent_id": "agent.ceo",
+            "project_id": str(pid),
+            "status": "succeeded",
+            "stories": 2,
+            "questions": 1,
+        }
+        # The question TEXT reaches the UI ONLY as run.output.delta tokens — this is
+        # the sanctioned streaming path (TITAN-OPS-016).
+        streamed = "".join(f["payload"]["delta"] for f in frames if f["type"] == "run.output.delta")
+        assert "Are task lists shared between users?" in streamed
 
         async with migrated_engine.connect() as conn:
             titles = [
@@ -259,11 +404,138 @@ def test_run_intake_streams_and_persists(migrated_engine: AsyncEngine) -> None:
                     text("SELECT title FROM tasks WHERE project_id = :p ORDER BY title"), {"p": pid}
                 )
             ]
+            batch = await clarification.get_clarification(conn, pid)
         assert titles == [
             "As a user, I want to add tasks, so that I track work",
             "As a user, I want to filter by status, so that I focus",
         ]
+        # The batch was opened through the Phase-43 engine, by the CEO.
+        assert batch.status == "open" and batch.opened_by == "agent.ceo"
+        assert [q.question for q in batch.questions] == ["Are task lists shared between users?"]
+
+        # clarification.updated is the UI's refetch signal and carries NO text.
+        events = await _clarification_events(migrated_engine, pid)
+        assert len(events) == 1
+        emitted = events[0]["data"]["clarification"]
+        assert emitted["question_count"] == 1 and emitted["status"] == "open"
+        assert "Are task lists shared" not in json.dumps(events[0])
+
         await ps.aclose()
+        await redis.aclose()
+
+    run_async(scenario)
+
+
+@pytest.mark.schema
+def test_run_intake_lets_the_engine_own_the_policy(migrated_engine: AsyncEngine) -> None:
+    """Intake proposes; ``clarification.engine`` disposes (TITAN-WFL-007). Intake
+    applies neither the ≤5 cap nor the canonical-default/inferable demotion — it
+    hands every candidate to the engine and the engine's verdict is what persists."""
+
+    async def scenario() -> None:
+        redis = _fake()
+        pid = uuid7()
+        await _seed_project(migrated_engine, pid)
+        proposed = (
+            # canonical default → demoted to an assumption, never asked
+            [{"topic": "which database", "question": "Which database?"}]
+            # inferable → demoted to an assumption, never asked
+            + [{"topic": "region", "question": "Which region?"}]
+            # 6 essential → 5 kept, 1 deferred as a high-visibility assumption
+            + [{"topic": f"t{i}", "question": f"q{i}?"} for i in range(6)]
+        )
+        payload = json.dumps({"questions": proposed, "inferable_topics": ["region"]})
+        count = await run_intake(
+            engine=migrated_engine,
+            gateway=cast(Any, _FakeGateway(turns=[_clarify_script(payload), _story_script()])),
+            publisher=RealtimePublisher(redis),
+            project_id=pid,
+            brief="Build a bookmarking app",
+            model_alias="local-default",
+        )
+        assert count == 2  # the backlog still lands
+
+        async with migrated_engine.connect() as conn:
+            batch = await clarification.get_clarification(conn, pid)
+        assert len(batch.questions) == MAX_CLARIFICATION_QUESTIONS
+        assert not any("database" in q.topic for q in batch.questions)
+        sources = {a.source for a in batch.assumptions}
+        assert {"canonical_default", "org_memory", "excess_question"} <= sources
+        await redis.aclose()
+
+    run_async(scenario)
+
+
+@pytest.mark.schema
+def test_run_intake_skips_clarification_when_a_batch_exists(migrated_engine: AsyncEngine) -> None:
+    """The single-batch policy: clarification_batches is UNIQUE on project_id, so a
+    second submit is a hard 409. Intake must degrade — not crash — and still deliver
+    the backlog, leaving the existing batch untouched."""
+
+    async def scenario() -> None:
+        redis = _fake()
+        pid = uuid7()
+        await _seed_project(migrated_engine, pid)
+        await clarification.submit_user_request(
+            migrated_engine,
+            pid,
+            clarification.UserRequestSubmission(
+                raw_text="The original request",
+                proposed_questions=[
+                    clarification.ProposedQuestionIn(topic="scope", question="How big?")
+                ],
+            ),
+            submitted_by="user.owner",
+        )
+
+        count = await run_intake(
+            engine=migrated_engine,
+            gateway=cast(Any, _FakeGateway(turns=[_clarify_script(), _story_script()])),
+            publisher=RealtimePublisher(redis),
+            project_id=pid,
+            brief="Build a second thing entirely",
+            model_alias="local-default",
+        )
+        assert count == 2  # intake survived the 409 and delivered the backlog
+
+        async with migrated_engine.connect() as conn:
+            batch = await clarification.get_clarification(conn, pid)
+        # The pre-existing batch is untouched — no second batch, no extra questions.
+        assert batch.opened_by == "user.owner"
+        assert [q.question for q in batch.questions] == ["How big?"]
+        assert len(await _clarification_events(migrated_engine, pid)) == 1  # only the first open
+        await redis.aclose()
+
+    run_async(scenario)
+
+
+@pytest.mark.schema
+def test_run_intake_survives_unparseable_clarification_turn(migrated_engine: AsyncEngine) -> None:
+    """A wonky clarification completion costs the project its questions, never its
+    backlog: nothing essential parses, so the engine opens a question-less batch
+    that resolves at once rather than lingering to the deadline."""
+
+    async def scenario() -> None:
+        redis = _fake()
+        pid = uuid7()
+        await _seed_project(migrated_engine, pid)
+        count = await run_intake(
+            engine=migrated_engine,
+            gateway=cast(
+                Any,
+                _FakeGateway(turns=[_clarify_script("I have no questions!"), _story_script()]),
+            ),
+            publisher=RealtimePublisher(redis),
+            project_id=pid,
+            brief="Build a wiki",
+            model_alias="local-default",
+        )
+        assert count == 2
+
+        async with migrated_engine.connect() as conn:
+            batch = await clarification.get_clarification(conn, pid)
+        assert batch.questions == []
+        assert batch.status == "answered" and batch.resolution == "no_questions"
         await redis.aclose()
 
     run_async(scenario)

@@ -87,16 +87,28 @@ KNOWN_SCOPES: frozenset[str] = frozenset(
 )
 
 
-def permission_granted(required: str, granted: set[str]) -> bool:
-    """True if ``required`` (resource:action) is covered by ``granted``."""
+def granting_permissions(required: str) -> frozenset[str]:
+    """Every permission string that would grant ``required`` — the wildcard forms
+    included.
+
+    Extracted from ``permission_granted`` so a REVERSE lookup ("which roles hold
+    this permission?", e.g. the approval-notification recipient query in
+    ``titan.tools.repository``) is driven by the same rules as the forward check
+    and cannot drift from it when the wildcard semantics change.
+    """
     if ":" not in required:
-        return required in granted
+        return frozenset({required})
     resource, action = required.split(":", 1)
     candidates = {"*", required, f"{resource}:*"}
     if resource not in SENSITIVE_RESOURCES:
         # Cross-resource action wildcard only for non-sensitive resources.
         candidates.add(f"*:{action}")
-    return bool(granted & candidates)
+    return frozenset(candidates)
+
+
+def permission_granted(required: str, granted: set[str]) -> bool:
+    """True if ``required`` (resource:action) is covered by ``granted``."""
+    return bool(granted & granting_permissions(required))
 
 
 def unauthorized(detail: str) -> ProblemException:

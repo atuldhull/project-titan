@@ -15,6 +15,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
+import structlog
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
@@ -24,11 +25,15 @@ from titan.gateway.dto import JsonbDict
 from titan.gateway.pagination import Keyset
 from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import not_found
+from titan.messaging import service as messaging
+from titan.tools import repository as repo
 from titan.tools.bus import ApprovalDecision
 from titan.tools.envelopes import ToolCallEnvelope
 from titan.tools.redaction import Redactor, default_redactor
 from titan.tools.registry import ToolSpec
 from titan.tools.repository import canonical_hash
+
+logger = structlog.get_logger("titan.tools.approvals")
 
 ApprovalStatus = Literal["pending", "approved", "denied", "consumed"]
 
@@ -90,13 +95,86 @@ async def _find_status(
     return uuid.UUID(str(value)) if value is not None else None
 
 
+def _args_summary(args_redacted: dict[str, Any], *, limit: int = 500) -> str:
+    """A one-line rendering of the ALREADY-REDACTED arguments for the notification
+    body. Never receives raw arguments — the gate redacts before calling."""
+    if not args_redacted:
+        return "(no arguments)"
+    rendered = json.dumps(args_redacted, sort_keys=True, default=str)
+    return rendered if len(rendered) <= limit else rendered[: limit - 1] + "…"
+
+
+async def _notify_approvers(
+    conn: AsyncConnection,
+    call: ToolCallEnvelope,
+    approval_id: uuid.UUID,
+    args_redacted: dict[str, Any],
+) -> None:
+    """Raise the §7.1 ``approval``/``critical`` bell for every human who can
+    resolve this request (Vol 4 §7.1: Toast + bell + Attention Queue).
+
+    Deliberately NOT wrapped in a try/except that swallows. Two reasons:
+
+    1. It would not work. This runs inside the gate's transaction — required, so
+       a pending row can never exist without its notification (and so a rolled-back
+       insert can never leave a phantom bell). Postgres aborts the whole
+       transaction on ANY statement error, so a swallowed DB error would not let
+       execution continue: the next statement, or the COMMIT, fails regardless.
+       Catching here would only convert a clear error into a confusing one at
+       commit time.
+    2. The fail direction is the safe one. If this raises, the transaction rolls
+       back and the gate's caller sees an error, so the admin-risk tool does NOT
+       dispatch. That is fail-closed — the same direction §4.4 already takes when
+       no verdict can be established. Swallowing would invert it: the tool would
+       be left blocked on an approval request that silently reached nobody, which
+       is precisely the bug this seam exists to fix.
+
+    The one non-exceptional case is an EMPTY recipient set (no human holds
+    ``tool_approval:write`` here, e.g. an unseeded project). That is not an error:
+    the pending row is still written and still surfaces in the approvals list
+    endpoint, so it is logged and execution continues.
+    """
+    approvers = await repo.approvers_for_project(conn, call.project_id)
+    if not approvers:
+        logger.warning(
+            "tool_approval.no_approvers",
+            approval_id=str(approval_id),
+            project_id=str(call.project_id),
+            tool=call.tool,
+        )
+        return
+    task = str(call.task_id) if call.task_id is not None else "none"
+    for user_id in approvers:
+        await messaging.create_notification(
+            conn,
+            user_id=user_id,
+            category="approval",
+            severity="critical",
+            title=f"Approval needed: '{call.tool}' requested by {call.agent_id}",
+            body=(
+                f"Agent {call.agent_id} requested the admin-risk tool '{call.tool}' and is "
+                f"blocked awaiting your review.\n\n"
+                f"Tool: {call.tool}\n"
+                f"Agent: {call.agent_id}\n"
+                f"Task: {task}\n"
+                f"Arguments (redacted): {_args_summary(args_redacted)}"
+            ),
+            link=f"/projects/{call.project_id}/approvals?approval={approval_id}",
+            actor="tool-approval-gate",
+        )
+
+
 async def _create_pending(
     conn: AsyncConnection, call: ToolCallEnvelope, args_hash: str, args_redacted: dict[str, Any]
 ) -> uuid.UUID | None:
     """Insert a pending record, or reuse the one a concurrent identical call
     won the race to create. Returns None only if that winner was ALSO resolved
     (approved/denied/consumed) before we could read it — the caller re-evaluates
-    from the top."""
+    from the top.
+
+    A genuine insert notifies the humans who can resolve it; a dedupe hit does
+    NOT, so a looping agent cannot spam the bell (the same reason the record
+    itself is deduped)."""
     inserted = await conn.execute(
         text(
             "INSERT INTO tool_approvals (id, project_id, task_id, agent_id, tool, args_hash,"
@@ -117,7 +195,11 @@ async def _create_pending(
     )
     value = inserted.scalar_one_or_none()
     if value is not None:
-        return uuid.UUID(str(value))
+        approval_id = uuid.UUID(str(value))
+        # Only a real insert notifies: ON CONFLICT DO NOTHING returns no row for a
+        # dedupe hit, so RETURNING is exactly the "a NEW pending appeared" signal.
+        await _notify_approvers(conn, call, approval_id, args_redacted)
+        return approval_id
     # Lost the race to a concurrent identical call — reuse its pending record.
     # (May be None if that record was resolved in the same window — not an
     # invariant, so never assert on it.)

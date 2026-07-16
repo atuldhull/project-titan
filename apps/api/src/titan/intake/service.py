@@ -1,13 +1,19 @@
 """The minimal CEO intake handler — the walking-skeleton vertical slice (Phase 25).
 
 A deliberately thin stand-in for the real CEO agent (the full roster arrives with
-Phase 26): when a project brief lands it runs ONE streamed LLM turn through the
+Phase 26): when a project brief lands it runs streamed LLM turns through the
 Phase-15 gateway, re-broadcasts each token as a ``run.output.delta`` over the
-Phase-24 WebSocket, parses the completion into ProductBacklog user stories, and
-persists them as Phase-11 tasks — whose ``task.created`` outbox events reach the
-same sockets. Kept small + isolated behind this one function so the real agent
-can replace it. It reuses the existing gateway, WS layer, and outbox event path:
-no direct provider call, no second socket, no ad-hoc event emit.
+Phase-24 WebSocket, and turns the completions into durable state — the §2.4
+clarification batch, then the ProductBacklog user stories persisted as Phase-11
+tasks (whose ``task.created`` outbox events reach the same sockets). Kept small +
+isolated behind this one function so the real agent can replace it. It reuses the
+existing gateway, WS layer, clarification engine, and outbox event path: no direct
+provider call, no second socket, no ad-hoc event emit, no second clarification
+mechanism.
+
+Both turns stream under ONE ``run.started``/``run.finished`` envelope and one
+run id: this is a single intake run that happens to make two gateway calls, and
+the UI's stream flips to "done" exactly once, at the end.
 
 The handler is resilient: any failure is logged, a ``run.finished`` (failed) frame
 is published, and 0 is returned — a wonky local model can never crash the caller.
@@ -18,6 +24,9 @@ import uuid
 import structlog
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from titan.clarification import service as clarification
+from titan.gateway.problems import ProblemException
+from titan.intake.questions import parse_clarification_draft
 from titan.intake.stories import parse_stories
 from titan.llm.service import ChatRequest, LlmGateway, Message, RequestMetadata
 from titan.orchestrator import service as orchestrator
@@ -28,6 +37,9 @@ logger = structlog.get_logger("titan.intake")
 
 CEO_AGENT_ID = "agent.ceo"
 MAX_TOKENS = 1024
+# The clarification envelope is small (≤5 questions); it needs far less headroom
+# than a backlog, and a tight ceiling keeps a babbling model cheap.
+CLARIFY_MAX_TOKENS = 512
 
 _SYSTEM_PROMPT = (
     "You are the CEO agent for PROJECT TITAN. Turn the product brief into a small "
@@ -37,6 +49,97 @@ _SYSTEM_PROMPT = (
     '"acceptance_criteria": ["<testable criterion>", "..."]}. '
     "Produce between 3 and 6 stories covering the core of the brief."
 )
+
+# The §2.4 policy is stated here so the model proposes GOOD candidates, but it is
+# only a prompt: titan.clarification.engine remains the authority that enforces the
+# ≤5 cap and demotes canonical-default/inferable topics to logged assumptions.
+_CLARIFY_SYSTEM_PROMPT = (
+    "You are the CEO agent for PROJECT TITAN. Read the product brief and decide what — "
+    "if anything — you must ask the user before building. Ask ONLY about an unknown "
+    "whose answer would materially change what gets built and that you cannot infer "
+    "from the brief. NEVER ask about the technology stack (database, cache, language, "
+    "runtime, framework, ORM, message bus, vector store, deployment, authentication, "
+    "observability): those already have canonical defaults. Respond with ONLY a JSON "
+    "object — no prose, no code fences: "
+    '{"questions": [{"topic": "<2-4 word subject>", "question": "<the question>"}], '
+    '"inferable_topics": ["<subject you could ask about but can safely assume>"]}. '
+    "Propose at most 5 questions, most important first. Every question MUST carry its "
+    "topic. If nothing is essential, return an empty questions array."
+)
+
+
+async def _open_clarification_batch(
+    *,
+    engine: AsyncEngine,
+    gateway: LlmGateway,
+    publisher: RealtimePublisher,
+    project_id: uuid.UUID,
+    brief: str,
+    model_alias: str,
+    agent_id: str,
+    run_id: uuid.UUID,
+) -> int:
+    """Run the CEO's clarification turn (H1, Vol 6 §2.4) and open the project's
+    batch through the clarification engine. Returns how many questions the policy
+    kept (0 if the step was skipped).
+
+    The question TEXT reaches the UI only as ``run.output.delta`` tokens from this
+    turn; the ``clarification.updated`` event the engine emits carries counts only
+    (TITAN-OPS-016) and is merely the UI's signal to refetch the batch.
+
+    This step is ADDITIVE and never raises — the backlog is what ``run_intake``
+    contracts to produce, so nothing here may cost the caller its stories:
+
+    * ``ProblemException`` — the engine refused the submission. 409 means a batch
+      already exists for this project: ``clarification_batches`` is UNIQUE on
+      project_id, so there is exactly one batch per project, EVER (TITAN-WFL-007),
+      and a re-run of intake must not try to open a second one. 409 also covers a
+      brief that duplicates an active project and 400 an empty one (gate G1). All
+      of these are decisions, not faults: log and carry on to the backlog.
+    * anything else — a wonky model, an unparseable completion, a DB hiccup. The
+      project simply gets no clarification batch.
+    """
+    pid = str(project_id)
+    try:
+        chunks: list[str] = []
+        request = ChatRequest(
+            model_alias=model_alias,
+            messages=[
+                Message(role="system", content=_CLARIFY_SYSTEM_PROMPT),
+                Message(role="user", content=brief),
+            ],
+            max_tokens=CLARIFY_MAX_TOKENS,
+            stream=True,
+            metadata=RequestMetadata(agent_id=agent_id, project_id=pid),
+        )
+        async for delta in gateway.stream(request, run_id=run_id):
+            if delta.type == "text" and delta.text:
+                chunks.append(delta.text)
+                await publisher.publish_delta(pid, str(run_id), delta.text, agent_id=agent_id)
+        draft = parse_clarification_draft("".join(chunks))
+        # The engine — not this handler — applies the ≤5 cap and demotes
+        # canonical-default / inferable topics to logged assumptions.
+        batch = await clarification.submit_user_request(
+            engine,
+            project_id,
+            clarification.UserRequestSubmission(
+                raw_text=brief,
+                proposed_questions=[
+                    clarification.ProposedQuestionIn(topic=q.topic, question=q.question)
+                    for q in draft.questions
+                ],
+                inferable_topics=list(draft.inferable_topics),
+            ),
+            submitted_by=agent_id,
+        )
+        logger.info("intake.clarification_opened", project_id=pid, questions=len(batch.questions))
+        return len(batch.questions)
+    except ProblemException as exc:
+        # Refused by policy/gate — no question or brief text in the log (TITAN-OPS-016).
+        logger.info("intake.clarification_skipped", project_id=pid, status=exc.status)
+    except Exception:
+        logger.warning("intake.clarification_failed", project_id=pid)
+    return 0
 
 
 async def run_intake(
@@ -49,8 +152,9 @@ async def run_intake(
     model_alias: str,
     agent_id: str = CEO_AGENT_ID,
 ) -> int:
-    """Run the CEO intake turn for one project brief. Returns the number of stories
-    persisted (0 on any failure). Never raises."""
+    """Run the CEO intake for one project brief: the clarification turn (§2.4, H1)
+    then the backlog turn. Returns the number of stories persisted (0 on any
+    failure) — clarification is additive and never changes that count. Never raises."""
     run_id = uuid.uuid4()
     pid = str(project_id)
     run_ref = str(run_id)
@@ -58,6 +162,18 @@ async def run_intake(
         pid,
         "run.started",
         {"run_id": run_ref, "agent_id": agent_id, "project_id": pid, "status": "running"},
+    )
+    # H1 first: ask what must be asked (§2.4) before proposing the backlog. Never
+    # raises — the backlog runs whether or not a batch was opened.
+    questions = await _open_clarification_batch(
+        engine=engine,
+        gateway=gateway,
+        publisher=publisher,
+        project_id=project_id,
+        brief=brief,
+        model_alias=model_alias,
+        agent_id=agent_id,
+        run_id=run_id,
     )
     request = ChatRequest(
         model_alias=model_alias,
@@ -102,9 +218,10 @@ async def run_intake(
                 "project_id": pid,
                 "status": "succeeded",
                 "stories": created,
+                "questions": questions,
             },
         )
-        logger.info("intake.completed", project_id=pid, stories=created)
+        logger.info("intake.completed", project_id=pid, stories=created, questions=questions)
         return created
     except Exception:
         logger.exception("intake.failed", project_id=pid)

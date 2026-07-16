@@ -87,9 +87,7 @@ def upgrade() -> None:
             sa.ForeignKey("projects.id", ondelete="CASCADE"),
             nullable=False,
         ),
-        sa.Column(
-            "current_milestone", sa.Text, nullable=False, server_default=sa.text("'none'")
-        ),
+        sa.Column("current_milestone", sa.Text, nullable=False, server_default=sa.text("'none'")),
         sa.Column("signals", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
         *_conventions(),
         sa.UniqueConstraint("project_id", name="uq_milestone_states_project"),
@@ -119,7 +117,12 @@ def upgrade() -> None:
         sa.Column("rung", sa.Text, nullable=False),
         sa.Column("status", sa.Text, nullable=False, server_default=sa.text("'open'")),
         sa.Column("detail", sa.Text, nullable=False, server_default=sa.text("''")),
-        sa.Column("detected_at", TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "detected_at",
+            TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("resolved_at", TIMESTAMP(timezone=True), nullable=True),
         *_conventions(),
         sa.CheckConstraint(

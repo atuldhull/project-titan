@@ -16,6 +16,7 @@ from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from titan.db import uuid7
+from titan.gateway.rbac import granting_permissions
 
 GENESIS_HASH = "0" * 64
 
@@ -205,10 +206,53 @@ async def verify_chain(conn: AsyncConnection, project_id: uuid.UUID) -> int | No
     return None
 
 
+async def approvers_for_project(conn: AsyncConnection, project_id: uuid.UUID) -> list[uuid.UUID]:
+    """The HUMAN users who can resolve an admin-risk approval in this project —
+    the recipients of the §7.1 ``approval`` notification (Vol 7 §4.4).
+
+    Mirrors ``PermissionResolver.project_permissions`` for ``tool_approval:write``
+    in reverse: a user qualifies via an org-wide grant (``user_roles.project_id IS
+    NULL``) OR a grant on THIS project, exactly the two sources the resolver
+    unions. The matching permission strings come from ``granting_permissions`` —
+    the same rules the forward check uses — so the wildcard forms (``*``,
+    ``tool_approval:*``, ``*:write``) are honoured and cannot drift.
+
+    Per-role matching is equivalent to the resolver's union-then-match because the
+    predicate is a plain set intersection: no permission is granted only by a
+    COMBINATION of two roles, so a match in any single role is necessary and
+    sufficient.
+
+    Only ``users`` rows are returned, which is what makes this human-only:
+    an agent principal's authority is the ``operator`` bundle carried in its JWT
+    (``exchange_api_key`` mints ``roles=["operator"]``), never a ``user_roles``
+    row — agents therefore cannot match this query. The ``operator`` bundle holds
+    no ``tool_approval:write`` in any case (Vol 8 §4.2 reserves it for
+    Owner/Admin/Maintainer). Inactive users are excluded — they cannot sign in to
+    act on the request.
+
+    Reads identity-owned tables directly rather than through a service seam,
+    following the established precedent for a narrow notification-recipient
+    lookup (``titan.plugins.repository.project_owner`` reads ``projects``).
+    """
+    result = await conn.execute(
+        text(
+            "SELECT DISTINCT ur.user_id FROM user_roles ur "
+            "JOIN roles r ON r.id = ur.role_id "
+            "JOIN users u ON u.id = ur.user_id "
+            "WHERE u.is_active AND (ur.project_id IS NULL OR ur.project_id = :p) "
+            "AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(r.permissions) AS perm "
+            "WHERE perm = ANY(:grants))"
+        ),
+        {"p": project_id, "grants": sorted(granting_permissions("tool_approval:write"))},
+    )
+    return [uuid.UUID(str(row.user_id)) for row in result]
+
+
 __all__ = [
     "GENESIS_HASH",
     "AppendedAudit",
     "append_audit",
+    "approvers_for_project",
     "canonical_hash",
     "rows_for_call",
     "verify_chain",
