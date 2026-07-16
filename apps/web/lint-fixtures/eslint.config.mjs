@@ -5,7 +5,12 @@ import tsParser from "@typescript-eslint/parser";
 import { dirname } from "path";
 import { fileURLToPath } from "url";
 
-import { boundaryZones, tokenRule } from "../eslint-rules.mjs";
+import {
+  boundaryZones,
+  FETCH_SELECTORS,
+  restrictedSyntax,
+  TOKEN_SELECTORS,
+} from "../eslint-rules.mjs";
 
 const base = dirname(fileURLToPath(import.meta.url));
 
@@ -18,7 +23,7 @@ export default [
       "import/resolver": { node: { extensions: [".ts", ".tsx", ".js"] } },
     },
     rules: {
-      ...tokenRule,
+      ...restrictedSyntax(TOKEN_SELECTORS, FETCH_SELECTORS),
       "import/no-restricted-paths": ["error", { basePath: base, zones: boundaryZones(".") }],
     },
   },

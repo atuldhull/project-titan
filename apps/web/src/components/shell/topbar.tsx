@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, ChevronsUpDown, CircleUser, Menu, Search } from "lucide-react";
+import { ChevronsUpDown, CircleUser, Menu, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +21,8 @@ import {
 } from "@/components/ui/sheet";
 import { MobileNav } from "@/components/shell/mobile-nav";
 import { ThemeToggle } from "@/components/shell/theme-toggle";
+import { ConnectionPill } from "@/components/shell/connection-pill";
+import { Bell } from "@/components/notifications/bell";
 
 /*
  * 56px top bar (Vol 4 §2.3): project switcher (⌘P), command-palette trigger
@@ -83,20 +85,9 @@ export function TopBar() {
         </kbd>
       </Button>
 
-      <span
-        className="hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs text-muted-foreground sm:flex"
-        title="Realtime connection arrives in Phase 24"
-      >
-        <span
-          aria-hidden
-          className="size-1.5 rounded-full bg-muted-foreground"
-        />
-        offline
-      </span>
+      <ConnectionPill />
 
-      <Button variant="ghost" size="icon" aria-label="Notifications">
-        <Bell aria-hidden className="size-4" />
-      </Button>
+      <Bell />
 
       <ThemeToggle />
 

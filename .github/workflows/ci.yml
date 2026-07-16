@@ -84,6 +84,39 @@ jobs:
       # pytest carries the coverage gate: --cov-fail-under=80 (TITAN-FND-064)
       - run: make test
 
+  # Phase 57 frontend data layer: vitest over the BFF route handlers, the WS
+  # state machine (seq-gap / reconnect / degradation), RBAC gating and the toast
+  # policy. jsdom only — no browser, no backend needed.
+  test-web:
+    needs: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: cd apps/web && npm ci
+      - run: cd packages/api-client && npm ci
+      - run: make test-web
+
+  # TITAN-FRT-005: the /org First Load JS budget (<= 300 kB gzipped) — the build
+  # fails CI when a heavy import lands on the Overview route.
+  web-bundle-budget:
+    needs: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: cd apps/web && npm ci
+      - run: cd packages/api-client && npm ci
+      - run: make budget-web
+
   # TITAN-BRN-011: the retrieval quality gate — seeds the versioned golden
   # dataset, reports recall@10 + nDCG@10 in all three reranker modes, and
   # fails on a >5% regression vs the stored baseline (plus the broken-fusion

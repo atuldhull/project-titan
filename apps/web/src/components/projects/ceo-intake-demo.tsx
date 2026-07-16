@@ -44,6 +44,9 @@ export function CeoIntakeDemo() {
     setPid(null);
     setSubmitting(true);
     try {
+      // Phase-25 throwaway demo (token-paste flow, replaced by the Phase-58
+      // intake wizard on the Phase-57 data layer). Kept to prove the spine.
+      // eslint-disable-next-line no-restricted-syntax
       const res = await fetch(`${API}/api/v1/projects`, {
         method: "POST",
         headers: {

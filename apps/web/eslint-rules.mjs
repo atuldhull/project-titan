@@ -13,21 +13,44 @@
 const RAW_COLOR =
   "(#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\\b|\\b(rgba?|hsla?)\\()";
 
-export const tokenRule = {
-  "no-restricted-syntax": [
-    "error",
-    {
-      selector: `Literal[value=/${RAW_COLOR}/]`,
-      message:
-        "Raw color values are forbidden in app code (TITAN-FRT-010) — use semantic tokens (bg-primary, text-destructive, var(--…)).",
-    },
-    {
-      selector: `TemplateElement[value.raw=/${RAW_COLOR}/]`,
-      message:
-        "Raw color values are forbidden in app code (TITAN-FRT-010) — use semantic tokens (bg-primary, text-destructive, var(--…)).",
-    },
-  ],
-};
+const TOKEN_MESSAGE =
+  "Raw color values are forbidden in app code (TITAN-FRT-010) — use semantic tokens (bg-primary, text-destructive, var(--…)).";
+
+export const TOKEN_SELECTORS = [
+  { selector: `Literal[value=/${RAW_COLOR}/]`, message: TOKEN_MESSAGE },
+  { selector: `TemplateElement[value.raw=/${RAW_COLOR}/]`, message: TOKEN_MESSAGE },
+];
+
+/**
+ * TITAN-FRT-014: server state flows through @titan/api-client + React Query, not
+ * ad-hoc fetch. `fetch` is banned in app code; it is allowed only in the BFF
+ * route handlers (app/api/**) and the browser→BFF client (lib/bff/**), which the
+ * app config re-enables via an override.
+ */
+const FETCH_MESSAGE =
+  "Direct fetch is banned in app code (TITAN-FRT-014) — use @titan/api-client via React Query, or a BFF route handler / lib/bff.";
+
+export const FETCH_SELECTORS = [
+  { selector: "CallExpression[callee.name='fetch']", message: FETCH_MESSAGE },
+  {
+    selector:
+      "MemberExpression[property.name='fetch'][object.name='window']",
+    message: FETCH_MESSAGE,
+  },
+  {
+    selector:
+      "MemberExpression[property.name='fetch'][object.name='globalThis']",
+    message: FETCH_MESSAGE,
+  },
+];
+
+/** Build a `no-restricted-syntax` rule entry from one or more selector groups. */
+export function restrictedSyntax(...selectorGroups) {
+  return { "no-restricted-syntax": ["error", ...selectorGroups.flat()] };
+}
+
+/** Back-compat: the token-only rule object. */
+export const tokenRule = restrictedSyntax(TOKEN_SELECTORS);
 
 /**
  * TITAN-FRT-049: feature code stays in its feature directory; cross-feature

@@ -25,6 +25,24 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@titan/schemas": [
+        "../../packages/schemas/src/index.ts"
+      ],
+      "@titan/schemas/*": [
+        "../../packages/schemas/src/*"
+      ],
+      "@titan/api-client": [
+        "../../packages/api-client/src/index.ts"
+      ],
+      "@titan/api-client/*": [
+        "../../packages/api-client/src/*"
+      ],
+      "@titan/ws-protocol": [
+        "../../packages/ws-protocol/src/index.ts"
+      ],
+      "@titan/ws-protocol/*": [
+        "../../packages/ws-protocol/src/*"
       ]
     }
   },

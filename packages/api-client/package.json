@@ -1,0 +1,18 @@
+{
+  "name": "@titan/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Typed TITAN REST client (TITAN-FRT-014/016). Wraps openapi-fetch over @titan/schemas — the ONLY module permitted to call the network besides BFF route handlers.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "comment": "@titan/schemas is resolved via tsconfig `paths` (a sibling workspace package), not npm — do not add it as a dependency.",
+  "dependencies": {
+    "openapi-fetch": "^0.13.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

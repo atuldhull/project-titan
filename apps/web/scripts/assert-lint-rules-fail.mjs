@@ -38,6 +38,11 @@ const checks = [
     files: ["lint-fixtures/components/kanban/boundary-violation.ts"],
     rule: "import/no-restricted-paths",
   },
+  {
+    name: "TITAN-FRT-014 no-fetch rule",
+    files: ["lint-fixtures/components/kanban/fetch-violation.ts"],
+    rule: "no-restricted-syntax",
+  },
 ];
 
 let ok = true;

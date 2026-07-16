@@ -7,9 +7,10 @@ API_DIR := apps/api
 WEB_DIR := apps/web
 SCHEMAS_DIR := packages/schemas
 
-.PHONY: dev test test-schema test-llm-live lint lint-style boundaries route-guards \
+.PHONY: dev test test-web test-schema test-llm-live lint lint-style boundaries route-guards \
         agent-purity typecheck migrate seed generate-types check-types-drift \
-        lint-openapi secret-scan eval-retrieval eval-baseline bench-memory
+        lint-openapi secret-scan eval-retrieval eval-baseline bench-memory \
+        budget-web
 
 ## dev: run the API (uvicorn, reload) and the web app (next dev) together.
 ## Docker Compose is the primary dev loop from Phase 2 onward.
@@ -20,6 +21,17 @@ dev:
 
 test:
 	cd $(API_DIR) && uv run pytest -q
+
+# Phase 57: the frontend data layer (vitest — BFF route handlers, the WS state
+# machine incl. seq-gap/reconnect, RBAC gating, toast policy). jsdom, no browser.
+test-web:
+	cd $(WEB_DIR) && npm test
+
+# TITAN-FRT-005: /org First Load JS <= 300 kB gzipped. Requires a prior
+# `next build` (the CI job runs both).
+budget-web:
+	cd $(WEB_DIR) && npm run build
+	cd $(WEB_DIR) && npm run budget:org
 
 # Style + formatting gates (ruff incl. ASYNC + ADR-007 banned imports, eslint, prettier)
 lint-style:

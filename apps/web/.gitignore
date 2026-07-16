@@ -20,6 +20,9 @@
 # production
 /build
 
+# storybook build output
+/storybook-static
+
 # misc
 .DS_Store
 *.pem

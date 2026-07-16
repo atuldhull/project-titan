@@ -1,11 +1,14 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
-import Link from "next/link";
 
-import { Button } from "@/components/ui/button";
+import { LoginForm } from "@/components/auth/login-form";
 
 export const metadata: Metadata = { title: "Sign in" };
 
-// OIDC redirect flow lands in Phase 8 (AUTH_MODE=local) and hardens in M7.
+/**
+ * Local password login (Phase 8 identity, AUTH_MODE=local). The BFF holds the
+ * session in httpOnly cookies; OIDC federation is a config swap in M7.
+ */
 export default function LoginPage() {
   return (
     <main className="flex min-h-dvh items-center justify-center p-4">
@@ -19,12 +22,12 @@ export default function LoginPage() {
         </div>
         <h1 className="mt-6 text-lg font-semibold">Sign in</h1>
         <p className="mt-2 text-muted-foreground">
-          Authentication arrives in Phase 8. Local development runs as the
-          seeded admin until then.
+          Use your TITAN credentials. Local development seeds{" "}
+          <code className="font-mono text-xs">admin@titan.local</code>.
         </p>
-        <Button asChild className="mt-6 w-full">
-          <Link href="/org">Continue to dashboard</Link>
-        </Button>
+        <Suspense>
+          <LoginForm />
+        </Suspense>
       </div>
     </main>
   );
