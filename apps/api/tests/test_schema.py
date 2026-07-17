@@ -122,6 +122,16 @@ EXPECTED_INDEXES = {
     "merge_vetoes": {"uq_merge_vetoes_active", "idx_merge_vetoes_task"},
     "conflict_thresholds": {"uq_conflict_thresholds_scope"},
     "watchdog_config": {"uq_watchdog_config_scope"},
+    # Phase 63. `idx_llm_usage_created_at` backs Monitoring's PLATFORM-scope
+    # cost query, which filters on created_at alone — 0007's two indexes both
+    # lead with a different column and neither serves it. The other two are
+    # pinned here at the same time: they have existed since 0007 with nothing
+    # asserting them.
+    "llm_usage": {
+        "idx_llm_usage_project",
+        "idx_llm_usage_task",
+        "idx_llm_usage_created_at",
+    },
 }
 
 PARTIAL_INDEXES = {

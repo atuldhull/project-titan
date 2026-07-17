@@ -67,6 +67,7 @@ from titan.runtime import service as runtime_service
 from titan.settings import Settings, get_settings
 from titan.tools import router as tools_router
 from titan.tools import service as tools_service
+from titan.usage import router as usage_router
 
 logger = structlog.get_logger("titan.main")
 
@@ -406,6 +407,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     deploy_router.mount(app)  # /projects/{id}/deployments — local deploy records (§6.7)
     debt_router.mount(app)  # /projects/{id}/debt — technical-debt ledger (WFL-021)
     logs_router.mount(app)  # /logs — Loki-backed log history for the viewer (§6.7)
+    usage_router.mount(app)  # /usage — LLM cost/token aggregation for Monitoring (§6.10)
     planning_router.mount(app)  # /projects/{id}/sprint-plan, ceremonies, milestone, blockers (§4)
     artifacts_router.mount(app)  # /projects/{id}/artifacts — the six derived §5 artifacts
     plugins_router.mount(app)  # /plugins lifecycle + /hooks (HMAC) + /plugin-ui (Vol 7 §3)

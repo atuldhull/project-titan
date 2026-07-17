@@ -3571,6 +3571,118 @@
         "title": "MeResponse",
         "type": "object"
       },
+      "MemoryBrowseRow": {
+        "description": "A record as the browse list shows it \u2014 no body, no chunks.",
+        "properties": {
+          "access_count": {
+            "title": "Access Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decay_score": {
+            "title": "Decay Score",
+            "type": "number"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "importance": {
+            "title": "Importance",
+            "type": "number"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "record_subtype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Record Subtype"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "source_agent": {
+            "title": "Source Agent",
+            "type": "string"
+          },
+          "source_task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Task Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded By"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "scope",
+          "status",
+          "title",
+          "source_agent",
+          "source_task_id",
+          "project_id",
+          "importance",
+          "decay_score",
+          "access_count",
+          "created_at",
+          "superseded_by",
+          "record_subtype"
+        ],
+        "title": "MemoryBrowseRow",
+        "type": "object"
+      },
       "MemoryChunkOut": {
         "properties": {
           "embed_model": {
@@ -3743,6 +3855,73 @@
           "events"
         ],
         "title": "MemoryEventBatch",
+        "type": "object"
+      },
+      "MemoryFacet": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "count"
+        ],
+        "title": "MemoryFacet",
+        "type": "object"
+      },
+      "MemoryFacets": {
+        "description": "The counts behind \u00a76.11's tier tree and its faceted filters.",
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryFacet"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "kinds": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryFacet"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryFacet"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "statuses": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryFacet"
+            },
+            "title": "Statuses",
+            "type": "array"
+          },
+          "subtypes": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryFacet"
+            },
+            "title": "Subtypes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kinds",
+          "scopes",
+          "statuses",
+          "agents",
+          "subtypes"
+        ],
+        "title": "MemoryFacets",
         "type": "object"
       },
       "MemoryLedgerEntry": {
@@ -4061,6 +4240,143 @@
           "write"
         ],
         "title": "MemoryScopes",
+        "type": "object"
+      },
+      "MemorySearchHit": {
+        "description": "One scored hit. ``score`` is Qdrant's cosine similarity in [0, 1].",
+        "properties": {
+          "chunk_id": {
+            "format": "uuid",
+            "title": "Chunk Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "excerpt": {
+            "title": "Excerpt",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "record_id": {
+            "format": "uuid",
+            "title": "Record Id",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "source_agent": {
+            "title": "Source Agent",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "record_id",
+          "chunk_id",
+          "score",
+          "kind",
+          "scope",
+          "title",
+          "excerpt",
+          "source_agent",
+          "project_id",
+          "created_at"
+        ],
+        "title": "MemorySearchHit",
+        "type": "object"
+      },
+      "MemorySearchRequest": {
+        "description": "\u00a76.11's search box.",
+        "properties": {
+          "min_score": {
+            "default": 0.6,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Min Score",
+            "type": "number"
+          },
+          "query": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "scope": {
+            "default": "org",
+            "pattern": "^(org|project:[0-9a-fA-F-]{36})$",
+            "title": "Scope",
+            "type": "string"
+          },
+          "top_k": {
+            "default": 20,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Top K",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "MemorySearchRequest",
+        "type": "object"
+      },
+      "MemorySearchResult": {
+        "properties": {
+          "below_threshold": {
+            "default": false,
+            "title": "Below Threshold",
+            "type": "boolean"
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/MemorySearchHit"
+            },
+            "title": "Hits",
+            "type": "array"
+          },
+          "min_score": {
+            "title": "Min Score",
+            "type": "number"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "min_score",
+          "hits"
+        ],
+        "title": "MemorySearchResult",
         "type": "object"
       },
       "MemoryWriteResult": {
@@ -5132,6 +5448,33 @@
           "items"
         ],
         "title": "Page[LogLine]",
+        "type": "object"
+      },
+      "Page_MemoryBrowseRow_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryBrowseRow"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[MemoryBrowseRow]",
         "type": "object"
       },
       "Page_MessageOut_": {
@@ -7720,6 +8063,185 @@
         "title": "Usage",
         "type": "object"
       },
+      "UsageGroup": {
+        "properties": {
+          "cached_tokens": {
+            "title": "Cached Tokens",
+            "type": "integer"
+          },
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "cost_usd": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Cost Usd",
+            "type": "string"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cost_usd",
+          "input_tokens",
+          "output_tokens",
+          "cached_tokens",
+          "calls",
+          "key"
+        ],
+        "title": "UsageGroup",
+        "type": "object"
+      },
+      "UsagePoint": {
+        "properties": {
+          "bucket_at": {
+            "format": "date-time",
+            "title": "Bucket At",
+            "type": "string"
+          },
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "cost_usd": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Cost Usd",
+            "type": "string"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bucket_at",
+          "key",
+          "cost_usd",
+          "input_tokens",
+          "output_tokens",
+          "calls"
+        ],
+        "title": "UsagePoint",
+        "type": "object"
+      },
+      "UsageSummary": {
+        "description": "What Monitoring reads: the tiles, the group-by chart, and the series.",
+        "properties": {
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "group_by": {
+            "title": "Group By",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/UsageGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "series": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UsagePoint"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          },
+          "total": {
+            "$ref": "#/components/schemas/UsageTotals"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "group_by",
+          "total",
+          "groups"
+        ],
+        "title": "UsageSummary",
+        "type": "object"
+      },
+      "UsageTotals": {
+        "description": "Money is a STRING on the wire.\n\n`cost_usd` is `Numeric(14,6)` and Pydantic renders a Decimal as a string\nprecisely so it does not go through a float on the way out \u2014 a JSON number\nwould round the sixth decimal, and these totals are asserted to the cent\nagainst a seeded fixture.",
+        "properties": {
+          "cached_tokens": {
+            "title": "Cached Tokens",
+            "type": "integer"
+          },
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "cost_usd": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Cost Usd",
+            "type": "string"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cost_usd",
+          "input_tokens",
+          "output_tokens",
+          "cached_tokens",
+          "calls"
+        ],
+        "title": "UsageTotals",
+        "type": "object"
+      },
       "UserRequestSubmission": {
         "additionalProperties": false,
         "description": "The H1 UserRequest plus the CEO turn's proposed clarifications. ``topic`` on\neach proposed question is the machine-checkable subject the policy matches\nagainst canonical defaults and ``inferable_topics`` (computed by the CEO from\nthe request + organization memory).",
@@ -9279,6 +9801,90 @@
         ]
       }
     },
+    "/api/v1/memory/facets": {
+      "get": {
+        "description": "The counts behind the tier tree and the facet filters (\u00a76.11).\n\nCounted under the same filters the list uses, so the tree never describes a\ndifferent query from the one on screen.",
+        "operationId": "memory_facets_api_v1_memory_facets_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "active",
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryFacets"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Memory Facets",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
     "/api/v1/memory/kg/query": {
       "post": {
         "description": "Typed graph traversal (start nodes, edge-type filter, depth \u2264 3) via a\nrecursive CTE (\u00a77.1). Scope-isolated: org + the caller's own project only\n(TITAN-BRN-003).",
@@ -9427,6 +10033,224 @@
         ]
       }
     },
+    "/api/v1/memory/records": {
+      "get": {
+        "description": "Browse memory records, faceted (Vol 4 \u00a76.11).\n\nThe lexical half of the Explorer, and the complement to `:search`: `q` is a\nsubstring, so it finds the identifier you half-remember, where semantic\nsearch finds the idea you can only describe.\n\nOn \u00a76.11's tier tree: `scope` is the only real tier axis and it holds just\n`org` or `project:<uuid>`. \"Patterns\" and \"Lessons\" are NOT tiers \u2014 they are\nrecords discriminated by `metadata->>'record_subtype'`, exposed here as\n`subtype`. \"Short-term\" is not queryable at all: it lives in Redis keyed by\ntask with a 24h TTL, not in this table.",
+        "operationId": "browse_memory_records_api_v1_memory_records_get",
+        "parameters": [
+          {
+            "description": "episodic|semantic|procedural",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "episodic|semantic|procedural",
+              "title": "Kind"
+            }
+          },
+          {
+            "description": "'org' or 'project:<uuid>'",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "'org' or 'project:<uuid>'",
+              "title": "Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "active",
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_agent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Agent"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "description": "metadata.record_subtype",
+            "in": "query",
+            "name": "subtype",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "metadata.record_subtype",
+              "title": "Subtype"
+            }
+          },
+          {
+            "description": "Case-insensitive substring.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive substring.",
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_MemoryBrowseRow_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Browse Memory Records",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
     "/api/v1/memory/records/{record_id}": {
       "get": {
         "description": "The canonical record + its chunks + its complete ledger trail (\u00a714). A read\nbumps access metadata and appends a ``read`` ledger row (TITAN-BRN-005), so it\nruns in a transaction.",
@@ -9483,6 +10307,48 @@
           }
         },
         "summary": "Get Memory Record",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/records:search": {
+      "post": {
+        "description": "Semantic search over memory, score-ranked (Vol 4 \u00a76.11).\n\n`score` is Qdrant's cosine similarity, NOT the \u00a76.1 pipeline's `final_score`\n\u2014 that one blends freshness and importance into relevance and min-max\nnormalises across the returned set, so its top hit always scores ~1.0 and\n\u00a76.11's \"No semantic matches \u2265 0.6\" state could never be reached. A cosine\nis absolute and comparable between queries, which is what a score column a\nhuman reads has to be. See `titan.memory.explorer` for the full reasoning.\n\nA POST because the query is a body, not an identifier; it reads and writes\nnothing.",
+        "operationId": "search_memory_records_api_v1_memory_records_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemorySearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemorySearchResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Memory Records",
         "tags": [
           "memory"
         ]
@@ -13998,6 +14864,119 @@
         "summary": "Transition Task",
         "tags": [
           "tasks"
+        ]
+      }
+    },
+    "/api/v1/usage": {
+      "get": {
+        "description": "Aggregate LLM cost and tokens over a range (TITAN-FRT-033).\n\nBacks Monitoring's spend tile, its cost-by-provider/agent chart and its\ntime series. Defaults to the last 24 hours grouped by provider.\n\nA note on what is in here, because an empty chart is otherwise alarming: the\nledger only has rows for calls that were actually made, and on a default\nstack the live executor and CEO intake are both off (`live_executor` and\n`ceo_intake_enabled` default to False), so the only writer is memory-ingest\nembeddings \u2014 with no project and no agent. A quiet ledger is the honest\nanswer, not a bug.\n\nGrouping by `project` returns raw uuids: `llm_usage.project_id` has no FK\nand grouping by `agent` returns the gateway's routing key (`agent.ceo`),\nwhich is not an agents-table id either. Neither resolves to a name here.",
+        "operationId": "get_usage_api_v1_usage_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "default": "provider",
+              "pattern": "^(provider|model|agent|project|alias)$",
+              "title": "Group By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(minute|hour|day)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bucket"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Usage",
+        "tags": [
+          "usage"
         ]
       }
     },

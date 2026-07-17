@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 
-import { StubPage } from "@/components/shell/stub-page";
+import { DeploymentsScreen } from "@/components/deployments/deployments-screen";
 
-export const metadata: Metadata = { title: "Project Deployments" };
+export const metadata: Metadata = { title: "Deployments" };
 
-export default function Page() {
-  return (
-    <StubPage
-      title="Project Deployments"
-      description="Environments and deploys for this project (Vol 4 §6.9)."
-    />
-  );
+/** Vol 4 §6.9, project-scoped — the only scope the deployments API has. */
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ pid: string }>;
+}) {
+  const { pid } = await params;
+  return <DeploymentsScreen projectId={pid} />;
 }

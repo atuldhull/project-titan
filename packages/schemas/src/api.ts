@@ -574,6 +574,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/memory/facets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Facets
+         * @description The counts behind the tier tree and the facet filters (§6.11).
+         *
+         *     Counted under the same filters the list uses, so the tree never describes a
+         *     different query from the one on screen.
+         */
+        get: operations["memory_facets_api_v1_memory_facets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/memory/kg/query": {
         parameters: {
             query?: never;
@@ -665,6 +688,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/memory/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Browse Memory Records
+         * @description Browse memory records, faceted (Vol 4 §6.11).
+         *
+         *     The lexical half of the Explorer, and the complement to `:search`: `q` is a
+         *     substring, so it finds the identifier you half-remember, where semantic
+         *     search finds the idea you can only describe.
+         *
+         *     On §6.11's tier tree: `scope` is the only real tier axis and it holds just
+         *     `org` or `project:<uuid>`. "Patterns" and "Lessons" are NOT tiers — they are
+         *     records discriminated by `metadata->>'record_subtype'`, exposed here as
+         *     `subtype`. "Short-term" is not queryable at all: it lives in Redis keyed by
+         *     task with a 24h TTL, not in this table.
+         */
+        get: operations["browse_memory_records_api_v1_memory_records_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/memory/records/{record_id}": {
         parameters: {
             query?: never;
@@ -681,6 +734,36 @@ export interface paths {
         get: operations["get_memory_record_api_v1_memory_records__record_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/records:search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search Memory Records
+         * @description Semantic search over memory, score-ranked (Vol 4 §6.11).
+         *
+         *     `score` is Qdrant's cosine similarity, NOT the §6.1 pipeline's `final_score`
+         *     — that one blends freshness and importance into relevance and min-max
+         *     normalises across the returned set, so its top hit always scores ~1.0 and
+         *     §6.11's "No semantic matches ≥ 0.6" state could never be reached. A cosine
+         *     is absolute and comparable between queries, which is what a score column a
+         *     human reads has to be. See `titan.memory.explorer` for the full reasoning.
+         *
+         *     A POST because the query is a body, not an identifier; it reads and writes
+         *     nothing.
+         */
+        post: operations["search_memory_records_api_v1_memory_records_search_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2130,6 +2213,40 @@ export interface paths {
          *     object-side; an illegal pair is a 409 invalid-transition.
          */
         post: operations["transition_task_api_v1_tasks__task_id__transition_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Usage
+         * @description Aggregate LLM cost and tokens over a range (TITAN-FRT-033).
+         *
+         *     Backs Monitoring's spend tile, its cost-by-provider/agent chart and its
+         *     time series. Defaults to the last 24 hours grouped by provider.
+         *
+         *     A note on what is in here, because an empty chart is otherwise alarming: the
+         *     ledger only has rows for calls that were actually made, and on a default
+         *     stack the live executor and CEO intake are both off (`live_executor` and
+         *     `ceo_intake_enabled` default to False), so the only writer is memory-ingest
+         *     embeddings — with no project and no agent. A quiet ledger is the honest
+         *     answer, not a bug.
+         *
+         *     Grouping by `project` returns raw uuids: `llm_usage.project_id` has no FK
+         *     and grouping by `agent` returns the gateway's routing key (`agent.ceo`),
+         *     which is not an agents-table id either. Neither resolves to a name here.
+         */
+        get: operations["get_usage_api_v1_usage_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3775,6 +3892,46 @@ export interface components {
              */
             sub: string;
         };
+        /**
+         * MemoryBrowseRow
+         * @description A record as the browse list shows it — no body, no chunks.
+         */
+        MemoryBrowseRow: {
+            /** Access Count */
+            access_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decay Score */
+            decay_score: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Importance */
+            importance: number;
+            /** Kind */
+            kind: string;
+            /** Project Id */
+            project_id: string | null;
+            /** Record Subtype */
+            record_subtype: string | null;
+            /** Scope */
+            scope: string;
+            /** Source Agent */
+            source_agent: string;
+            /** Source Task Id */
+            source_task_id: string | null;
+            /** Status */
+            status: string;
+            /** Superseded By */
+            superseded_by: string | null;
+            /** Title */
+            title: string;
+        };
         /** MemoryChunkOut */
         MemoryChunkOut: {
             /** Embed Model */
@@ -3844,6 +4001,29 @@ export interface components {
             source_agent: string;
             /** Task Id */
             task_id?: string | null;
+        };
+        /** MemoryFacet */
+        MemoryFacet: {
+            /** Count */
+            count: number;
+            /** Value */
+            value: string;
+        };
+        /**
+         * MemoryFacets
+         * @description The counts behind §6.11's tier tree and its faceted filters.
+         */
+        MemoryFacets: {
+            /** Agents */
+            agents: components["schemas"]["MemoryFacet"][];
+            /** Kinds */
+            kinds: components["schemas"]["MemoryFacet"][];
+            /** Scopes */
+            scopes: components["schemas"]["MemoryFacet"][];
+            /** Statuses */
+            statuses: components["schemas"]["MemoryFacet"][];
+            /** Subtypes */
+            subtypes: components["schemas"]["MemoryFacet"][];
         };
         /** MemoryLedgerEntry */
         MemoryLedgerEntry: {
@@ -3964,6 +4144,78 @@ export interface components {
             read: ("short_term" | "project" | "organization" | "code_patterns" | "architecture" | "lessons_learned")[];
             /** Write */
             write: ("short_term" | "project" | "organization" | "code_patterns" | "architecture" | "lessons_learned")[];
+        };
+        /**
+         * MemorySearchHit
+         * @description One scored hit. ``score`` is Qdrant's cosine similarity in [0, 1].
+         */
+        MemorySearchHit: {
+            /**
+             * Chunk Id
+             * Format: uuid
+             */
+            chunk_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Excerpt */
+            excerpt: string;
+            /** Kind */
+            kind: string;
+            /** Project Id */
+            project_id: string | null;
+            /**
+             * Record Id
+             * Format: uuid
+             */
+            record_id: string;
+            /** Scope */
+            scope: string;
+            /** Score */
+            score: number;
+            /** Source Agent */
+            source_agent: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * MemorySearchRequest
+         * @description §6.11's search box.
+         */
+        MemorySearchRequest: {
+            /**
+             * Min Score
+             * @default 0.6
+             */
+            min_score: number;
+            /** Query */
+            query: string;
+            /**
+             * Scope
+             * @default org
+             */
+            scope: string;
+            /**
+             * Top K
+             * @default 20
+             */
+            top_k: number;
+        };
+        /** MemorySearchResult */
+        MemorySearchResult: {
+            /**
+             * Below Threshold
+             * @default false
+             */
+            below_threshold: boolean;
+            /** Hits */
+            hits: components["schemas"]["MemorySearchHit"][];
+            /** Min Score */
+            min_score: number;
+            /** Query */
+            query: string;
         };
         /** MemoryWriteResult */
         MemoryWriteResult: {
@@ -4405,6 +4657,13 @@ export interface components {
         Page_LogLine_: {
             /** Items */
             items: components["schemas"]["LogLine"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+        };
+        /** Page[MemoryBrowseRow] */
+        Page_MemoryBrowseRow_: {
+            /** Items */
+            items: components["schemas"]["MemoryBrowseRow"][];
             /** Next Cursor */
             next_cursor?: string | null;
         };
@@ -5437,6 +5696,91 @@ export interface components {
              */
             output_tokens: number;
         };
+        /** UsageGroup */
+        UsageGroup: {
+            /** Cached Tokens */
+            cached_tokens: number;
+            /** Calls */
+            calls: number;
+            /** Cost Usd */
+            cost_usd: string;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Key */
+            key: string | null;
+            /** Output Tokens */
+            output_tokens: number;
+        };
+        /** UsagePoint */
+        UsagePoint: {
+            /**
+             * Bucket At
+             * Format: date-time
+             */
+            bucket_at: string;
+            /** Calls */
+            calls: number;
+            /** Cost Usd */
+            cost_usd: string;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Key */
+            key: string | null;
+            /** Output Tokens */
+            output_tokens: number;
+        };
+        /**
+         * UsageSummary
+         * @description What Monitoring reads: the tiles, the group-by chart, and the series.
+         */
+        UsageSummary: {
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /** Group By */
+            group_by: string;
+            /** Groups */
+            groups: components["schemas"]["UsageGroup"][];
+            /**
+             * Series
+             * @default []
+             */
+            series: components["schemas"]["UsagePoint"][];
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            total: components["schemas"]["UsageTotals"];
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
+        /**
+         * UsageTotals
+         * @description Money is a STRING on the wire.
+         *
+         *     `cost_usd` is `Numeric(14,6)` and Pydantic renders a Decimal as a string
+         *     precisely so it does not go through a float on the way out — a JSON number
+         *     would round the sixth decimal, and these totals are asserted to the cent
+         *     against a seeded fixture.
+         */
+        UsageTotals: {
+            /** Cached Tokens */
+            cached_tokens: number;
+            /** Calls */
+            calls: number;
+            /** Cost Usd */
+            cost_usd: string;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+        };
         /**
          * UserRequestSubmission
          * @description The H1 UserRequest plus the CEO turn's proposed clarifications. ``topic`` on
@@ -6435,6 +6779,39 @@ export interface operations {
             };
         };
     };
+    memory_facets_api_v1_memory_facets_get: {
+        parameters: {
+            query?: {
+                scope?: string | null;
+                project_id?: string | null;
+                status?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryFacets"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     query_kg_api_v1_memory_kg_query_post: {
         parameters: {
             query?: never;
@@ -6554,6 +6931,51 @@ export interface operations {
             };
         };
     };
+    browse_memory_records_api_v1_memory_records_get: {
+        parameters: {
+            query?: {
+                /** @description episodic|semantic|procedural */
+                kind?: string | null;
+                /** @description 'org' or 'project:<uuid>' */
+                scope?: string | null;
+                status?: string | null;
+                source_agent?: string | null;
+                project_id?: string | null;
+                /** @description metadata.record_subtype */
+                subtype?: string | null;
+                /** @description Case-insensitive substring. */
+                q?: string | null;
+                created_after?: string | null;
+                created_before?: string | null;
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_MemoryBrowseRow_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     get_memory_record_api_v1_memory_records__record_id__get: {
         parameters: {
             query?: {
@@ -6574,6 +6996,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemoryRecordDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    search_memory_records_api_v1_memory_records_search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemorySearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemorySearchResult"];
                 };
             };
             /** @description Validation Error */
@@ -9365,6 +9820,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_usage_api_v1_usage_get: {
+        parameters: {
+            query?: {
+                start?: string | null;
+                end?: string | null;
+                group_by?: string;
+                bucket?: string | null;
+                project_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageSummary"];
                 };
             };
             /** @description Validation Error */

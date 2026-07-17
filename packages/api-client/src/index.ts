@@ -53,3 +53,27 @@ export type MessagePage = Schemas["Page_MessageOut_"];
  *  ship plenty through the same promtail — carries only `line` and `labels`. */
 export type LogLine = Schemas["LogLine"];
 export type LogPage = Schemas["Page_LogLine_"];
+
+/** Aggregate LLM cost/tokens over a range (Vol 4 §6.10, TITAN-FRT-033).
+ *  `cost_usd` is a STRING everywhere in here: it is `Numeric(14,6)`, and the
+ *  totals are asserted to the micro-dollar against the ledger, which a float
+ *  cannot carry. Convert only at the point of drawing a pixel. */
+export type UsageSummary = Schemas["UsageSummary"];
+export type UsageGroup = Schemas["UsageGroup"];
+export type UsagePoint = Schemas["UsagePoint"];
+
+/** One memory record as the Explorer's browse list shows it. `record_subtype`
+ *  is what §6.11's tier tree calls the "Patterns"/"Lessons" tiers — they are
+ *  not tiers, they are `metadata->>'record_subtype'` on an ordinary record. */
+export type MemoryBrowseRow = Schemas["MemoryBrowseRow"];
+export type MemoryBrowsePage = Schemas["Page_MemoryBrowseRow_"];
+export type MemoryFacets = Schemas["MemoryFacets"];
+/** `score` is Qdrant's cosine similarity — NOT the §6.1 pipeline's blended,
+ *  set-relative `final_score`. That is what makes §6.11's ≥0.6 floor mean
+ *  something. */
+export type MemorySearchResult = Schemas["MemorySearchResult"];
+export type MemorySearchHit = Schemas["MemorySearchHit"];
+/** A record with its chunks and its COMPLETE ledger trail — the provenance
+ *  chain and usage history TITAN-FRT-034 requires. */
+export type MemoryRecordDetail = Schemas["MemoryRecordDetail"];
+export type DeploymentOut = Schemas["DeploymentOut"];

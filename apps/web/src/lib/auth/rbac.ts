@@ -23,8 +23,24 @@ export const ROLES = [
 ] as const;
 export type Role = (typeof ROLES)[number];
 
-/** `{audit, secret}` — cross-resource `*:action` wildcards do NOT reach these. */
-const SENSITIVE_RESOURCES: ReadonlySet<string> = new Set(["audit", "secret"]);
+/**
+ * Resources a cross-resource `*:action` wildcard does NOT reach.
+ *
+ * Mirrors `gateway/rbac.py::SENSITIVE_RESOURCES`, and must be kept in step with
+ * it: this set is the only thing stopping `*:read` — which viewer, operator,
+ * maintainer and admin all carry — from granting these in the UI.
+ *
+ * Phase 62 added `logs` to the backend carve-out and left this stale, so
+ * `rolesCan(["viewer"], "logs:read")` answered TRUE in the browser while the
+ * server 403'd. It never surfaced only because that screen deliberately renders
+ * the server's real 403 rather than calling `useCan` — i.e. luck, not design.
+ * Exported so a test can assert the two sets agree.
+ */
+export const SENSITIVE_RESOURCES: ReadonlySet<string> = new Set([
+  "audit",
+  "logs",
+  "secret",
+]);
 
 const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
   owner: ["*"],
@@ -37,6 +53,10 @@ const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     "message:write",
     "decision:write",
     "audit:read",
+    // Explicit, like the backend seed: `logs` is in SENSITIVE_RESOURCES, so
+    // the `*:read` below does NOT reach it. Without this line admin would see a
+    // logs control hidden that the server would allow.
+    "logs:read",
     "tool_approval:write",
     "memory:write",
     "memory:admin",

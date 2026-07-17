@@ -11,12 +11,14 @@ principal performing the operation, so provenance and audit are both recorded.
 """
 
 import uuid
+from datetime import datetime
 from typing import Annotated, cast
 
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from titan.gateway.pagination import Page, Pagination, keyset_from
 from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import (
     PermissionResolver,
@@ -28,7 +30,7 @@ from titan.gateway.rbac import (
     permission_granted,
 )
 from titan.identity.service import Principal
-from titan.memory import service
+from titan.memory import explorer, service
 from titan.memory.service import (
     CurationReport,
     EmbeddingsClient,
@@ -456,3 +458,107 @@ async def promote_endpoint(
 
 def mount(app: FastAPI) -> None:
     app.include_router(router)
+
+
+# --- the Memory Explorer's read seams (Vol 4 §6.11, Phase 63) ---------------
+
+
+@router.get("/memory/records", response_model=Page[explorer.MemoryBrowseRow])
+async def browse_memory_records(  # noqa: PLR0913 - the facet bar is the API
+    request: Request,
+    principal: _ReadMemory,
+    pagination: Pagination,
+    kind: Annotated[str | None, Query(description="episodic|semantic|procedural")] = None,
+    scope: Annotated[str | None, Query(description="'org' or 'project:<uuid>'")] = None,
+    status: Annotated[str | None, Query()] = "active",
+    source_agent: Annotated[str | None, Query()] = None,
+    project_id: Annotated[uuid.UUID | None, Query()] = None,
+    subtype: Annotated[str | None, Query(description="metadata.record_subtype")] = None,
+    q: Annotated[str | None, Query(description="Case-insensitive substring.")] = None,
+    created_after: Annotated[datetime | None, Query()] = None,
+    created_before: Annotated[datetime | None, Query()] = None,
+) -> Page[explorer.MemoryBrowseRow]:
+    """Browse memory records, faceted (Vol 4 §6.11).
+
+    The lexical half of the Explorer, and the complement to `:search`: `q` is a
+    substring, so it finds the identifier you half-remember, where semantic
+    search finds the idea you can only describe.
+
+    On §6.11's tier tree: `scope` is the only real tier axis and it holds just
+    `org` or `project:<uuid>`. "Patterns" and "Lessons" are NOT tiers — they are
+    records discriminated by `metadata->>'record_subtype'`, exposed here as
+    `subtype`. "Short-term" is not queryable at all: it lives in Redis keyed by
+    task with a 24h TTL, not in this table.
+    """
+    try:
+        explorer.validate_kind(kind)
+        explorer.validate_status(status)
+    except ValueError as exc:
+        raise ProblemException(
+            status=422,
+            title="Invalid filter",
+            detail=str(exc),
+            problem_type=problem_type("validation"),
+        ) from exc
+
+    filters = explorer.BrowseFilters(
+        kind=kind,
+        scope=scope,
+        status=status,
+        source_agent=source_agent,
+        project_id=project_id,
+        subtype=subtype,
+        q=q,
+        created_after=created_after,
+        created_before=created_before,
+    )
+    async with request.app.state.engine.connect() as conn:
+        return await explorer.browse(conn, filters=filters, keyset=keyset_from(pagination))
+
+
+@router.get("/memory/facets", response_model=explorer.MemoryFacets)
+async def memory_facets(
+    request: Request,
+    principal: _ReadMemory,
+    scope: Annotated[str | None, Query()] = None,
+    project_id: Annotated[uuid.UUID | None, Query()] = None,
+    status: Annotated[str | None, Query()] = "active",
+) -> explorer.MemoryFacets:
+    """The counts behind the tier tree and the facet filters (§6.11).
+
+    Counted under the same filters the list uses, so the tree never describes a
+    different query from the one on screen.
+    """
+    filters = explorer.BrowseFilters(scope=scope, project_id=project_id, status=status)
+    async with request.app.state.engine.connect() as conn:
+        return await explorer.facets(conn, filters=filters)
+
+
+@router.post("/memory/records:search", response_model=explorer.MemorySearchResult)
+async def search_memory_records(
+    request: Request,
+    body: explorer.MemorySearchRequest,
+    principal: _ReadMemory,
+) -> explorer.MemorySearchResult:
+    """Semantic search over memory, score-ranked (Vol 4 §6.11).
+
+    `score` is Qdrant's cosine similarity, NOT the §6.1 pipeline's `final_score`
+    — that one blends freshness and importance into relevance and min-max
+    normalises across the returned set, so its top hit always scores ~1.0 and
+    §6.11's "No semantic matches ≥ 0.6" state could never be reached. A cosine
+    is absolute and comparable between queries, which is what a score column a
+    human reads has to be. See `titan.memory.explorer` for the full reasoning.
+
+    A POST because the query is a body, not an identifier; it reads and writes
+    nothing.
+    """
+    state = request.app.state
+    return await explorer.search(
+        state.engine,
+        QdrantIndex(cast(httpx.AsyncClient, state.http)),
+        cast(EmbeddingsClient, state.llm_gateway),
+        query=body.query,
+        scope=body.scope,
+        top_k=body.top_k,
+        min_score=body.min_score,
+    )

@@ -17,6 +17,17 @@
   --foreground: hsl(224 20% 10%);
   --muted-foreground: hsl(220 10% 40%);
   --primary: hsl(212 92% 45%);
+  /* Categorical chart series (Vol 4 §6.10). Six hues, distinguishable in the
+     common colour-blind types and legible on both surfaces; the legend always
+     pairs a swatch with the series name, so colour is never the only signal
+     (TITAN-FRT-044). Tokens rather than literals because TITAN-FRT-010 forbids
+     raw colours in app code — and because these have to differ per theme. */
+  --chart-1: hsl(217 91% 55%);
+  --chart-2: hsl(160 84% 32%);
+  --chart-3: hsl(38 92% 42%);
+  --chart-4: hsl(280 65% 52%);
+  --chart-5: hsl(0 74% 50%);
+  --chart-6: hsl(199 89% 40%);
   --destructive: hsl(0 74% 46%);
   --success: hsl(152 60% 34%);
   --warning: hsl(35 92% 40%);
@@ -45,6 +56,13 @@
   --foreground: hsl(215 20% 92%);
   --muted-foreground: hsl(217 12% 62%);
   --primary: hsl(210 100% 60%);
+  /* Lighter and less saturated: the same hues on a dark surface. */
+  --chart-1: hsl(217 91% 65%);
+  --chart-2: hsl(160 70% 48%);
+  --chart-3: hsl(38 92% 58%);
+  --chart-4: hsl(280 65% 68%);
+  --chart-5: hsl(0 84% 65%);
+  --chart-6: hsl(199 89% 58%);
   --destructive: hsl(0 72% 56%);
   --success: hsl(150 62% 45%);
   --warning: hsl(38 92% 55%);

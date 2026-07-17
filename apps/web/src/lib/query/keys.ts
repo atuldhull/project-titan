@@ -118,6 +118,25 @@ export const queryKeys = {
    *  Those are plain awaited calls in the screen, not queries. */
   logs: (filters: Readonly<Record<string, unknown>> = {}) =>
     ["logs", filters] as const,
+
+  /** The LLM cost ledger (GET /api/v1/usage). Keyed by the range NAME, never
+   *  by the resolved `start`: the timestamp moves every millisecond, so keying
+   *  on it would mint a cache entry per render. */
+  usage: (filters: Readonly<Record<string, unknown>> = {}) =>
+    ["usage", filters] as const,
+
+  /** The Memory Explorer's browse list, keyed by its facets. */
+  memoryRecords: (filters: Readonly<Record<string, unknown>> = {}) =>
+    ["memory", "records", filters] as const,
+  /** One record + its chunks + its full ledger trail (FRT-034's provenance). */
+  memoryRecord: (recordId: string) => ["memory", "records", recordId] as const,
+  /** The counts behind the tier tree. */
+  memoryFacets: (filters: Readonly<Record<string, unknown>> = {}) =>
+    ["memory", "facets", filters] as const,
+  /** A semantic search. Cached per query so re-selecting a result does not
+   *  re-embed and re-search. */
+  memorySearch: (query: string, scope: string) =>
+    ["memory", "search", query, scope] as const,
 } as const;
 
 export type QueryKeys = typeof queryKeys;
