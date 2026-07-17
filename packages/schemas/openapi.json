@@ -193,6 +193,19 @@
             "title": "Role",
             "type": "string"
           },
+          "roster_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "This agent's declarative contract id \u2014 ``GET /agent-definitions/{roster_id}``.\n\nThe agents table and the YAML roster use DIFFERENT role vocabularies\n(`backend` here is `eng_backend` there; `pm` is `pm_product`), bridged by\n:data:`definition.ROLE_TO_ROSTER`. That mapping is the only way to reach\nan agent's tier, supervisor or KPIs, so it is published rather than left\nfor each client to re-derive and drift from.\n\nNone for a role with no roster entry \u2014 the map is not total in either\ndirection (`orchestrator` and `critic` are runtime-only roles with no\nagents-table equivalent).",
+            "readOnly": true,
+            "title": "Roster Id"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -212,7 +225,8 @@
           "config",
           "current_task_id",
           "created_at",
-          "version"
+          "version",
+          "roster_id"
         ],
         "title": "AgentOut",
         "type": "object"
@@ -11231,7 +11245,7 @@
     },
     "/api/v1/projects/{project_id}/messages": {
       "get": {
-        "description": "List a project's messages. ``task_id`` narrows to one task's thread \u2014 every\nstate change writes a transition message here (``orchestrator.service.\n_write_transition_message``), so this doubles as the task's event history.\n\nTwo caveats a reader MUST know. The log is HOLEY: a transition whose\n``message_kind`` is None (the scheduler's backlog->ready) writes nothing. And\nit is LOSSY: many actions collapse onto one kind (start/block/merge/fail/...\nall become ``progress_report``), so what happened is ``body.action``, never\n``kind``.",
+        "description": "List a project's messages. ``task_id`` narrows to one task's thread \u2014 every\nstate change writes a transition message here (``orchestrator.service.\n_write_transition_message``), so this doubles as the task's event history.\n\n**The two sender filters are not interchangeable, and which one you want is\nalmost always ``from_agent``.** A message's sender is recorded in one of\nthree mutually exclusive ways:\n\n- ``sender_agent_id`` \u2014 set ONLY by an actor-driven transition, which passes\n  the acting agent's id straight through. Narrow but precisely attributed.\n- ``from_agent`` \u2014 a ROLE string (the roster id, e.g. ``eng_backend``). This\n  is how the agent bus records every message an agent actually emits during a\n  turn: ``bus.send`` writes ``sender_agent_id=None`` explicitly, because\n  \"bus messages identify their sender by role\". So agent-to-agent traffic is\n  attributed by ROLE, not by agent id \u2014 and two agents sharing a role are\n  indistinguishable here. That is the system's own attribution model, not a\n  gap this filter can close.\n- ``sender_user_id`` \u2014 a human. Neither agent filter ever matches one.\n\nTwo further caveats. The log is HOLEY: a transition whose ``message_kind`` is\nNone (the scheduler's backlog->ready) writes nothing. And it is LOSSY: many\nactions collapse onto one kind (start/block/merge/fail/... all become\n``progress_report``), so what happened is ``body.action``, never ``kind``.",
         "operationId": "list_messages_api_v1_projects__project_id__messages_get",
         "parameters": [
           {
@@ -11292,6 +11306,39 @@
                 }
               ],
               "title": "Task Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sender_agent_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sender Agent Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_agent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Agent"
             }
           },
           {
@@ -11983,6 +12030,111 @@
         "summary": "Retry Pipeline",
         "tags": [
           "tasks"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/runs": {
+      "get": {
+        "description": "A project's runs, newest first \u2014 the only way to ask what an *agent* is\ndoing.\n\n``GET /runs`` requires a ``task_id``, which answers \"what happened to this\ntask\"; nothing answered \"what is this agent working on\". That question needs\nruns, not agents: ``agents.current_task_id`` has no writer anywhere and\n``agents.status`` only ever holds ``idle`` or ``paused``, whereas a run\ncarries the agent's task, the model and provider actually in use, its token\ncounts, its start time and its error text.\n\nProject-scoped on purpose. A run authorizes through its project (TITAN-SEC-032)\nand agents are org-level, so an ``/runs?agent_id=`` filter alone would span\nprojects the caller may not read.",
+        "operationId": "list_project_runs_api_v1_projects__project_id__runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "agent_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_RunOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Project Runs",
+        "tags": [
+          "runs"
         ]
       }
     },

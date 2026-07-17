@@ -14,15 +14,20 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from titan.gateway.concurrency import set_etag
 from titan.gateway.pagination import Page, Pagination, keyset_from
-from titan.gateway.rbac import RequiresAuth, authorize_in_project
+from titan.gateway.rbac import Requires, RequiresAuth, authorize_in_project
 from titan.identity.service import Principal
 from titan.orchestrator import service as tasks
+from titan.projects import service as projects
 from titan.runs import service
 from titan.runs.service import ArtifactOut, RunCreate, RunOut
 
 router = APIRouter(prefix="/api/v1", tags=["runs"])
 
 _Authenticated = Annotated[Principal, Depends(RequiresAuth())]
+# The project-scoped collection carries the project in its path, so it is guarded
+# declaratively like every other /projects/{project_id}/… route rather than
+# resolving the project through a task.
+_ReadInProject = Annotated[Principal, Depends(Requires("run:read", project_param="project_id"))]
 
 
 async def _authorize_run(
@@ -64,6 +69,37 @@ async def list_runs(
         task = await tasks.get_task(conn, task_id)
         await authorize_in_project(request, task.project_id, "run:read", resource="task")
         return await service.list_runs(conn, task_id=task_id, keyset=keyset)
+
+
+@router.get("/projects/{project_id}/runs", response_model=Page[RunOut])
+async def list_project_runs(
+    request: Request,
+    project_id: uuid.UUID,
+    pagination: Pagination,
+    principal: _ReadInProject,
+    agent_id: Annotated[uuid.UUID | None, Query()] = None,
+    status: Annotated[str | None, Query()] = None,
+) -> Page[RunOut]:
+    """A project's runs, newest first — the only way to ask what an *agent* is
+    doing.
+
+    ``GET /runs`` requires a ``task_id``, which answers "what happened to this
+    task"; nothing answered "what is this agent working on". That question needs
+    runs, not agents: ``agents.current_task_id`` has no writer anywhere and
+    ``agents.status`` only ever holds ``idle`` or ``paused``, whereas a run
+    carries the agent's task, the model and provider actually in use, its token
+    counts, its start time and its error text.
+
+    Project-scoped on purpose. A run authorizes through its project (TITAN-SEC-032)
+    and agents are org-level, so an ``/runs?agent_id=`` filter alone would span
+    projects the caller may not read.
+    """
+    keyset = keyset_from(pagination)
+    async with request.app.state.engine.connect() as conn:
+        await projects.get_project(conn, project_id)  # 404 before an empty page
+        return await service.list_project_runs(
+            conn, project_id=project_id, agent_id=agent_id, status=status, keyset=keyset
+        )
 
 
 @router.get("/runs/{run_id}", response_model=RunOut)

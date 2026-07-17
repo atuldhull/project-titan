@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 
-import { AgentRoster } from "@/components/agents/agent-roster";
+import { AgentGrid } from "@/components/agents/agent-grid";
 
 export const metadata: Metadata = { title: "Agents" };
 
-// The 16-agent roster grid (Vol 4 §6.5), wired live to the Phase-26 endpoint.
-// Runtime status (current task, live KPIs) and the intercepted detail drawer
-// arrive with the full dashboard build-out (M6).
+// The org chart in motion (Vol 4 §6.5): one card per runtime agent, its state
+// and its current work — joined to the declarative roster for tier and
+// authority. Clicking a card intercepts into the @drawer slide-over.
 export default function Page() {
-  return <AgentRoster />;
+  return <AgentGrid />;
 }

@@ -40,6 +40,10 @@ class Run(ConventionsMixin, Base):
             unique=True,
             postgresql_where=text("status IN ('queued', 'running')"),
         ),
+        # "What has this agent done?" — runs are the only place that answers it
+        # (agents.current_task_id has no writer anywhere), so GET
+        # /projects/{id}/runs takes an ?agent_id= filter. Migration 0031.
+        Index("idx_runs_agent", "agent_id", text("created_at DESC")),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)

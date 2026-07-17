@@ -62,16 +62,32 @@ async def list_messages(
     thread_id: Annotated[uuid.UUID | None, Query()] = None,
     kind: Annotated[str | None, Query()] = None,
     task_id: Annotated[uuid.UUID | None, Query()] = None,
+    sender_agent_id: Annotated[uuid.UUID | None, Query()] = None,
+    from_agent: Annotated[str | None, Query()] = None,
 ) -> Page[MessageOut]:
     """List a project's messages. ``task_id`` narrows to one task's thread — every
     state change writes a transition message here (``orchestrator.service.
     _write_transition_message``), so this doubles as the task's event history.
 
-    Two caveats a reader MUST know. The log is HOLEY: a transition whose
-    ``message_kind`` is None (the scheduler's backlog->ready) writes nothing. And
-    it is LOSSY: many actions collapse onto one kind (start/block/merge/fail/...
-    all become ``progress_report``), so what happened is ``body.action``, never
-    ``kind``."""
+    **The two sender filters are not interchangeable, and which one you want is
+    almost always ``from_agent``.** A message's sender is recorded in one of
+    three mutually exclusive ways:
+
+    - ``sender_agent_id`` — set ONLY by an actor-driven transition, which passes
+      the acting agent's id straight through. Narrow but precisely attributed.
+    - ``from_agent`` — a ROLE string (the roster id, e.g. ``eng_backend``). This
+      is how the agent bus records every message an agent actually emits during a
+      turn: ``bus.send`` writes ``sender_agent_id=None`` explicitly, because
+      "bus messages identify their sender by role". So agent-to-agent traffic is
+      attributed by ROLE, not by agent id — and two agents sharing a role are
+      indistinguishable here. That is the system's own attribution model, not a
+      gap this filter can close.
+    - ``sender_user_id`` — a human. Neither agent filter ever matches one.
+
+    Two further caveats. The log is HOLEY: a transition whose ``message_kind`` is
+    None (the scheduler's backlog->ready) writes nothing. And it is LOSSY: many
+    actions collapse onto one kind (start/block/merge/fail/... all become
+    ``progress_report``), so what happened is ``body.action``, never ``kind``."""
     keyset = keyset_from(pagination)
     async with request.app.state.engine.connect() as conn:
         await projects.get_project(conn, project_id)
@@ -82,6 +98,8 @@ async def list_messages(
             thread_id=thread_id,
             kind=kind,
             task_id=task_id,
+            sender_agent_id=sender_agent_id,
+            from_agent=from_agent,
         )
 
 

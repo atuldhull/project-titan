@@ -1452,11 +1452,25 @@ export interface paths {
          *     state change writes a transition message here (``orchestrator.service.
          *     _write_transition_message``), so this doubles as the task's event history.
          *
-         *     Two caveats a reader MUST know. The log is HOLEY: a transition whose
-         *     ``message_kind`` is None (the scheduler's backlog->ready) writes nothing. And
-         *     it is LOSSY: many actions collapse onto one kind (start/block/merge/fail/...
-         *     all become ``progress_report``), so what happened is ``body.action``, never
-         *     ``kind``.
+         *     **The two sender filters are not interchangeable, and which one you want is
+         *     almost always ``from_agent``.** A message's sender is recorded in one of
+         *     three mutually exclusive ways:
+         *
+         *     - ``sender_agent_id`` — set ONLY by an actor-driven transition, which passes
+         *       the acting agent's id straight through. Narrow but precisely attributed.
+         *     - ``from_agent`` — a ROLE string (the roster id, e.g. ``eng_backend``). This
+         *       is how the agent bus records every message an agent actually emits during a
+         *       turn: ``bus.send`` writes ``sender_agent_id=None`` explicitly, because
+         *       "bus messages identify their sender by role". So agent-to-agent traffic is
+         *       attributed by ROLE, not by agent id — and two agents sharing a role are
+         *       indistinguishable here. That is the system's own attribution model, not a
+         *       gap this filter can close.
+         *     - ``sender_user_id`` — a human. Neither agent filter ever matches one.
+         *
+         *     Two further caveats. The log is HOLEY: a transition whose ``message_kind`` is
+         *     None (the scheduler's backlog->ready) writes nothing. And it is LOSSY: many
+         *     actions collapse onto one kind (start/block/merge/fail/... all become
+         *     ``progress_report``), so what happened is ``body.action``, never ``kind``.
          */
         get: operations["list_messages_api_v1_projects__project_id__messages_get"];
         put?: never;
@@ -1646,6 +1660,38 @@ export interface paths {
          *     orchestrator resumes on.
          */
         post: operations["retry_pipeline_api_v1_projects__project_id__pipeline_retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Project Runs
+         * @description A project's runs, newest first — the only way to ask what an *agent* is
+         *     doing.
+         *
+         *     ``GET /runs`` requires a ``task_id``, which answers "what happened to this
+         *     task"; nothing answered "what is this agent working on". That question needs
+         *     runs, not agents: ``agents.current_task_id`` has no writer anywhere and
+         *     ``agents.status`` only ever holds ``idle`` or ``paused``, whereas a run
+         *     carries the agent's task, the model and provider actually in use, its token
+         *     counts, its start time and its error text.
+         *
+         *     Project-scoped on purpose. A run authorizes through its project (TITAN-SEC-032)
+         *     and agents are org-level, so an ``/runs?agent_id=`` filter alone would span
+         *     projects the caller may not read.
+         */
+        get: operations["list_project_runs_api_v1_projects__project_id__runs_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2220,6 +2266,21 @@ export interface components {
             project_id: string | null;
             /** Role */
             role: string;
+            /**
+             * Roster Id
+             * @description This agent's declarative contract id — ``GET /agent-definitions/{roster_id}``.
+             *
+             *     The agents table and the YAML roster use DIFFERENT role vocabularies
+             *     (`backend` here is `eng_backend` there; `pm` is `pm_product`), bridged by
+             *     :data:`definition.ROLE_TO_ROSTER`. That mapping is the only way to reach
+             *     an agent's tier, supervisor or KPIs, so it is published rather than left
+             *     for each client to re-derive and drift from.
+             *
+             *     None for a role with no roster entry — the map is not total in either
+             *     direction (`orchestrator` and `critic` are runtime-only roles with no
+             *     agents-table equivalent).
+             */
+            readonly roster_id: string | null;
             /** Status */
             status: string;
             /** Version */
@@ -7839,6 +7900,8 @@ export interface operations {
                 thread_id?: string | null;
                 kind?: string | null;
                 task_id?: string | null;
+                sender_agent_id?: string | null;
+                from_agent?: string | null;
                 limit?: number;
                 cursor?: string | null;
             };
@@ -8262,6 +8325,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PipelineOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_project_runs_api_v1_projects__project_id__runs_get: {
+        parameters: {
+            query?: {
+                agent_id?: string | null;
+                status?: string | null;
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_RunOut_"];
                 };
             };
             /** @description Validation Error */

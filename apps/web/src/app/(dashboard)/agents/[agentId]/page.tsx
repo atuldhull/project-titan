@@ -1,11 +1,17 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
-import { StubPage } from "@/components/shell/stub-page";
+import { AgentDetailScreen } from "@/components/agents/agent-detail-screen";
 
 export const metadata: Metadata = { title: "Agent" };
 
-// Rendered as an intercepted drawer over /agents in M6 (Vol 4 §11); a plain
-// route for now so deep links already resolve (TITAN-FRT-006).
+/**
+ * One agent, full-page.
+ *
+ * Reached by a hard navigation only — a shared link, a refresh, a new tab. A
+ * click from the grid is intercepted into the `@drawer` slide-over instead.
+ * Both render the same body, so the two paths cannot drift.
+ */
 export default async function Page({
   params,
 }: {
@@ -13,13 +19,14 @@ export default async function Page({
 }) {
   const { agentId } = await params;
   return (
-    <StubPage
-      title="Agent Detail"
-      description="Role, current task, tool grants, KPIs, and recent runs for one agent (Vol 4 §6.5)."
-    >
-      <p className="mt-3 font-mono text-xs text-muted-foreground">
-        agent: {agentId}
-      </p>
-    </StubPage>
+    <div className="mx-auto max-w-2xl space-y-4">
+      <Link
+        href="/agents"
+        className="text-xs text-muted-foreground underline underline-offset-2"
+      >
+        ← All agents
+      </Link>
+      <AgentDetailScreen agentId={agentId} />
+    </div>
   );
 }

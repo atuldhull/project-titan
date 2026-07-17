@@ -1,64 +1,148 @@
 "use client";
 
+import Link from "next/link";
+
 import { Badge } from "@/components/ui/badge";
+import { StateChip } from "@/components/agents/state-chip";
+import type { AgentView } from "@/lib/agents/view";
+import { MODEL_TIER_VARIANT } from "@/lib/agents/types";
 import { cn } from "@/lib/utils";
 
-import { MODEL_TIER_VARIANT, type AgentDefinition } from "./types";
+/** "2m 10s" — §6.5's elapsed readout. */
+export function formatElapsed(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+  return `${seconds}s`;
+}
 
-// One agent tile in the roster grid: identity + the at-a-glance authority signals
-// (model tier, security veto, fail-open/closed posture, supervisor).
-export function AgentCard({
-  agent,
-  selected,
-  onSelect,
-}: {
-  agent: AgentDefinition;
-  selected: boolean;
-  onSelect: (agentId: string) => void;
-}) {
-  const { failure_policy: failure, authority } = agent;
+/** "640 tok/s" / "1.2k tok/s". */
+export function formatThroughput(tps: number): string {
+  return tps >= 1000
+    ? `${(tps / 1000).toFixed(1)}k tok/s`
+    : `${Math.round(tps)} tok/s`;
+}
+
+/**
+ * One agent tile: identity, state, current work, the model really in use.
+ *
+ * The whole card is a link to the agent's drawer rather than a button, so
+ * middle-click and "open in new tab" behave — the drawer is a real route.
+ */
+export function AgentCard({ view }: { view: AgentView }) {
+  const { agent, definition, state, model, throughput, elapsedMs, failure } =
+    view;
+  // From the RUN's project, not the agent's: an org-level agent has no project
+  // of its own and would lose its task link on exactly the cards that are
+  // working.
+  const taskHref =
+    view.currentTaskId && view.runProjectId
+      ? `/projects/${view.runProjectId}/board?task=${view.currentTaskId}`
+      : null;
+
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(agent.agent_id)}
-      aria-pressed={selected}
+    <div
       className={cn(
-        "flex flex-col gap-2 rounded-lg border bg-card p-4 text-left transition-colors",
-        "hover:border-ring/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-        selected && "border-primary ring-2 ring-primary/40",
+        "relative flex flex-col gap-2 rounded-lg border bg-card p-4 transition-colors",
+        "focus-within:ring-2 focus-within:ring-ring/50 hover:border-ring/60",
+        state === "error" && "border-destructive/60",
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{agent.display_name}</p>
+          {/* The card's own link. `after:absolute after:inset-0` makes the whole
+              tile clickable while keeping ONE control in the a11y tree.
+              The cost: that pseudo-element is the hit target for everything
+              beneath it, so anything with a `title` — or its own link — must be
+              lifted above it with `relative z-10`, or its tooltip is
+              unreachable and the click goes to the card instead. */}
+          <Link
+            href={`/agents/${agent.id}`}
+            className="truncate text-sm font-medium after:absolute after:inset-0 focus-visible:outline-none"
+          >
+            {agent.name}
+          </Link>
           <p className="truncate font-mono text-xs text-muted-foreground">
-            {agent.agent_id}
+            {agent.role}
           </p>
         </div>
-        <Badge variant={MODEL_TIER_VARIANT[agent.model_policy.tier]}>
-          {agent.model_policy.tier}
-        </Badge>
+        <StateChip state={state} />
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
-        {authority.veto ? <Badge variant="destructive">veto</Badge> : null}
-        {failure.mode === "fail_closed" ? (
-          <Badge variant="outline" className="text-destructive">
-            fail-closed
+      {/* Current work. §6.5 wants a task link; it comes from the agent's RUN,
+          because agents.current_task_id has no writer and is always null. */}
+      {failure ? (
+        <p
+          className="relative z-10 truncate text-xs text-destructive"
+          title={failure.error ?? undefined}
+        >
+          {failure.error ?? "run failed"}
+        </p>
+      ) : taskHref ? (
+        // Sits above the card-wide overlay so it is separately clickable.
+        <Link
+          href={taskHref}
+          className="relative z-10 truncate text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          {view.currentTaskId?.slice(0, 8)}
+        </Link>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          {state === "paused" ? "paused by an operator" : "no active task"}
+        </p>
+      )}
+
+      {/* z-10: these badges carry the title tooltips that explain configured-vs-
+          actual and what the throughput is averaged over. Under the overlay they
+          would never appear. */}
+      <div className="relative z-10 flex flex-wrap items-center gap-1.5">
+        {model.model ? (
+          <Badge
+            variant="outline"
+            className="font-mono"
+            // §6.5 wants "model+provider IN USE". When nothing has run, all we
+            // have is the CONFIGURED binding, and the two really can differ —
+            // so the card says which one it is showing rather than implying.
+            title={
+              model.actual
+                ? "The model this agent's most recent run actually used"
+                : "This agent's configured binding — it has not run yet"
+            }
+          >
+            {model.provider ? `${model.provider}/` : ""}
+            {model.model}
+            {model.actual ? "" : " (configured)"}
           </Badge>
         ) : null}
-        {failure.mode === "fail_open" ? (
-          <Badge variant="secondary">fail-open</Badge>
+        {throughput ? (
+          <Badge
+            variant="secondary"
+            title="Average over this agent's last completed run"
+          >
+            {formatThroughput(throughput.tokensPerSecond)}
+          </Badge>
         ) : null}
-        {failure.watchdog_restart ? (
-          <Badge variant="outline">watchdog</Badge>
+        {elapsedMs !== null ? (
+          <Badge variant="secondary" title="Elapsed on the current run">
+            {formatElapsed(elapsedMs)}
+          </Badge>
+        ) : null}
+        {definition?.authority.veto ? (
+          <Badge variant="destructive">veto</Badge>
+        ) : null}
+        {definition ? (
+          <Badge variant={MODEL_TIER_VARIANT[definition.model_policy.tier]}>
+            {definition.model_policy.tier}
+          </Badge>
         ) : null}
       </div>
-
-      <p className="text-xs text-muted-foreground">
-        reports to{" "}
-        <span className="font-mono text-foreground">{agent.supervisor}</span>
-      </p>
-    </button>
+    </div>
   );
 }

@@ -144,6 +144,30 @@ async def list_runs(conn: AsyncConnection, *, task_id: uuid.UUID, keyset: Keyset
     return Page(items=[RunOut.model_validate(r) for r in page], next_cursor=cursor)
 
 
+async def list_project_runs(
+    conn: AsyncConnection,
+    *,
+    project_id: uuid.UUID,
+    agent_id: uuid.UUID | None = None,
+    status: str | None = None,
+    keyset: Keyset,
+) -> Page[RunOut]:
+    """Every run in a project, newest first — optionally one agent's, or one
+    status'.
+
+    This is the only path from an *agent* to its work. ``agents.current_task_id``
+    is never written by anything (and ``agents.status`` only ever holds
+    ``idle``/``paused``), so a run is where an agent's live task, the model and
+    provider actually in use, its token counts, its elapsed time and its error
+    text all really live.
+    """
+    rows = await repo.list_runs_by_project(
+        conn, project_id=project_id, agent_id=agent_id, status=status, keyset=keyset
+    )
+    page, cursor = keyset.paginate(rows)
+    return Page(items=[RunOut.model_validate(r) for r in page], next_cursor=cursor)
+
+
 async def cancel_run(conn: AsyncConnection, run_id: uuid.UUID) -> RunOut:
     """queued|running → cancelled; a terminal run is a 409, a missing one 404."""
     row = await repo.cancel_run(conn, run_id, allowed_from=_CANCELLABLE)

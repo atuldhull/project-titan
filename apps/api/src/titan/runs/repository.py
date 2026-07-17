@@ -89,6 +89,45 @@ async def list_runs_by_task(
     return result.all()
 
 
+async def list_runs_by_project(
+    conn: AsyncConnection,
+    *,
+    project_id: uuid.UUID,
+    agent_id: uuid.UUID | None,
+    status: str | None,
+    keyset: Keyset,
+) -> Sequence[Row[Any]]:
+    """Runs across one project, optionally narrowed to one agent and/or status.
+
+    Deliberately a subquery against ``tasks`` rather than a JOIN. ``Keyset``
+    splices bare ``created_at``/``id`` into both ORDER BY and its seek
+    predicate, and ``tasks`` has columns of both names — a join would make them
+    ambiguous and Postgres would reject the statement. Keeping ``runs`` the only
+    table in the FROM keeps the shared keyset SQL correct without teaching it
+    about aliases.
+    """
+    clauses = ["task_id IN (SELECT id FROM tasks WHERE project_id = :pid)"]
+    params: dict[str, Any] = {"pid": project_id, "limit": keyset.fetch}
+    if agent_id is not None:
+        clauses.append("agent_id = :agent_id")
+        params["agent_id"] = agent_id
+    if status is not None:
+        clauses.append("status = :status")
+        params["status"] = status
+    seek, seek_params = keyset.where()
+    if seek:
+        clauses.append(seek)
+        params.update(seek_params)
+    result = await conn.execute(
+        text(
+            f"SELECT {_RUN_COLS} FROM runs WHERE {' AND '.join(clauses)} "
+            f"ORDER BY {keyset.order_by} LIMIT :limit"
+        ),
+        params,
+    )
+    return result.all()
+
+
 async def cancel_run(
     conn: AsyncConnection, run_id: uuid.UUID, *, allowed_from: Sequence[str]
 ) -> Row[Any] | None:

@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -98,9 +98,29 @@ class AgentOut(BaseModel):
     status: str
     model_binding: JsonbDict
     config: JsonbDict
+    #: Always NULL in practice: the column exists but NOTHING writes it. An
+    #: agent's live task comes from its running row in `runs`
+    #: (``GET /projects/{id}/runs?agent_id=``), never from here.
     current_task_id: uuid.UUID | None
     created_at: datetime
     version: int
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def roster_id(self) -> str | None:
+        """This agent's declarative contract id — ``GET /agent-definitions/{roster_id}``.
+
+        The agents table and the YAML roster use DIFFERENT role vocabularies
+        (`backend` here is `eng_backend` there; `pm` is `pm_product`), bridged by
+        :data:`definition.ROLE_TO_ROSTER`. That mapping is the only way to reach
+        an agent's tier, supervisor or KPIs, so it is published rather than left
+        for each client to re-derive and drift from.
+
+        None for a role with no roster entry — the map is not total in either
+        direction (`orchestrator` and `critic` are runtime-only roles with no
+        agents-table equivalent).
+        """
+        return roster_id_for_role(self.role)
 
 
 def _conflict(detail: str) -> ProblemException:

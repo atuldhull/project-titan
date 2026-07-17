@@ -36,6 +36,32 @@ class Message(ConventionsMixin, Base):
             "created_at",
             postgresql_where=text("to_agent IS NOT NULL"),
         ),
+        # The task Sheet's ?task_id filter (migration 0030).
+        Index(
+            "idx_messages_project_task",
+            "project_id",
+            "task_id",
+            postgresql_where=text("task_id IS NOT NULL"),
+        ),
+        # One agent's own output, for the §6.5 detail drawer (migration 0031). A
+        # human's messages carry sender_user_id instead, so they never match —
+        # and note this only ever holds actor-driven TRANSITION messages, since
+        # `bus.send` sets sender_agent_id=None and identifies the sender by role.
+        Index(
+            "idx_messages_project_sender_agent",
+            "project_id",
+            "sender_agent_id",
+            postgresql_where=text("sender_agent_id IS NOT NULL"),
+        ),
+        # Where an agent's REAL output is found: the bus records the sender as a
+        # role here (migration 0031). Mirrors idx_messages_to_agent above.
+        Index(
+            "idx_messages_project_from_agent",
+            "project_id",
+            "from_agent",
+            text("created_at DESC"),
+            postgresql_where=text("from_agent IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)

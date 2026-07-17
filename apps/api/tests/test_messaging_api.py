@@ -389,3 +389,239 @@ def test_list_messages_task_filter_composes_with_kind(api: dict[str, Any]) -> No
     # Both predicates are load-bearing: kind alone would return two.
     kind_only = api["client"].get(f"/api/v1/projects/{pid}/messages?kind=bug_report", headers=owner)
     assert len(kind_only.json()["items"]) == 2
+
+
+# --- ?sender_agent_id: one agent's own output (Phase 61; Vol 4 §6.5 drawer) --
+
+
+def _agent(api: dict[str, Any], project_id: str, name: str) -> str:
+    resp = api["client"].post(
+        "/api/v1/agents",
+        json={
+            # `backend`, not the roster's `eng_backend`: the agents table and
+            # the YAML roster use DIFFERENT role vocabularies, bridged by
+            # definition.ROLE_TO_ROSTER.
+            "role": "backend",
+            "name": name,
+            "project_id": project_id,
+            "model_binding": {"provider": "ollama", "model": "qwen2.5-coder:7b"},
+        },
+        headers=api["token_for"]("owner"),
+    )
+    assert resp.status_code == 201, resp.text
+    return str(resp.json()["id"])
+
+
+def _assigned_task(api: dict[str, Any], project_id: str, agent_id: str) -> str:
+    """Drive a real task through ready -> assigned by `agent_id`.
+
+    Deliberately routed through the transition endpoint rather than posting a
+    message: `assign` is the genuine path that writes a message with
+    sender_agent_id set (`_write_transition_message` passes actor_agent_id
+    straight through), so this proves the filter against the log agents really
+    produce. A message POSTed over REST by a human can never carry a
+    sender_agent_id at all — the sender is derived from the principal.
+    """
+    client, headers = api["client"], api["token_for"]("owner")
+    task = client.post(
+        f"/api/v1/projects/{project_id}/tasks",
+        json={"title": f"work for {agent_id}"},
+        headers=headers,
+    )
+    assert task.status_code == 201, task.text
+    tid = str(task.json()["id"])
+    # backlog -> ready is the action `ready`, and it writes NO message
+    # (message_kind is None — the scheduler drives it). The assign below is what
+    # puts an agent-sent row in the log.
+    ready = client.post(
+        f"/api/v1/tasks/{tid}:transition", json={"action": "ready"}, headers=headers
+    )
+    assert ready.status_code == 200, ready.text
+    assigned = client.post(
+        f"/api/v1/tasks/{tid}:transition",
+        json={"action": "assign", "actor_agent_id": agent_id},
+        headers=headers,
+    )
+    assert assigned.status_code == 200, assigned.text
+    return tid
+
+
+def test_list_messages_filters_by_sender_agent(api: dict[str, Any]) -> None:
+    pid = _project(api)
+    mine, theirs = _agent(api, pid, "be-1"), _agent(api, pid, "be-2")
+    my_task = _assigned_task(api, pid, mine)
+    _assigned_task(api, pid, theirs)
+
+    resp = api["client"].get(
+        f"/api/v1/projects/{pid}/messages",
+        params={"sender_agent_id": mine},
+        headers=api["token_for"]("owner"),
+    )
+    assert resp.status_code == 200, resp.text
+    items = resp.json()["items"]
+    assert items, "the assign transition should have written a message"
+    assert {m["sender_agent_id"] for m in items} == {mine}
+    assert {m["task_id"] for m in items} == {my_task}
+
+
+def test_sender_agent_filter_excludes_human_messages(api: dict[str, Any]) -> None:
+    """A human's message carries sender_user_id, never sender_agent_id — so an
+    agent filter must not surface it. This is why the index is partial."""
+    pid = _project(api)
+    agent = _agent(api, pid, "be-1")
+    _assigned_task(api, pid, agent)
+    api["client"].post(
+        f"/api/v1/projects/{pid}/messages",
+        json={"kind": "human", "body": {"text": "top priority please"}},
+        headers=api["token_for"]("owner"),
+    )
+
+    unfiltered = (
+        api["client"]
+        .get(f"/api/v1/projects/{pid}/messages", headers=api["token_for"]("owner"))
+        .json()["items"]
+    )
+    assert any(m["kind"] == "human" for m in unfiltered), "the human message is in the log"
+
+    filtered = (
+        api["client"]
+        .get(
+            f"/api/v1/projects/{pid}/messages",
+            params={"sender_agent_id": agent},
+            headers=api["token_for"]("owner"),
+        )
+        .json()["items"]
+    )
+    assert filtered, "the agent's own message survives the filter"
+    assert all(m["kind"] != "human" for m in filtered)
+    assert all(m["sender_user_id"] is None for m in filtered)
+
+
+def test_sender_agent_filter_composes_with_kind(api: dict[str, Any]) -> None:
+    pid = _project(api)
+    agent, other = _agent(api, pid, "be-1"), _agent(api, pid, "be-2")
+    _assigned_task(api, pid, agent)
+    # A SECOND agent with a task_assignment of its own: without it the kind
+    # filter alone would satisfy the assertions and the sender filter could be
+    # deleted with this test still green.
+    _assigned_task(api, pid, other)
+
+    resp = api["client"].get(
+        f"/api/v1/projects/{pid}/messages",
+        params={"sender_agent_id": agent, "kind": "task_assignment"},
+        headers=api["token_for"]("owner"),
+    )
+    assert resp.status_code == 200, resp.text
+    items = resp.json()["items"]
+    assert items and all(
+        m["kind"] == "task_assignment" and m["sender_agent_id"] == agent for m in items
+    )
+
+    empty = api["client"].get(
+        f"/api/v1/projects/{pid}/messages",
+        params={"sender_agent_id": agent, "kind": "bug_report"},
+        headers=api["token_for"]("owner"),
+    )
+    assert empty.status_code == 200 and empty.json()["items"] == []
+
+
+def _bus_message(api: dict[str, Any], project_id: str, from_agent: str, to_agent: str) -> None:
+    """Emit a message the way an AGENT really does — through the bus.
+
+    This is the path that matters and the one a REST-only test cannot reach.
+    `bus.send` writes `sender_agent_id=None` on purpose ("bus messages identify
+    their sender by role") and records the sender as a ROLE in `from_agent`. So
+    every message an agent emits during a turn is invisible to a
+    `?sender_agent_id=` filter — which is exactly the hole this pins.
+    """
+    from titan.messaging import bus
+    from titan.messaging.protocol import AgentMessage
+
+    async def send() -> None:
+        async with api["engine"].begin() as conn:
+            await bus.send(
+                conn,
+                AgentMessage(
+                    type="ProgressReport",
+                    project_id=uuid.UUID(project_id),
+                    from_agent=from_agent,
+                    to_agent=to_agent,
+                    payload={"status": "in_progress", "percent_complete": 60, "summary": "wip"},
+                ),
+                actor=from_agent,
+            )
+
+    run_async(send)
+
+
+def test_bus_messages_carry_no_sender_agent_id_only_a_role(api: dict[str, Any]) -> None:
+    """The fact the whole agent-detail view depends on.
+
+    An agent's own output is attributed by ROLE, never by agent id. A drawer
+    that asked `?sender_agent_id=` for "this agent's messages" would render an
+    empty list next to an agent that has been talking all day.
+    """
+    pid = _project(api)
+    _bus_message(api, pid, from_agent="eng_backend", to_agent="qa")
+
+    listed = (
+        api["client"]
+        .get(f"/api/v1/projects/{pid}/messages", headers=api["token_for"]("owner"))
+        .json()["items"]
+    )
+    assert len(listed) == 1
+    assert listed[0]["sender_agent_id"] is None
+    assert listed[0]["from_agent"] == "eng_backend"
+
+
+def test_list_messages_filters_by_from_agent(api: dict[str, Any]) -> None:
+    pid = _project(api)
+    _bus_message(api, pid, from_agent="eng_backend", to_agent="qa")
+    _bus_message(api, pid, from_agent="qa", to_agent="eng_backend")
+
+    resp = api["client"].get(
+        f"/api/v1/projects/{pid}/messages",
+        params={"from_agent": "eng_backend"},
+        headers=api["token_for"]("owner"),
+    )
+    assert resp.status_code == 200, resp.text
+    items = resp.json()["items"]
+    assert len(items) == 1
+    assert items[0]["from_agent"] == "eng_backend"
+
+
+def test_sender_agent_id_does_not_see_bus_output(api: dict[str, Any]) -> None:
+    """Pins the LIMIT of the sender_agent_id filter rather than routing around it.
+
+    An agent with both an actor-driven transition message AND real bus output:
+    the id filter finds only the former. Anything claiming to show "everything
+    this agent said" must use from_agent.
+    """
+    pid = _project(api)
+    agent = _agent(api, pid, "be-1")
+    _assigned_task(api, pid, agent)  # writes sender_agent_id = agent
+    _bus_message(api, pid, from_agent="eng_backend", to_agent="qa")  # writes from_agent
+
+    by_id = (
+        api["client"]
+        .get(
+            f"/api/v1/projects/{pid}/messages",
+            params={"sender_agent_id": agent},
+            headers=api["token_for"]("owner"),
+        )
+        .json()["items"]
+    )
+    by_role = (
+        api["client"]
+        .get(
+            f"/api/v1/projects/{pid}/messages",
+            params={"from_agent": "eng_backend"},
+            headers=api["token_for"]("owner"),
+        )
+        .json()["items"]
+    )
+
+    assert {m["kind"] for m in by_id} == {"task_assignment"}
+    assert {m["kind"] for m in by_role} == {"progress_report"}
+    # Disjoint: the two filters see different halves of the same agent's life.
+    assert {m["id"] for m in by_id}.isdisjoint({m["id"] for m in by_role})

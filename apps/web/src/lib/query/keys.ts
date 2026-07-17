@@ -28,8 +28,19 @@ export const queryKeys = {
   /** Filter-agnostic prefix — invalidates every filtered task list at once. */
   projectTasksAll: (pid: string) => ["project", pid, "tasks"] as const,
   projectRuns: (pid: string) => ["project", pid, "runs"] as const,
+  /** One agent's runs in one project — the ONLY answer to "what is this agent
+   *  doing" (`agents.current_task_id` has no writer anywhere and
+   *  `agents.status` only ever holds idle|paused, so a run is where the live
+   *  task, the model actually in use, the token counts and the error text are).
+   *  Nested under projectRuns so a run frame's invalidation reaches it. */
+  projectAgentRuns: (pid: string, agentId: string) =>
+    ["project", pid, "runs", "agent", agentId] as const,
   projectDeployments: (pid: string) => ["project", pid, "deployments"] as const,
   projectMessages: (pid: string) => ["project", pid, "messages"] as const,
+  /** One agent's own output — nested under projectMessages so a message frame
+   *  refreshes the agent drawer that is open over it. */
+  agentMessages: (pid: string, agentId: string) =>
+    ["project", pid, "messages", "agent", agentId] as const,
 
   // The three task-scoped keys below are deliberately nested UNDER their
   // project-scoped prefix rather than rooted at "task". That is what makes the
@@ -71,8 +82,19 @@ export const queryKeys = {
    *  project, and an incoming approval notification invalidates them all. */
   approvalsAll: () => ["approvals"] as const,
 
+  /** The RUNTIME agent registry (GET /api/v1/agents) — a Page<AgentOut>. */
   agents: () => ["agents"] as const,
   agent: (agentId: string) => ["agents", agentId] as const,
+  /** The DECLARATIVE roster (GET /api/v1/agent-definitions) — an
+   *  AgentDefinition[], and a different endpoint, shape and lifetime from
+   *  `agents()`.
+   *
+   *  These two shared the `["agents"]` key until Phase 61, which is a real bug
+   *  and not a tidiness point: one cache entry held either a Page (an object)
+   *  or a definition list (an array) depending on which screen mounted first,
+   *  and with staleTime 30s the loser did not refetch. /org -> /agents inside
+   *  the window handed the roster a Page and it threw on `.filter`. */
+  agentDefinitions: () => ["agent-definitions"] as const,
 
   notifications: (filters: { unread?: boolean } = {}) =>
     ["notifications", filters] as const,

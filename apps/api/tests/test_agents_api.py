@@ -161,3 +161,55 @@ def test_pause_requires_configure(api: dict[str, Any]) -> None:
     aid = _new_agent(api).json()["id"]
     resp = api["client"].post(f"/api/v1/agents/{aid}:pause", headers=api["token_for"]("viewer"))
     assert resp.status_code == 403
+
+
+# --- roster_id: the bridge to the declarative contract (Phase 61) -----------
+
+
+def test_agent_out_publishes_its_roster_id(api: dict[str, Any]) -> None:
+    """The agents table and the YAML roster use different role vocabularies.
+
+    Without this on the wire, every client re-derives ROLE_TO_ROSTER and drifts
+    from it — and the mapping is the only route to an agent's tier, supervisor
+    and KPIs, which Vol 4 §6.5 groups the whole grid by.
+    """
+    resp = api["client"].post(
+        "/api/v1/agents",
+        json={"role": "backend", "name": "be-1", "model_binding": _MODEL_BINDING},
+        headers=api["token_for"]("owner"),
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["role"] == "backend"
+    assert resp.json()["roster_id"] == "eng_backend"
+
+    # And it really does resolve to a definition — the point of publishing it.
+    definition = api["client"].get(
+        "/api/v1/agent-definitions/eng_backend", headers=api["token_for"]("owner")
+    )
+    assert definition.status_code == 200, definition.text
+    assert definition.json()["agent_id"] == "eng_backend"
+
+
+def test_every_api_role_maps_to_a_real_roster_definition(api: dict[str, Any]) -> None:
+    """ROLE_TO_ROSTER must not name a definition that does not exist.
+
+    A stale entry would surface as an agent whose tier silently vanishes from
+    the grid, which is exactly the kind of quiet hole that survives review.
+    """
+    from titan.agents.definition import ROLE_TO_ROSTER
+
+    listed = api["client"].get("/api/v1/agent-definitions", headers=api["token_for"]("owner"))
+    assert listed.status_code == 200, listed.text
+    known = {d["agent_id"] for d in listed.json()}
+    assert set(ROLE_TO_ROSTER.values()) <= known, set(ROLE_TO_ROSTER.values()) - known
+
+
+def test_roster_id_is_none_for_an_unmapped_role() -> None:
+    """The map is not total in either direction, and the field says so honestly
+    rather than inventing an id: `orchestrator` and `critic` are runtime-only
+    roster roles with no agents-table equivalent."""
+    from titan.agents.definition import ROLE_TO_ROSTER, roster_id_for_role
+
+    assert roster_id_for_role("orchestrator") is None
+    assert roster_id_for_role(None) is None
+    assert "orchestrator" not in ROLE_TO_ROSTER and "critic" not in ROLE_TO_ROSTER

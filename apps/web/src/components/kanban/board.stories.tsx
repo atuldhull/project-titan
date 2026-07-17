@@ -33,6 +33,7 @@ const AGENT: AgentOut = {
   id: "a1",
   project_id: "p1",
   role: "backend",
+  roster_id: "eng_backend",
   name: "backend-bot",
   status: "busy",
   model_binding: { provider: "ollama", model: "qwen2.5-coder:7b" },
