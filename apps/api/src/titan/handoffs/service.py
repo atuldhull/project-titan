@@ -104,6 +104,34 @@ class HandoffArtifactOut(BaseModel):
     created_at: datetime
 
 
+class ArtifactVersion(BaseModel):
+    """One revision in a stage's history — metadata only, no ``body``."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    project_id: uuid.UUID
+    stage: str
+    artifact_type: str
+    schema_version: int
+    version: int
+    submitted_by: str
+    created_at: datetime
+
+
+class ArtifactVersions(BaseModel):
+    """A stage's revision history, newest first.
+
+    Not a paginated `Page`: this is a bounded per-(project, stage) history, and a
+    timeline that renders "v1..vN" needs all of N to draw itself. It stays small
+    because a version is an agent RESUBMISSION — one per gate-failure retry, not
+    per edit."""
+
+    project_id: uuid.UUID
+    stage: str
+    versions: list[ArtifactVersion]
+
+
 def _conflict(detail: str) -> ProblemException:
     return ProblemException(
         status=409, title="Conflict", detail=detail, problem_type=problem_type("conflict")
@@ -504,10 +532,52 @@ async def latest_artifact(
     return HandoffArtifactOut.model_validate(row)
 
 
+async def artifact_versions(
+    conn: AsyncConnection, project_id: uuid.UUID, stage: str
+) -> ArtifactVersions:
+    """Every version of a stage's artifact, newest first (metadata only).
+
+    The rows have always been here: ``version`` is monotonic per (project, stage)
+    and a resubmission is a new row, never an overwrite, so every artifact's full
+    revision history is already on disk. Nothing could read it — the only path was
+    `latest_artifact`, hard-coded to LIMIT 1 — which made the history write-only.
+    This is what turns it into Vol 4 §6.8's architecture version timeline.
+    Additive: no migration, no backfill.
+
+    An empty list is a valid answer (nothing submitted yet), NOT a 404: the caller
+    asked for a stage's history and "no revisions yet" is an honest history. An
+    unknown STAGE is still a 422, exactly as `latest_artifact` treats it."""
+    if schema_for_stage(stage) is None:
+        raise _bad_stage(stage)
+    rows = await repo.artifact_versions(conn, project_id, stage)
+    return ArtifactVersions(
+        project_id=project_id,
+        stage=stage,
+        versions=[ArtifactVersion.model_validate(r) for r in rows],
+    )
+
+
+async def artifact_at_version(
+    conn: AsyncConnection, project_id: uuid.UUID, stage: str, version: int
+) -> HandoffArtifactOut:
+    """One specific version of a stage's artifact (404 if that version is absent).
+
+    A diff is a function of TWO bodies (TITAN-FRT-031), and until now only the
+    newest body was fetchable — so no client could compute one."""
+    if schema_for_stage(stage) is None:
+        raise _bad_stage(stage)
+    row = await repo.artifact_at_version(conn, project_id, stage, version)
+    if row is None:
+        raise not_found("artifact")
+    return HandoffArtifactOut.model_validate(row)
+
+
 __all__ = [
     "ALL_ARTIFACT_SCHEMAS",
     "ARTIFACT_SCHEMAS",
     "PRODUCING_STAGES",
+    "ArtifactVersion",
+    "ArtifactVersions",
     "DeployGateOutcome",
     "Gate",
     "GateContext",
@@ -517,6 +587,8 @@ __all__ = [
     "HandoffArtifactOut",
     "HandoffOutcome",
     "Traceability",
+    "artifact_at_version",
+    "artifact_versions",
     "evaluate_intake_gate",
     "gate_ledger",
     "latest_artifact",

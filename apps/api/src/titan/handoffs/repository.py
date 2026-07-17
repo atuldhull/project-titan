@@ -78,6 +78,39 @@ async def latest_artifact(
     return result.one_or_none()
 
 
+async def artifact_versions(
+    conn: AsyncConnection, project_id: uuid.UUID, stage: str
+) -> Sequence[Row[Any]]:
+    """Every version of a stage's artifact, newest first — METADATA ONLY.
+
+    Deliberately omits ``body``. A stage's history is every resubmission the
+    agent ever made, and each ArchitecturePackage body can carry 500 components
+    plus an OpenAPI operation object per contract; selecting them all to render a
+    timeline of version numbers would move megabytes to draw a dropdown."""
+    result = await conn.execute(
+        text(
+            "SELECT id, project_id, stage, artifact_type, schema_version, version, "
+            "submitted_by, created_at FROM handoff_artifacts "
+            "WHERE project_id = :pid AND stage = :stage ORDER BY version DESC"
+        ),
+        {"pid": project_id, "stage": stage},
+    )
+    return result.all()
+
+
+async def artifact_at_version(
+    conn: AsyncConnection, project_id: uuid.UUID, stage: str, version: int
+) -> Row[Any] | None:
+    result = await conn.execute(
+        text(
+            f"SELECT {_ARTIFACT_COLS} FROM handoff_artifacts "
+            "WHERE project_id = :pid AND stage = :stage AND version = :version"
+        ),
+        {"pid": project_id, "stage": stage, "version": version},
+    )
+    return result.one_or_none()
+
+
 async def insert_gate_evaluation(
     conn: AsyncConnection,
     *,

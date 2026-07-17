@@ -141,3 +141,49 @@ describe("board invalidation (Phase 59)", () => {
     );
   });
 });
+
+describe("graph invalidation (Phase 60)", () => {
+  // Same implicit prefix mechanism as the board: queryKeys.project(pid) is
+  // ["project", pid], which partial-matches ["project", pid, "graph"]. Two
+  // separate scouts reported this as a missing invalidation; it is not. Pinned
+  // here so it cannot quietly become one.
+  it("a task frame invalidates the dependency graph query", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    await qc.fetchQuery({
+      queryKey: queryKeys.projectGraph("p1"),
+      queryFn: () =>
+        Promise.resolve({ project_id: "p1", nodes: [], edges: [] }),
+    });
+    expect(qc.getQueryState(queryKeys.projectGraph("p1"))?.isInvalidated).toBe(
+      false,
+    );
+
+    for (const queryKey of queryKeysForFrame(
+      domainFrame("task.kanban", "p1"),
+    )) {
+      await qc.invalidateQueries({ queryKey });
+    }
+    expect(qc.getQueryState(queryKeys.projectGraph("p1"))?.isInvalidated).toBe(
+      true,
+    );
+  });
+
+  it("a reconnect reconciliation invalidates the graph query", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    await qc.fetchQuery({
+      queryKey: queryKeys.projectGraph("p1"),
+      queryFn: () =>
+        Promise.resolve({ project_id: "p1", nodes: [], edges: [] }),
+    });
+    for (const queryKey of queryKeysForProject("p1")) {
+      await qc.invalidateQueries({ queryKey });
+    }
+    expect(qc.getQueryState(queryKeys.projectGraph("p1"))?.isInvalidated).toBe(
+      true,
+    );
+  });
+});

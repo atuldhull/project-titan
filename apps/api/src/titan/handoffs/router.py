@@ -15,7 +15,13 @@ from fastapi import APIRouter, Body, Depends, FastAPI, Request
 
 from titan.gateway.rbac import Requires
 from titan.handoffs import service
-from titan.handoffs.service import GateLedger, HandoffArtifactOut, HandoffOutcome, Traceability
+from titan.handoffs.service import (
+    ArtifactVersions,
+    GateLedger,
+    HandoffArtifactOut,
+    HandoffOutcome,
+    Traceability,
+)
 from titan.identity.service import Principal
 from titan.projects import service as projects
 
@@ -64,6 +70,42 @@ async def get_latest_artifact(
     async with request.app.state.engine.connect() as conn:
         await projects.get_project(conn, project_id)
         return await service.latest_artifact(conn, project_id, stage)
+
+
+@router.get(
+    "/projects/{project_id}/handoffs/{stage}/artifact-versions",
+    response_model=ArtifactVersions,
+)
+async def list_artifact_versions(
+    request: Request, project_id: uuid.UUID, stage: str, principal: _ReadPipeline
+) -> ArtifactVersions:
+    """A stage's revision history, newest first — metadata only, no bodies.
+
+    Every resubmission is preserved as a new version (TITAN-WFL-003), so this IS
+    the artifact's real history: for `architect_design` it is every architecture
+    the Architect has ever committed — Vol 4 §6.8's version timeline. An empty
+    list means nothing has been submitted yet, which is not an error."""
+    async with request.app.state.engine.connect() as conn:
+        await projects.get_project(conn, project_id)
+        return await service.artifact_versions(conn, project_id, stage)
+
+
+@router.get(
+    "/projects/{project_id}/handoffs/{stage}/artifact-versions/{version}",
+    response_model=HandoffArtifactOut,
+)
+async def get_artifact_version(
+    request: Request,
+    project_id: uuid.UUID,
+    stage: str,
+    version: int,
+    principal: _ReadPipeline,
+) -> HandoffArtifactOut:
+    """One specific revision, in full. Diffing two versions (TITAN-FRT-031) needs
+    BOTH bodies, and `../artifact` only ever returns the newest."""
+    async with request.app.state.engine.connect() as conn:
+        await projects.get_project(conn, project_id)
+        return await service.artifact_at_version(conn, project_id, stage, version)
 
 
 @router.get("/projects/{project_id}/traceability", response_model=Traceability)

@@ -17,22 +17,15 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { initials } from "@/lib/agents/initials";
 import { cn } from "@/lib/utils";
 import type { components } from "@titan/schemas";
 
 type AgentOut = components["schemas"]["AgentOut"];
 
-/** Initials from an agent name: "backend-bot" -> "BB", "qa" -> "QA". */
-export function initials(name: string): string {
-  const parts = name.split(/[\s\-_.]+/u).filter(Boolean);
-  if (parts.length === 0) {
-    return "??";
-  }
-  if (parts.length === 1) {
-    return parts[0].slice(0, 2).toUpperCase();
-  }
-  return (parts[0][0] + parts[1][0]).toUpperCase();
-}
+// `initials` moved to lib/agents so the graph's nodes can share it: TITAN-FRT-049
+// forbids components/graph importing from components/kanban.
+export { initials };
 
 export function AgentAvatar({
   agent,

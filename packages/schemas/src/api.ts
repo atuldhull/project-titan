@@ -1393,6 +1393,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/handoffs/{stage}/artifact-versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Artifact Versions
+         * @description A stage's revision history, newest first — metadata only, no bodies.
+         *
+         *     Every resubmission is preserved as a new version (TITAN-WFL-003), so this IS
+         *     the artifact's real history: for `architect_design` it is every architecture
+         *     the Architect has ever committed — Vol 4 §6.8's version timeline. An empty
+         *     list means nothing has been submitted yet, which is not an error.
+         */
+        get: operations["list_artifact_versions_api_v1_projects__project_id__handoffs__stage__artifact_versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/handoffs/{stage}/artifact-versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Artifact Version
+         * @description One specific revision, in full. Diffing two versions (TITAN-FRT-031) needs
+         *     BOTH bodies, and `../artifact` only ever returns the newest.
+         */
+        get: operations["get_artifact_version_api_v1_projects__project_id__handoffs__stage__artifact_versions__version__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/messages": {
         parameters: {
             query?: never;
@@ -2279,6 +2325,57 @@ export interface components {
             content_hash: string;
             /** Kind */
             kind: string;
+        };
+        /**
+         * ArtifactVersion
+         * @description One revision in a stage's history — metadata only, no ``body``.
+         */
+        ArtifactVersion: {
+            /** Artifact Type */
+            artifact_type: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Schema Version */
+            schema_version: number;
+            /** Stage */
+            stage: string;
+            /** Submitted By */
+            submitted_by: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * ArtifactVersions
+         * @description A stage's revision history, newest first.
+         *
+         *     Not a paginated `Page`: this is a bounded per-(project, stage) history, and a
+         *     timeline that renders "v1..vN" needs all of N to draw itself. It stays small
+         *     because a version is an agent RESUBMISSION — one per gate-failure retry, not
+         *     per edit.
+         */
+        ArtifactVersions: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Stage */
+            stage: string;
+            /** Versions */
+            versions: components["schemas"]["ArtifactVersion"][];
         };
         /**
          * AssembledFor
@@ -7646,6 +7743,71 @@ export interface operations {
             path: {
                 project_id: string;
                 stage: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandoffArtifactOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_artifact_versions_api_v1_projects__project_id__handoffs__stage__artifact_versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                stage: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactVersions"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_artifact_version_api_v1_projects__project_id__handoffs__stage__artifact_versions__version__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                stage: string;
+                version: number;
             };
             cookie?: never;
         };

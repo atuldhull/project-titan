@@ -57,6 +57,15 @@ export const queryKeys = {
     ["project", pid, "artifact", kind] as const,
   projectClarifications: (pid: string) =>
     ["project", pid, "clarifications"] as const,
+  /** The ADR records behind the architecture panel (Vol 4 §6.8). */
+  projectDecisions: (pid: string) => ["project", pid, "decisions"] as const,
+  /** A stage's revision history — for the architecture version timeline. */
+  artifactVersions: (pid: string, stage: string) =>
+    ["project", pid, "artifact-versions", stage] as const,
+  /** One immutable revision. A version is never overwritten, so it never goes
+   *  stale — keyed by version so each is cached forever and diffs are free. */
+  artifactVersion: (pid: string, stage: string, version: number) =>
+    ["project", pid, "artifact-versions", stage, version] as const,
   projectApprovals: (pid: string) => ["approvals", pid] as const,
   /** Prefix over every project's approvals — the Overview queue fans out per
    *  project, and an incoming approval notification invalidates them all. */

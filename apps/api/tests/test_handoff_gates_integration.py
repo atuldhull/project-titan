@@ -175,3 +175,120 @@ def test_g5_objections_route_to_retry(api: dict[str, Any]) -> None:
     g5 = [e for e in ledger if e["stage"] == "architect_design"][-1]
     assert g5["verdict"] == "fail"
     assert g5["constitution_version"] == _active_constitution_version(api)
+
+
+# --- artifact version history (Phase 60; Vol 4 §6.8, TITAN-FRT-031) ----------
+
+
+def _versions(api: dict[str, Any], pid: str, stage: str) -> Any:
+    return api["client"].get(
+        f"/api/v1/projects/{pid}/handoffs/{stage}/artifact-versions",
+        headers=api["token_for"]("owner"),
+    )
+
+
+def _version(api: dict[str, Any], pid: str, stage: str, version: int) -> Any:
+    return api["client"].get(
+        f"/api/v1/projects/{pid}/handoffs/{stage}/artifact-versions/{version}",
+        headers=api["token_for"]("owner"),
+    )
+
+
+def test_three_architecture_revisions_are_listed_and_individually_fetchable(
+    api: dict[str, Any],
+) -> None:
+    """TITAN-FRT-031's data requirement: every architecture version is viewable
+    and diffable against any other.
+
+    The revisions are minted by the REAL submit path — a failing G5 keeps the
+    stage current, which is exactly how an Architect revises: gate objects,
+    Architect resubmits, `version` increments. Each body is preserved, never
+    overwritten (TITAN-WFL-003); the diff a client draws is a function of two of
+    them, so both must be fetchable. Before this seam only the newest was.
+    """
+    pid = _project(api)
+    assert _submit(api, pid, "ceo_vision", BRIEF).json()["outcome"] == "advanced"
+    assert _submit(api, pid, "pm_backlog", BACKLOG).json()["outcome"] == "advanced"
+    assert _submit(api, pid, "pmgr_plan", PLAN).json()["outcome"] == "advanced"
+
+    # G5 objects, so the Architect revises. Three distinct architectures.
+    gates.register_gate("architect_design", gates.ConfigurableGate(passes=False, reasons=["G5"]))
+    for n in (1, 2, 3):
+        revision = {
+            **ARCH,
+            "components": [
+                *ARCH["components"],
+                {"name": f"Extra{n}", "layer": "frameworks", "depends_on": ["ContactRouter"]},
+            ],
+        }
+        r = _submit(api, pid, "architect_design", revision)
+        assert r.status_code == 200, r.text
+        assert r.json()["attempt"] == n
+
+    listed = _versions(api, pid, "architect_design")
+    assert listed.status_code == 200, listed.text
+    body = listed.json()
+    assert [v["version"] for v in body["versions"]] == [3, 2, 1]  # newest first
+    assert {v["artifact_type"] for v in body["versions"]} == {"ArchitecturePackage"}
+    # Metadata only: a timeline draws version numbers, not 500-component bodies.
+    assert all("body" not in v for v in body["versions"])
+
+    # Each revision is fetchable IN FULL, and they genuinely differ — this is
+    # what a diff consumes.
+    v1 = _version(api, pid, "architect_design", 1)
+    v3 = _version(api, pid, "architect_design", 3)
+    assert v1.status_code == 200 and v3.status_code == 200
+    names_v1 = {c["name"] for c in v1.json()["body"]["components"]}
+    names_v3 = {c["name"] for c in v3.json()["body"]["components"]}
+    assert "Extra1" in names_v1 and "Extra1" not in names_v3
+    assert "Extra3" in names_v3 and "Extra3" not in names_v1
+
+    # ...and `../artifact` still returns the newest, unchanged.
+    latest = api["client"].get(
+        f"/api/v1/projects/{pid}/handoffs/architect_design/artifact",
+        headers=api["token_for"]("owner"),
+    )
+    assert latest.json()["version"] == 3
+
+
+def test_artifact_versions_is_empty_not_404_before_any_submission(api: dict[str, Any]) -> None:
+    """A stage with no artifact yet has an empty HISTORY, which is an answer, not
+    an error — the Architecture screen's "not yet designed" state reads this."""
+    pid = _project(api)
+    r = _versions(api, pid, "architect_design")
+    assert r.status_code == 200, r.text
+    assert r.json()["versions"] == []
+    assert r.json()["stage"] == "architect_design"
+
+
+def test_artifact_version_unknown_version_is_404(api: dict[str, Any]) -> None:
+    pid = _project(api)
+    assert _submit(api, pid, "ceo_vision", BRIEF).json()["outcome"] == "advanced"
+    assert _version(api, pid, "ceo_vision", 1).status_code == 200
+    assert _version(api, pid, "ceo_vision", 99).status_code == 404
+
+
+def test_artifact_versions_rejects_a_non_producing_stage(api: dict[str, Any]) -> None:
+    """Same 422 the latest-artifact route gives — a stage with no artifact schema
+    has no history to have."""
+    pid = _project(api)
+    assert _versions(api, pid, "not_a_stage").status_code == 422
+    assert _version(api, pid, "not_a_stage", 1).status_code == 422
+
+
+def test_artifact_versions_are_project_scoped(api: dict[str, Any]) -> None:
+    """One project's revisions never leak into another's timeline."""
+    pid_a, pid_b = _project(api), _project(api)
+    assert _submit(api, pid_a, "ceo_vision", BRIEF).json()["outcome"] == "advanced"
+    assert [v["version"] for v in _versions(api, pid_a, "ceo_vision").json()["versions"]] == [1]
+    assert _versions(api, pid_b, "ceo_vision").json()["versions"] == []
+
+
+def test_artifact_versions_requires_read_permission(api: dict[str, Any]) -> None:
+    pid = _project(api)
+    assert (
+        api["client"]
+        .get(f"/api/v1/projects/{pid}/handoffs/architect_design/artifact-versions")
+        .status_code
+        == 401
+    )

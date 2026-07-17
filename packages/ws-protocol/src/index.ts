@@ -279,6 +279,20 @@ export const CORE_TOPICS = {
     categories: ["pipeline"],
     events: ["pipeline.updated"],
   },
+  /**
+   * Gate evaluations. Vol 4 §6.8 wants an `architecture.updated` event; no such
+   * type exists (and the fan-out silently DROPS unknown types, so a producer
+   * emitting one today would be swallowed). This is the honest nearest signal:
+   * `handoff.evaluated` really does fire when G5 judges the architecture stage.
+   * It is metadata only — never artifact content — so a consumer refetches
+   * rather than reading the frame.
+   */
+  projectHandoffs: {
+    id: "project:handoffs",
+    scope: "project",
+    categories: ["handoff"],
+    events: ["handoff.evaluated"],
+  },
   monitoringSummary: {
     id: "monitoring:summary",
     scope: "always-on",
