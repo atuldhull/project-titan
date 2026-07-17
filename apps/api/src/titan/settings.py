@@ -240,6 +240,12 @@ class Settings(BaseSettings):
     # collector running); Compose obs profile sets http://otel-collector:4317.
     otel_exporter_otlp_endpoint: str = ""
 
+    # Loki, backing the Logs Viewer's history endpoint (Vol 4 §6.7, Phase 62).
+    # Empty = GET /api/v1/logs answers 503 naming this setting. Loki sits behind
+    # the same Compose obs profile as the collector above, so empty is the
+    # normal state of a default `docker compose up`, not a misconfiguration.
+    loki_url: str = ""
+
     # --- Identity (Phase 8; TITAN-BCK-020, TITAN-SEC-011) ---
     # AUTH_MODE=local runs fully offline; oidc joins in M7 hardening.
     auth_mode: Literal["local", "oidc"] = "local"

@@ -422,6 +422,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Logs
+         * @description Structured log history from Loki.
+         *
+         *     Backs the Logs Viewer's history fill, its filter bar and its full-history
+         *     search (client-side filtering only ever searches the buffer). ``backward``
+         *     (the default) walks newest-first into the past; ``forward`` resumes from a
+         *     cursor and is what a tail polls.
+         *
+         *     A filter on a JSON-body field (``project_id``, ``task_id``, ``agent_id``)
+         *     matches only lines whose emitter bound that field. Most do not — the
+         *     logging context binds a project on request- and turn-scoped work, and
+         *     everything outside that scope is invisible to the filter rather than
+         *     excluded by it. This is LogQL working as designed, and it looks exactly
+         *     like a bug, so it is said out loud here and in the viewer's own UI.
+         */
+        get: operations["list_logs_api_v1_logs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/memory/admin/curation/run": {
         parameters: {
             query?: never;
@@ -3554,6 +3586,51 @@ export interface components {
              */
             record_id: string;
         };
+        /**
+         * LogLine
+         * @description One structured log line.
+         *
+         *     ``ts_ns`` is a **string**, not a number: it is a Unix nanosecond timestamp
+         *     (> 2**53), so JSON's number type would round it and the id, the cursor and
+         *     the sort order would all drift. Clients divide it down for display.
+         */
+        LogLine: {
+            /** Agent Id */
+            agent_id?: string | null;
+            /** Event */
+            event?: string | null;
+            /**
+             * Fields
+             * @default {}
+             */
+            fields: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: string;
+            /** Labels */
+            labels: {
+                [key: string]: string;
+            };
+            /** Level */
+            level?: string | null;
+            /** Line */
+            line: string;
+            /** Module */
+            module?: string | null;
+            /** Project Id */
+            project_id?: string | null;
+            /** Request Id */
+            request_id?: string | null;
+            /** Span Id */
+            span_id?: string | null;
+            /** Task Id */
+            task_id?: string | null;
+            /** Trace Id */
+            trace_id?: string | null;
+            /** Ts Ns */
+            ts_ns: string;
+        };
         /** LoopCycleOut */
         LoopCycleOut: {
             /** Clean */
@@ -4321,6 +4398,13 @@ export interface components {
         Page_DecisionOut_: {
             /** Items */
             items: components["schemas"]["DecisionOut"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+        };
+        /** Page[LogLine] */
+        Page_LogLine_: {
+            /** Items */
+            items: components["schemas"]["LogLine"][];
             /** Next Cursor */
             next_cursor?: string | null;
         };
@@ -6138,6 +6222,54 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EmbeddingsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_logs_api_v1_logs_get: {
+        parameters: {
+            query?: {
+                /** @description Compose service name (api, worker, …). Repeat for several. */
+                service?: string[] | null;
+                /** @description One of debug, info, warning, error, critical. Repeat for several. */
+                level?: string[] | null;
+                project_id?: string | null;
+                task_id?: string | null;
+                agent_id?: string | null;
+                request_id?: string | null;
+                trace_id?: string | null;
+                /** @description Case-sensitive substring. */
+                search?: string | null;
+                /** @description RE2. No lookaround/backrefs. */
+                regex?: string | null;
+                start?: string | null;
+                end?: string | null;
+                direction?: string;
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_LogLine_"];
                 };
             };
             /** @description Validation Error */

@@ -38,6 +38,10 @@ ORG_ROUTES = {
     "run:create": {"owner", "admin", "operator"},  # maintainer bundle lacks it
     # Vol 8 §4.2: audit read is Owner + Admin ONLY — *:read must NOT reach it.
     "audit:read": {"owner", "admin"},
+    # Vol 4 §6.7 (Phase 62): the system log history is the same shape — Owner +
+    # Admin. If `logs` ever falls out of SENSITIVE_RESOURCES this row goes red,
+    # because viewer/operator/maintainer would then pass on their *:read.
+    "logs:read": {"owner", "admin"},
     # Vol 7 §4.4: admin-risk tool approvals resolved by Owner/Admin/Maintainer.
     "tool_approval:write": {"owner", "admin", "maintainer"},
 }

@@ -103,6 +103,21 @@ export const queryKeys = {
 
   orgActivity: () => ["org", "activity"] as const,
   monitoringSummary: () => ["monitoring", "summary"] as const,
+
+  /** The Loki-backed log history (GET /api/v1/logs), keyed by its filters.
+   *
+   *  Rooted on its own rather than under `project`: logs are org-wide
+   *  infrastructure with no tenancy — `?project=` is a filter over the JSON
+   *  body, not an authorization scope — so nesting them under a project key
+   *  would let a task frame invalidate a window of log history that has nothing
+   *  to do with it. Nothing invalidates this key: history is immutable, and the
+   *  tail advances by fetching a NEW window rather than refetching an old one. */
+  /**  Only the OPENING page is cached: the tail, the back-scan and the gap
+   *  fills each resume from a cursor the previous call produced, so every step
+   *  would be a new key and a new cache entry that nothing ever reads again.
+   *  Those are plain awaited calls in the screen, not queries. */
+  logs: (filters: Readonly<Record<string, unknown>> = {}) =>
+    ["logs", filters] as const,
 } as const;
 
 export type QueryKeys = typeof queryKeys;

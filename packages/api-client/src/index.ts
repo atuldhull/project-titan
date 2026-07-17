@@ -45,3 +45,11 @@ export type RunOut = Schemas["RunOut"];
 export type RunPage = Schemas["Page_RunOut_"];
 export type MessageOut = Schemas["MessageOut"];
 export type MessagePage = Schemas["Page_MessageOut_"];
+/** One structured log line out of Loki. `ts_ns` is a STRING — a Unix
+ *  nanosecond exceeds 2**53, so `Number(ts_ns)` silently rounds it and the id,
+ *  the cursor and the ordering drift with it. `fields` is the caller's own
+ *  kwargs (Vol 9 §6.3's `attrs`, which structlog actually flattens and the
+ *  backend reconstructs by subtraction). A non-JSON line — postgres and redis
+ *  ship plenty through the same promtail — carries only `line` and `labels`. */
+export type LogLine = Schemas["LogLine"];
+export type LogPage = Schemas["Page_LogLine_"];

@@ -35,6 +35,12 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # audit:read is explicit: *:read no longer reaches the audit log
         # (Vol 8 §4.2 grants audit read to Owner + Admin only).
         "audit:read",
+        # Same shape, same reason (Phase 62, Vol 4 §6.7): `logs` is carved into
+        # SENSITIVE_RESOURCES, so the system-log history endpoint needs an
+        # explicit grant. Owner + Admin only — a viewer must not get the
+        # firehose, and neither must an agent (every agent runs as `operator`,
+        # whose bundle carries *:read).
+        "logs:read",
         # Resolve admin-risk tool approvals (Vol 7 §4.4, TITAN-INT-022).
         "tool_approval:write",
         # Write durable memory (Vol 5 Memory Service, Phase 33).

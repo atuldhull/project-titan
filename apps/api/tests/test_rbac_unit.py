@@ -59,6 +59,7 @@ SEED_BUNDLES = {
         "message:write",
         "decision:write",
         "audit:read",
+        "logs:read",
         "*:read",
     },
     "maintainer": {
@@ -115,6 +116,24 @@ def test_sensitive_resources_excluded_from_wildcard_read() -> None:
     assert permission_granted("audit:read", {"audit:*"}) is True
     assert permission_granted("audit:read", {"*"}) is True  # owner
     assert permission_granted("secret:read", {"*"}) is True  # owner (no endpoint exists)
+
+
+def test_system_logs_are_not_reachable_by_the_read_wildcard() -> None:
+    """Phase 62. The whole safety of GET /api/v1/logs rests on this one line.
+
+    `logs` is in SENSITIVE_RESOURCES, so `*:read` — which viewer, operator,
+    maintainer and admin all carry — must not reach the system log history.
+    Delete that entry and every one of those bundles silently gains the
+    firehose while this file's other tests stay green.
+    """
+    assert permission_granted("logs:read", {"*:read"}) is False
+    # `operator` is the bundle every AGENT runs as (AGENT_ROLE), and it holds
+    # *:read. Agents must not be able to read the system logs back.
+    assert permission_granted("logs:read", {"task:transition", "run:create", "*:read"}) is False
+    # Owner's full wildcard and an explicit grant still reach it.
+    assert permission_granted("logs:read", {"*"}) is True
+    assert permission_granted("logs:read", {"logs:read"}) is True
+    assert permission_granted("logs:read", {"logs:*"}) is True
 
 
 def test_route_guard_passes_on_real_app() -> None:

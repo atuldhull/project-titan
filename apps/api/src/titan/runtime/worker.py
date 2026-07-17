@@ -27,6 +27,7 @@ from titan.messaging.service import (
     parse_agent_message,
     reclaim_unacked,
 )
+from titan.observability.context import turn_context
 from titan.runtime.turn import AgentRuntime, TurnResult, run_turn
 
 logger = structlog.get_logger("titan.runtime.worker")
@@ -80,24 +81,32 @@ class RuntimeWorker:
         return results
 
     async def _process(self, delivery: Delivery) -> TurnResult | None:
-        try:
-            trigger = parse_agent_message(delivery.envelope.payload)
-        except ValidationError:
-            # A malformed inbox payload is undeliverable — ack it so it does not
-            # poison-loop (parse_agent_message already logged the safe metadata).
-            await ack_inbox(self.bus, self.project_id, self.agent_id, delivery)
-            return None
-        result = await run_turn(self.runtime, self.project_id, self.agent_id, trigger)
-        if result.should_ack:
-            await ack_inbox(self.bus, self.project_id, self.agent_id, delivery)
-        else:
-            logger.warning(
-                "runtime.turn_left_pending",
-                agent_id=self.agent_id,
-                message_id=str(trigger.message_id),
-                outcome=result.outcome,
-            )
-        return result
+        # Tag every line this turn emits with its project and agent, so the
+        # Logs Viewer's project filter can actually find agent work (Vol 9
+        # §6.3). Scoped to the turn: the worker is one long-lived loop, so an
+        # unscoped bind would attribute later turns — for other projects — to
+        # this one. Wraps the whole method, including the malformed-payload
+        # branch, because that ack is exactly the kind of event worth finding.
+        with turn_context(self.project_id, self.agent_id):
+            try:
+                trigger = parse_agent_message(delivery.envelope.payload)
+            except ValidationError:
+                # A malformed inbox payload is undeliverable — ack it so it does
+                # not poison-loop (parse_agent_message already logged the safe
+                # metadata).
+                await ack_inbox(self.bus, self.project_id, self.agent_id, delivery)
+                return None
+            result = await run_turn(self.runtime, self.project_id, self.agent_id, trigger)
+            if result.should_ack:
+                await ack_inbox(self.bus, self.project_id, self.agent_id, delivery)
+            else:
+                logger.warning(
+                    "runtime.turn_left_pending",
+                    agent_id=self.agent_id,
+                    message_id=str(trigger.message_id),
+                    outcome=result.outcome,
+                )
+            return result
 
     async def run_forever(
         self, *, stop: asyncio.Event, poll_block_ms: int = 1000, reclaim_min_idle_ms: int = 300_000

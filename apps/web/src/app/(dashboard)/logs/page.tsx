@@ -1,27 +1,29 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
-import { StubPage } from "@/components/shell/stub-page";
+import { LogsScreen } from "@/components/logs/logs-screen";
 
 export const metadata: Metadata = { title: "Logs" };
 
-// ?project= filter is URL state per TITAN-FRT-006 — already honored here so
-// deep links stay stable when the full viewer lands.
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: Promise<{ project?: string }>;
-}) {
-  const { project } = await searchParams;
+/**
+ * The Logs Viewer (Vol 4 §6.7, Phase 62).
+ *
+ * No RSC prefetch, unlike the other screens. Log history is admin-only
+ * (`logs:read` is carved out of the `*:read` wildcard every role holds) and
+ * Loki is Compose-profile-gated, so a server prefetch would 403 or 503 for most
+ * callers on most stacks — the client fetch turns those into the real,
+ * actionable states instead of a failed hydration.
+ *
+ * `?project=` (TITAN-FRT-006) still works and still means the same thing; it is
+ * now read inside the screen, because it is one of seven filters that all live
+ * in the URL together and the screen writes them back as they change.
+ */
+export default function Page() {
   return (
-    <StubPage
-      title="Logs"
-      description="Org-wide structured log viewer with level, agent, and project filters (Vol 4 §6.7)."
-    >
-      {project ? (
-        <p className="mt-3 font-mono text-xs text-muted-foreground">
-          filter: project={project}
-        </p>
-      ) : null}
-    </StubPage>
+    // useSearchParams opts its subtree into client rendering, and Next fails
+    // the build for the whole route without a Suspense boundary above it.
+    <Suspense fallback={null}>
+      <LogsScreen />
+    </Suspense>
   );
 }

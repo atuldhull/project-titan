@@ -44,6 +44,8 @@ from titan.identity import router as identity_router
 from titan.identity.tokens import KeyRing
 from titan.llm import router as llm_router
 from titan.llm import service as llm_service
+from titan.logs import router as logs_router
+from titan.logs.loki import HttpLokiQuerier
 from titan.loop import router as loop_router
 from titan.memory import router as memory_router
 from titan.memory import service as memory_service
@@ -220,6 +222,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     stop=application.state.plugin_health_stop,
                 )
             )
+        # Loki backs the Logs Viewer's history (Vol 4 §6.7, Phase 62). It sits
+        # behind the Compose `observability` profile, so `loki_url` is empty on
+        # a default stack and the endpoint answers 503 naming the setting rather
+        # than pretending the logs are empty. `None` IS the off switch the
+        # router tests for — never default this to a client pointed at nothing,
+        # or "no Loki" turns into a connection error on every request.
+        application.state.loki = (
+            HttpLokiQuerier(active_settings.loki_url, application.state.http)
+            if active_settings.loki_url
+            else None
+        )
         # Realtime WS backend (TITAN-BCK-007): this replica's local connection
         # registry + a pub/sub subscriber forwarding fanned-out frames to its
         # sockets. The domain-stream → pub/sub fan-out consumer runs ONLY in the
@@ -392,6 +405,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     loop_router.mount(app)  # /tasks/{id}/loop — self-improvement loop audit trail
     deploy_router.mount(app)  # /projects/{id}/deployments — local deploy records (§6.7)
     debt_router.mount(app)  # /projects/{id}/debt — technical-debt ledger (WFL-021)
+    logs_router.mount(app)  # /logs — Loki-backed log history for the viewer (§6.7)
     planning_router.mount(app)  # /projects/{id}/sprint-plan, ceremonies, milestone, blockers (§4)
     artifacts_router.mount(app)  # /projects/{id}/artifacts — the six derived §5 artifacts
     plugins_router.mount(app)  # /plugins lifecycle + /hooks (HMAC) + /plugin-ui (Vol 7 §3)

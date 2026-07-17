@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from titan.gateway.problems import ProblemException, problem_type
 from titan.identity.service import Principal
+from titan.observability.context import bind_log_project
 
 logger = structlog.get_logger("titan.gateway.rbac")
 
@@ -38,7 +39,17 @@ AGENT_ROLE = "operator"
 # general "read everything" scopes — only an explicit grant (or the full "*"
 # owner wildcard) reaches them, so viewer/operator/maintainer's *:read cannot
 # read the audit log.
-SENSITIVE_RESOURCES = frozenset({"audit", "secret"})
+#
+# `logs` joins them in Phase 62. System logs are an org-wide operator surface
+# with no project tenancy (Vol 4 §6.7): they carry request/trace ids, internal
+# error text and every service's stack traces, and redaction does NOT run on
+# the logging path (Vol 9 §6.3 claims it does — `titan.tools.redaction` guards
+# audit rows and tool envelopes only). Without this entry `logs:read` would be
+# granted by the `*:read` that viewer AND operator — the bundle every agent
+# runs as — already hold, so minting the permission would itself have published
+# the firehose. Adding the resource here is the only thing that carves it out;
+# the name you pick cannot.
+SENSITIVE_RESOURCES = frozenset({"audit", "logs", "secret"})
 
 # The canonical set of RBAC scopes the host recognises. Permissions are otherwise
 # free-form strings, so this is the reference list a PLUGIN MANIFEST is validated
@@ -267,6 +278,7 @@ async def authorize_in_project(
         raise not_found(resource)
     if not permission_granted(permission, granted):
         raise forbidden(permission)
+    bind_log_project(project_id)
 
 
 async def require_object_in_project(
@@ -347,6 +359,7 @@ class Requires:
             raise not_found("project")
         if not permission_granted(self.permission, granted):
             raise forbidden(self.permission)
+        bind_log_project(project_id)
         return principal
 
 

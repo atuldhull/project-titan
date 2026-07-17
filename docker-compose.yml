@@ -49,6 +49,12 @@ services:
       TITAN_REDIS_URL: redis://redis:6379/0
       TITAN_QDRANT_URL: http://qdrant:6333
       TITAN_OTEL_EXPORTER_OTLP_ENDPOINT: ${TITAN_OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # Loki backs the Logs Viewer's history endpoint (Vol 4 §6.7, Phase 62).
+      # Loki runs under the `observability` profile, so this stays empty by
+      # default and GET /api/v1/logs answers 503 naming it; set it to
+      # http://loki:3100 alongside `--profile obs`. This is the IN-NETWORK url —
+      # ${LOKI_PORT} only remaps Loki's port on the HOST for Grafana/a browser.
+      TITAN_LOKI_URL: ${TITAN_LOKI_URL:-}
       # LLM gateway (Phase 15): config dir mounted read-only below. The default
       # models.yaml routes to Anthropic (needs ANTHROPIC_API_KEY). For a fully
       # local, zero-key run set TITAN_MODELS_CONFIG_PATH to the local profile and
