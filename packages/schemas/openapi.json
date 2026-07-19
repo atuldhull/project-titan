@@ -336,6 +336,89 @@
         "title": "ApiKeyGrant",
         "type": "object"
       },
+      "ApiKeyOut": {
+        "description": "A personal access token. The secret is returned exactly once, at\ncreation; this is the durable record and carries only the prefix.",
+        "properties": {
+          "agent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "prefix": {
+            "title": "Prefix",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "prefix",
+          "agent_id",
+          "created_at",
+          "last_used_at",
+          "expires_at",
+          "revoked_at"
+        ],
+        "title": "ApiKeyOut",
+        "type": "object"
+      },
       "ApiKeyRequest": {
         "properties": {
           "agent_id": {
@@ -796,6 +879,48 @@
         "title": "BoardColumn",
         "type": "object"
       },
+      "BudgetsOut": {
+        "description": "\u00a78.4 caps. Named per_project_usd but enforced as ONE cap applied to\nwhatever project a call carries \u2014 there is no per-project override table,\nso this is a single global ceiling and the UI says so.",
+        "properties": {
+          "action_on_exceeded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action On Exceeded"
+          },
+          "per_project_usd": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Project Usd"
+          },
+          "per_task_usd": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Task Usd"
+          }
+        },
+        "title": "BudgetsOut",
+        "type": "object"
+      },
       "CacheMetrics": {
         "properties": {
           "hit_rate": {
@@ -817,6 +942,60 @@
           "hit_rate"
         ],
         "title": "CacheMetrics",
+        "type": "object"
+      },
+      "CategoryPreference": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "is_default": {
+            "default": true,
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "severity"
+        ],
+        "title": "CategoryPreference",
+        "type": "object"
+      },
+      "CategoryUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Category",
+            "type": "string"
+          },
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Channels",
+            "type": "array"
+          }
+        },
+        "required": [
+          "category"
+        ],
+        "title": "CategoryUpdate",
         "type": "object"
       },
       "ChatRequest": {
@@ -3087,6 +3266,195 @@
         "title": "LessonResult",
         "type": "object"
       },
+      "LlmSettingsOut": {
+        "properties": {
+          "agent_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Profile"
+          },
+          "aliases": {
+            "items": {
+              "$ref": "#/components/schemas/ModelAliasOut"
+            },
+            "title": "Aliases",
+            "type": "array"
+          },
+          "budgets": {
+            "$ref": "#/components/schemas/BudgetsOut"
+          },
+          "by_agent": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "By Agent",
+            "type": "object"
+          },
+          "default_alias": {
+            "title": "Default Alias",
+            "type": "string"
+          },
+          "embeddings_default_alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embeddings Default Alias"
+          },
+          "fallbacks": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Fallbacks",
+            "type": "object"
+          },
+          "overridden": {
+            "default": false,
+            "title": "Overridden",
+            "type": "boolean"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderOut"
+            },
+            "title": "Providers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "default_alias"
+        ],
+        "title": "LlmSettingsOut",
+        "type": "object"
+      },
+      "LlmSettingsUpdate": {
+        "additionalProperties": false,
+        "description": "Every field optional: a PATCH-shaped PUT. Only what is supplied is\nwritten to the overlay, so the UI can change the default provider without\nhaving to restate budgets it never showed.",
+        "properties": {
+          "action_on_exceeded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action On Exceeded"
+          },
+          "agent_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Profile"
+          },
+          "by_agent": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "By Agent"
+          },
+          "default_alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Alias"
+          },
+          "embeddings_default_alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embeddings Default Alias"
+          },
+          "fallbacks": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallbacks"
+          },
+          "per_project_usd": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Project Usd"
+          },
+          "per_task_usd": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Task Usd"
+          }
+        },
+        "title": "LlmSettingsUpdate",
+        "type": "object"
+      },
       "LogLine": {
         "description": "One structured log line.\n\n``ts_ns`` is a **string**, not a number: it is a Unix nanosecond timestamp\n(> 2**53), so JSON's number type would round it and the id, the cursor and\nthe sort order would all drift. Clients divide it down for display.",
         "properties": {
@@ -3523,6 +3891,144 @@
         "title": "MarkAllReadResult",
         "type": "object"
       },
+      "McpPreviewOut": {
+        "description": "The result of connecting to a candidate server WITHOUT installing it.",
+        "properties": {
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "protocol_version": {
+            "default": "",
+            "title": "Protocol Version",
+            "type": "string"
+          },
+          "server_info": {
+            "additionalProperties": true,
+            "title": "Server Info",
+            "type": "object"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/McpToolPreview"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "McpPreviewOut",
+        "type": "object"
+      },
+      "McpServerSpec": {
+        "additionalProperties": false,
+        "description": "\u00a76.12's \"add by URL/command\". Mirrors ``RuntimeSpec`` for MCP, but is a\nseparate DTO because the manifest allows shapes this endpoint must not (a\npython entrypoint, for instance).",
+        "properties": {
+          "auth_secret": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Secret"
+          },
+          "command": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Command",
+            "type": "array"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "network": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Network",
+            "type": "array"
+          },
+          "plugin_id": {
+            "maxLength": 200,
+            "minLength": 3,
+            "title": "Plugin Id",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Scopes",
+            "type": "array"
+          },
+          "transport": {
+            "pattern": "^(stdio|http)$",
+            "title": "Transport",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "plugin_id",
+          "name",
+          "transport"
+        ],
+        "title": "McpServerSpec",
+        "type": "object"
+      },
+      "McpToolPreview": {
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "McpToolPreview",
+        "type": "object"
+      },
       "MeResponse": {
         "properties": {
           "agent_id": {
@@ -3569,6 +4075,76 @@
           "scope"
         ],
         "title": "MeResponse",
+        "type": "object"
+      },
+      "MemberOut": {
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "project_grants": {
+            "items": {
+              "$ref": "#/components/schemas/RoleGrant"
+            },
+            "title": "Project Grants",
+            "type": "array"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "display_name",
+          "is_active"
+        ],
+        "title": "MemberOut",
+        "type": "object"
+      },
+      "MemberRolesUpdate": {
+        "description": "Replace a member's grants at one scope. ``project_id`` NULL rewrites the\norg-wide set; a project id rewrites that project's set and leaves org-wide\ngrants untouched.",
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "title": "MemberRolesUpdate",
         "type": "object"
       },
       "MemoryBrowseRow": {
@@ -5016,6 +5592,64 @@
         "title": "MinerReport",
         "type": "object"
       },
+      "ModelAliasOut": {
+        "properties": {
+          "alias": {
+            "title": "Alias",
+            "type": "string"
+          },
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "input_per_mtok": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Per Mtok"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "output_per_mtok": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Per Mtok"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "alias",
+          "provider",
+          "model"
+        ],
+        "title": "ModelAliasOut",
+        "type": "object"
+      },
       "ModelPolicy": {
         "additionalProperties": false,
         "description": "Which model tier, sampling, and output bounds the agent's turns use\n(\u00a72.1.6). ``structured_output_schema`` is a schema *reference* (a name);\nthe actual schema is composed at call time in Phase 28.",
@@ -6098,6 +6732,96 @@
         "title": "PlannedSprintOut",
         "type": "object"
       },
+      "PluginConfigOut": {
+        "description": "What the config form needs, in one response.",
+        "properties": {
+          "config_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Schema"
+          },
+          "plugin_id": {
+            "title": "Plugin Id",
+            "type": "string"
+          },
+          "schema_unavailable": {
+            "default": false,
+            "title": "Schema Unavailable",
+            "type": "boolean"
+          },
+          "secret_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Secret Keys",
+            "type": "array"
+          },
+          "secrets": {
+            "items": {
+              "$ref": "#/components/schemas/SecretStatus"
+            },
+            "title": "Secrets",
+            "type": "array"
+          },
+          "values": {
+            "additionalProperties": true,
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "plugin_id"
+        ],
+        "title": "PluginConfigOut",
+        "type": "object"
+      },
+      "PluginHealthOut": {
+        "properties": {
+          "error_count": {
+            "default": 0,
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "last_error": {
+            "default": "",
+            "title": "Last Error",
+            "type": "string"
+          },
+          "plugin_id": {
+            "title": "Plugin Id",
+            "type": "string"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "plugin_id",
+          "state",
+          "running"
+        ],
+        "title": "PluginHealthOut",
+        "type": "object"
+      },
       "PluginInstallOut": {
         "properties": {
           "content_hash": {
@@ -6127,11 +6851,6 @@
             "additionalProperties": true,
             "title": "Manifest",
             "type": "object"
-          },
-          "plugin_dir": {
-            "default": "",
-            "title": "Plugin Dir",
-            "type": "string"
           },
           "plugin_id": {
             "title": "Plugin Id",
@@ -6201,6 +6920,49 @@
         "title": "PluginOut",
         "type": "object"
       },
+      "PreferencesOut": {
+        "properties": {
+          "available_channels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Available Channels",
+            "type": "array"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryPreference"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "unavailable_channels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unavailable Channels",
+            "type": "array"
+          }
+        },
+        "title": "PreferencesOut",
+        "type": "object"
+      },
+      "PreferencesUpdate": {
+        "additionalProperties": false,
+        "description": "Replace the whole matrix. Partial updates would make \"unchecked\" and\n\"unmentioned\" indistinguishable, and unchecking every channel for a\ncategory is a thing a user is entitled to mean.",
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryUpdate"
+            },
+            "maxItems": 32,
+            "title": "Categories",
+            "type": "array"
+          }
+        },
+        "title": "PreferencesUpdate",
+        "type": "object"
+      },
       "Problem": {
         "description": "RFC 9457 Problem Details (\u00a74.1 error contract)",
         "properties": {
@@ -6232,6 +6994,65 @@
           "status"
         ],
         "title": "Problem",
+        "type": "object"
+      },
+      "ProfileOut": {
+        "description": "The signed-in human. \u00a76.13 also lists an avatar \u2014 there is no avatar\ncolumn, no blob store and no upload path anywhere in TITAN, so this DTO\ndoes not pretend otherwise and the UI renders initials.",
+        "properties": {
+          "auth_provider": {
+            "title": "Auth Provider",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "display_name",
+          "auth_provider",
+          "is_active"
+        ],
+        "title": "ProfileOut",
+        "type": "object"
+      },
+      "ProfileUpdate": {
+        "additionalProperties": false,
+        "description": "Only ``display_name`` is editable. Email is the local-auth login\nidentity and the unique key; changing it is an account-recovery flow with\na verification step, which does not exist \u2014 so it is read-only here rather\nthan silently re-pointing a login.\n\n``extra=\"forbid\"`` is load-bearing, not tidiness: without it a submitted\n``email`` is silently DROPPED and the caller gets a 200 with their old\naddress, which reads exactly like a successful change that did not stick.\nRejecting the field says so.",
+        "properties": {
+          "display_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "title": "ProfileUpdate",
         "type": "object"
       },
       "ProjectCreate": {
@@ -6508,6 +7329,136 @@
         "title": "ProposedQuestionIn",
         "type": "object"
       },
+      "ProviderOut": {
+        "description": "One configured provider. Never carries key material.",
+        "properties": {
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "key_configured": {
+            "title": "Key Configured",
+            "type": "boolean"
+          },
+          "key_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Hint"
+          },
+          "key_required": {
+            "title": "Key Required",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "key_configured",
+          "key_required"
+        ],
+        "title": "ProviderOut",
+        "type": "object"
+      },
+      "ProviderTestRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "alias": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Alias",
+            "type": "string"
+          }
+        },
+        "required": [
+          "alias"
+        ],
+        "title": "ProviderTestRequest",
+        "type": "object"
+      },
+      "ProviderTestResult": {
+        "description": "A real round-trip, not a config lookup.",
+        "properties": {
+          "alias": {
+            "title": "Alias",
+            "type": "string"
+          },
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "latency_ms": {
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Provider Models",
+            "type": "array"
+          },
+          "served_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Served Model"
+          },
+          "served_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Served Provider"
+          }
+        },
+        "required": [
+          "alias",
+          "provider",
+          "model",
+          "ok",
+          "latency_ms"
+        ],
+        "title": "ProviderTestResult",
+        "type": "object"
+      },
       "ReadyzResponse": {
         "description": "Readiness probe response; ``failing`` is non-empty exactly when unready.",
         "properties": {
@@ -6694,6 +7645,33 @@
           }
         },
         "title": "RequestMetadata",
+        "type": "object"
+      },
+      "RoleGrant": {
+        "description": "One row of ``user_roles``. ``project_id`` NULL = org-wide.",
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "project_id"
+        ],
+        "title": "RoleGrant",
         "type": "object"
       },
       "RunCreate": {
@@ -6943,6 +7921,78 @@
           "priority"
         ],
         "title": "ScheduledTaskOut",
+        "type": "object"
+      },
+      "SecretStatus": {
+        "description": "One entry of ``permissions.secrets``.\n\n``resolved`` is whether the runtime can currently get a value for it. There\nis deliberately no way to SET one here: Vol 8 SEC-050 keeps secret material\nout of application tables entirely, so the value lives in the environment\n(``TITAN_PLUGIN_SECRET_<NAME>``) and an operator sets it there. A UI field\nthat accepted one would have nowhere honest to put it.",
+        "properties": {
+          "env_var": {
+            "title": "Env Var",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "resolved": {
+            "title": "Resolved",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "resolved",
+          "env_var"
+        ],
+        "title": "SecretStatus",
+        "type": "object"
+      },
+      "SessionOut": {
+        "description": "One refresh-token family = one signed-in device.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current": {
+            "title": "Current",
+            "type": "boolean"
+          },
+          "expired": {
+            "title": "Expired",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "family_id": {
+            "format": "uuid",
+            "title": "Family Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "format": "date-time",
+            "title": "Last Used At",
+            "type": "string"
+          },
+          "revoked": {
+            "title": "Revoked",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "family_id",
+          "created_at",
+          "last_used_at",
+          "expires_at",
+          "revoked",
+          "expired",
+          "current"
+        ],
+        "title": "SessionOut",
         "type": "object"
       },
       "SprintCeremonyOut": {
@@ -8761,6 +9811,29 @@
       }
     },
     "/api/v1/auth/api-keys": {
+      "get": {
+        "operationId": "list_api_keys_api_v1_auth_api_keys_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyOut"
+                  },
+                  "title": "Response List Api Keys Api V1 Auth Api Keys Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Api Keys",
+        "tags": [
+          "auth"
+        ]
+      },
       "post": {
         "operationId": "create_api_key_api_v1_auth_api_keys_post",
         "requestBody": {
@@ -8801,6 +9874,49 @@
         ]
       }
     },
+    "/api/v1/auth/api-keys/{key_id}": {
+      "delete": {
+        "operationId": "revoke_api_key_api_v1_auth_api_keys__key_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Key Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Api Key",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/auth/me": {
       "get": {
         "operationId": "me_api_v1_auth_me_get",
@@ -8817,6 +9933,66 @@
           }
         },
         "summary": "Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/profile": {
+      "get": {
+        "operationId": "get_profile_api_v1_auth_profile_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Profile",
+        "tags": [
+          "auth"
+        ]
+      },
+      "patch": {
+        "operationId": "update_profile_api_v1_auth_profile_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Profile",
         "tags": [
           "auth"
         ]
@@ -8873,6 +10049,68 @@
           }
         },
         "summary": "Revoke",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions": {
+      "get": {
+        "operationId": "list_sessions_api_v1_auth_sessions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionOut"
+                  },
+                  "title": "Response List Sessions Api V1 Auth Sessions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Sessions",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions/{family_id}": {
+      "delete": {
+        "description": "Sign one device out. Revoking the session you are currently using is\nallowed \u2014 it is \"log out everywhere else\", done one row at a time \u2014 so the\nUI, not the API, is what warns which one you are ending.",
+        "operationId": "revoke_session_api_v1_auth_sessions__family_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "family_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Family Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Session",
         "tags": [
           "auth"
         ]
@@ -9608,6 +10846,84 @@
         "summary": "List Logs",
         "tags": [
           "logs"
+        ]
+      }
+    },
+    "/api/v1/members": {
+      "get": {
+        "operationId": "list_members_api_v1_members_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemberOut"
+                  },
+                  "title": "Response List Members Api V1 Members Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Members",
+        "tags": [
+          "members"
+        ]
+      }
+    },
+    "/api/v1/members/{user_id}/roles": {
+      "put": {
+        "operationId": "set_member_roles_api_v1_members__user_id__roles_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberRolesUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Member Roles",
+        "tags": [
+          "members"
         ]
       }
     },
@@ -10482,6 +11798,67 @@
         ]
       }
     },
+    "/api/v1/notification-preferences": {
+      "get": {
+        "description": "\u00a77.1's channel matrix for the calling user, defaults merged in.\n\nSelf-scoped, so authentication IS the authorisation \u2014 no permission string,\nexactly as for the notification list above.",
+        "operationId": "get_notification_preferences_api_v1_notification_preferences_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferencesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Notification Preferences",
+        "tags": [
+          "messaging"
+        ]
+      },
+      "put": {
+        "operationId": "set_notification_preferences_api_v1_notification_preferences_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreferencesUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferencesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Notification Preferences",
+        "tags": [
+          "messaging"
+        ]
+      }
+    },
     "/api/v1/notifications": {
       "get": {
         "operationId": "list_notifications_api_v1_notifications_get",
@@ -10751,8 +12128,49 @@
       }
     },
     "/api/v1/plugins/{plugin_id}/config": {
+      "get": {
+        "description": "The config form's data: the plugin's JSON Schema, its saved values with\nevery write-only field masked, and the status of each manifest-declared\nsecret (TITAN-FRT-035).\n\n`plugin:admin`, not `plugin:read`: even masked, a plugin's configuration\nnames internal hosts, repositories and channels, and `plugin:read` is\nreachable by every agent.",
+        "operationId": "get_config_api_v1_plugins__plugin_id__config_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Config",
+        "tags": [
+          "plugins"
+        ]
+      },
       "put": {
-        "description": "Operator settings from ``config_schema``, encrypted at rest (SEC-063).",
+        "description": "Operator settings from ``config_schema``, encrypted at rest (SEC-063).\n\nA submitted value still equal to the mask means \"unchanged\": the form\nrenders saved secrets as ``\u2022\u2022\u2022\u2022``, so persisting that verbatim would\nreplace a working credential with four bullet characters and leave the\nplugin failing to authenticate against a config that looks correct.",
         "operationId": "configure_api_v1_plugins__plugin_id__config_put",
         "parameters": [
           {
@@ -10883,6 +12301,49 @@
           }
         },
         "summary": "Enable",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/{plugin_id}/health": {
+      "get": {
+        "description": "Whether the supervisor is actually holding this plugin up.\n\nThere is no health COLUMN \u2014 ``plugin_installs`` records lifecycle state and\nan error counter, not liveness \u2014 so \"healthy\" is computed from the live\nsupervisor rather than read back from a row that nothing updates.",
+        "operationId": "health_api_v1_plugins__plugin_id__health_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginHealthOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Health",
         "tags": [
           "plugins"
         ]
@@ -11072,6 +12533,48 @@
         ]
       }
     },
+    "/api/v1/plugins:add-mcp": {
+      "post": {
+        "description": "Add an MCP server by URL or command (\u00a76.12).\n\nMaterialises it as an ordinary plugin directory and re-runs discovery, so\nthe server then installs, enables, quarantines and upgrades through the\nPhase-52 lifecycle rather than acquiring a parallel one of its own. It\nlands as AVAILABLE \u2014 adding is not granting.",
+        "operationId": "add_mcp_api_v1_plugins_add_mcp_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpServerSpec"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Mcp",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
     "/api/v1/plugins:discover": {
       "post": {
         "operationId": "discover_api_v1_plugins_discover_post",
@@ -11092,6 +12595,48 @@
           }
         },
         "summary": "Discover",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins:preview-mcp": {
+      "post": {
+        "description": "Connect to a candidate MCP server and list its tools WITHOUT installing.\n\n\u00a76.12 wants the operator to see what a server offers before granting it\nanything. A failed connection is a 200 with ``ok=false`` and the reason \u2014\n\"your URL is wrong\" is the answer to the question, not a server error.",
+        "operationId": "preview_mcp_api_v1_plugins_preview_mcp_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpServerSpec"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Mcp",
         "tags": [
           "plugins"
         ]
@@ -14297,6 +15842,32 @@
         "summary": "Readyz"
       }
     },
+    "/api/v1/roles": {
+      "get": {
+        "description": "The role names the DB defines \u2014 \u00a79.3's five, not \u00a76.13's four. There is\nno `developer` role, so the picker reads this rather than offering one that\nassignment would reject.",
+        "operationId": "list_roles_api_v1_roles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response List Roles Api V1 Roles Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Roles",
+        "tags": [
+          "members"
+        ]
+      }
+    },
     "/api/v1/runs": {
       "get": {
         "operationId": "list_runs_api_v1_runs_get",
@@ -14522,6 +16093,130 @@
         "summary": "Cancel Run",
         "tags": [
           "runs"
+        ]
+      }
+    },
+    "/api/v1/settings/llm": {
+      "delete": {
+        "description": "Discard every override and fall back to the operator's models.yaml.",
+        "operationId": "clear_llm_settings_api_v1_settings_llm_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Clear Llm Settings",
+        "tags": [
+          "settings"
+        ]
+      },
+      "get": {
+        "description": "The EFFECTIVE gateway config \u2014 models.yaml with any overrides applied.\nProvider API keys are never included; only whether one resolved, plus a\nfour-character hint.",
+        "operationId": "get_llm_settings_api_v1_settings_llm_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Llm Settings",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "description": "Persist routing/budget overrides. Takes effect on the next gateway call\nin every process \u2014 no restart (TITAN-FRT-036).",
+        "operationId": "update_llm_settings_api_v1_settings_llm_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Llm Settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/llm:test": {
+      "post": {
+        "description": "Live round-trip against one alias, reporting latency and what served it.\n\n`settings:write`, not `settings:read`: this spends real money and writes a\nrow to the usage ledger, so it is a mutation however much it reads like one.",
+        "operationId": "test_llm_provider_api_v1_settings_llm_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Llm Provider",
+        "tags": [
+          "settings"
         ]
       }
     },

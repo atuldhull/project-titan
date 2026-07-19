@@ -45,6 +45,12 @@ from titan.llm.models import (
     Usage,
 )
 from titan.llm.pricing import PriceBook
+
+# Re-exported so other DOMAIN modules can resolve the active model-policy
+# profile without importing  directly — the boundary
+# check (TITAN-BCK-001/004) admits only this module across the seam, and the
+# runtime needs the profile to route agent turns (TITAN-FRT-036).
+from titan.llm.settings_service import effective_profile
 from titan.settings import Settings
 
 # A generous default; each adapter also sets its own per-request timeout.
@@ -143,6 +149,7 @@ __all__ = [
     "active_budget_hold",
     "build_gateway",
     "compute_cost",
+    "effective_profile",
     "is_transient_error",
     "parse_config",
     "raise_budget",

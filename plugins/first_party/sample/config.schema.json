@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Sample Connector settings",
+  "description": "Operator settings for the reference plugin. Rendered entirely by the shared schema-driven form engine (TITAN-FRT-035) — there is no hand-built form for this or any other plugin.",
+  "type": "object",
+  "properties": {
+    "workspace": {
+      "title": "Workspace",
+      "description": "Which remote workspace this connector syncs with.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "api_token": {
+      "title": "API token",
+      "description": "Personal access token for api.example.com. Stored encrypted at rest (AES-256-GCM, SEC-063) and never returned by any endpoint.",
+      "type": "string",
+      "writeOnly": true,
+      "minLength": 8
+    },
+    "sync_interval_minutes": {
+      "title": "Sync interval",
+      "description": "How often to poll for changes, in minutes.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1440,
+      "default": 15
+    },
+    "environment": {
+      "title": "Environment",
+      "description": "Which remote environment to target.",
+      "type": "string",
+      "enum": ["production", "staging", "development"],
+      "default": "staging"
+    },
+    "verify_tls": {
+      "title": "Verify TLS certificates",
+      "type": "boolean",
+      "default": true
+    },
+    "labels": {
+      "title": "Labels",
+      "description": "Applied to every synced item.",
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 10
+    }
+  },
+  "required": ["workspace"],
+  "additionalProperties": false
+}

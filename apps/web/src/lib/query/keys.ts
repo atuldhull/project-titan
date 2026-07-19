@@ -137,6 +137,34 @@ export const queryKeys = {
    *  re-embed and re-search. */
   memorySearch: (query: string, scope: string) =>
     ["memory", "search", query, scope] as const,
+
+  // --- Plugin Manager + Settings (Vol 4 §6.12/§6.13, Phase 64) ---------------
+
+  /** The discovered catalogue (local plugins directory, not a marketplace). */
+  plugins: () => ["plugins"] as const,
+  /** Installed plugins. Nested under `plugins` so one invalidation reaches
+   *  both tabs after an install/enable/disable. */
+  pluginInstalls: () => ["plugins", "installs"] as const,
+  pluginInstall: (pluginId: string) =>
+    ["plugins", "installs", pluginId] as const,
+  /** Schema + redacted values for one plugin's config form. */
+  pluginConfig: (pluginId: string) =>
+    ["plugins", "installs", pluginId, "config"] as const,
+  pluginHealth: (pluginId: string) =>
+    ["plugins", "installs", pluginId, "health"] as const,
+
+  /** The signed-in user's own account surfaces. Rooted on  — they are
+   *  self-scoped, and nothing else should invalidate them. */
+  profile: () => ["me", "profile"] as const,
+  sessions: () => ["me", "sessions"] as const,
+  apiKeys: () => ["me", "api-keys"] as const,
+  notificationPreferences: () => ["me", "notification-preferences"] as const,
+
+  /** Org administration. */
+  members: () => ["members"] as const,
+  roles: () => ["roles"] as const,
+  /** The effective gateway config (providers, routing, budgets). */
+  llmSettings: () => ["settings", "llm"] as const,
 } as const;
 
 export type QueryKeys = typeof queryKeys;

@@ -59,6 +59,15 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # operator act — never an agent's — so it lives only with Admin/Owner
         # (Vol 7 §3.3, ADR-INT-04). plugin:read is reachable via *:read for everyone.
         "plugin:admin",
+        # Org administration (Vol 4 §6.13, Phase 64). Both resources are carved
+        # into SENSITIVE_RESOURCES, so — exactly like audit:read and logs:read
+        # above — `*:read` no longer reaches them and the grant must be
+        # explicit. Owner (via "*") and Admin only: `member` exposes the org's
+        # real people, and `settings` re-points every agent's LLM traffic.
+        "member:read",
+        "member:write",
+        "settings:read",
+        "settings:write",
         "*:read",
     ],
     "maintainer": [

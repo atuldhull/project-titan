@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Text, text
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -144,3 +144,31 @@ class Notification(ConventionsMixin, Base):
     # in-app deep link, e.g. /projects/netflix-clone/board?task=…
     link: Mapped[str | None] = mapped_column(Text, nullable=True)
     read_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+
+class NotificationPreference(ConventionsMixin, Base):
+    """Per-user, per-category channel routing (Vol 4 §7.1, Phase 64).
+
+    A row exists ONLY where a user has overridden the §7.1 default, so the
+    absence of a row is meaningful: it means "track the default". Materialising
+    defaults for every user would freeze them at signup time, and a later change
+    to a default would then reach new users only.
+
+    ``channels`` is a JSONB array rather than a join table: the value set is
+    four fixed strings that change with the spec, not with data, and the whole
+    matrix is always read and written as one document.
+    """
+
+    __tablename__ = "notification_preferences"
+    __table_args__ = (
+        UniqueConstraint("user_id", "category", name="uq_notification_preferences_user_category"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # approval|failure|progress|activity|security (Vol 4 §7.1)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    # Subset of toast|bell|attention_queue|plugins.
+    channels: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'"))

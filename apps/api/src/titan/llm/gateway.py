@@ -108,6 +108,18 @@ class LlmGateway:
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    @property
+    def config_loader(self) -> ConfigLoader:
+        """The live loader this gateway resolves routing from.
+
+        Exposed so the Settings surface writes through the SAME instance the
+        gateway reads. A second ``ConfigLoader`` over the same paths would work
+        via mtime, but could not be cache-invalidated after a write, so a
+        read-back inside one filesystem timestamp tick would return stale
+        routing and make a saved change look lost.
+        """
+        return self._loader
+
     def _router(self) -> ModelRouter:
         return ModelRouter(self._loader.get())
 

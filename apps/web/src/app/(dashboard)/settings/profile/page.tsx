@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
-import { StubPage } from "@/components/shell/stub-page";
+import { ProfileScreen } from "@/components/settings/profile-screen";
 
 export const metadata: Metadata = { title: "Profile" };
 
 export default function Page() {
-  return <StubPage title="Profile" description="Your account details." />;
+  return <ProfileScreen />;
 }

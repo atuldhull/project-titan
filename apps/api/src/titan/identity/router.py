@@ -4,15 +4,15 @@
 Private to the identity module; main.py mounts via mount()."""
 
 import uuid
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, FastAPI, Request
 from pydantic import BaseModel, Field
 from starlette.responses import Response
 
 from titan.gateway.problems import ProblemException, problem_type
-from titan.gateway.rbac import RequiresAuth, mark_public
-from titan.identity import service
+from titan.gateway.rbac import Requires, RequiresAuth, mark_public
+from titan.identity import accounts, service
 from titan.identity.service import AuthenticationFailed, Principal, TokenInvalid, TokenPair
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -142,6 +142,165 @@ async def create_api_key(request: Request, body: ApiKeyRequest) -> ApiKeyRespons
     return ApiKeyResponse(id=key_id, api_key=raw)
 
 
+# --- Settings: self-service account surfaces (Vol 4 §6.13, Phase 64) ---------
+#
+# Authorised by BEING the principal, not by a permission string: every query
+# below is filtered to `principal.sub`. There is deliberately no `user:*` scope
+# — a permission that every authenticated caller would hold is not a permission.
+#
+# All of these are restricted to `kind == "user"`. An agent principal's `sub` is
+# the human who minted its API key, so without this an agent token could list
+# and REVOKE its owner's credentials and sessions. `create_api_key` above
+# already draws exactly this line.
+
+
+def _user_principal(request: Request) -> Principal:
+    principal = current_principal(request)
+    if principal.kind != "user":
+        raise ProblemException(
+            status=403,
+            title="Forbidden",
+            detail="Only user principals may manage their own account.",
+            problem_type=problem_type("forbidden"),
+        )
+    return principal
+
+
+def _not_found(detail: str) -> ProblemException:
+    return ProblemException(
+        status=404,
+        title="Not found",
+        detail=detail,
+        problem_type=problem_type("not-found"),
+    )
+
+
+@router.get("/profile", response_model=accounts.ProfileOut, dependencies=[Depends(RequiresAuth())])
+async def get_profile(request: Request) -> accounts.ProfileOut:
+    principal = _user_principal(request)
+    async with request.app.state.engine.connect() as conn:
+        profile = await accounts.get_profile(conn, principal.sub)
+    if profile is None:
+        raise _not_found("This account no longer exists.")
+    return profile
+
+
+@router.patch(
+    "/profile", response_model=accounts.ProfileOut, dependencies=[Depends(RequiresAuth())]
+)
+async def update_profile(request: Request, body: accounts.ProfileUpdate) -> accounts.ProfileOut:
+    principal = _user_principal(request)
+    async with request.app.state.engine.begin() as conn:
+        profile = await accounts.update_profile(conn, principal.sub, body)
+    if profile is None:
+        raise _not_found("This account no longer exists.")
+    return profile
+
+
+@router.get(
+    "/sessions", response_model=list[accounts.SessionOut], dependencies=[Depends(RequiresAuth())]
+)
+async def list_sessions(request: Request) -> list[accounts.SessionOut]:
+    principal = _user_principal(request)
+    async with request.app.state.engine.connect() as conn:
+        return await accounts.list_sessions(
+            conn, principal.sub, current_family_id=principal.family_id
+        )
+
+
+@router.delete("/sessions/{family_id}", status_code=204, dependencies=[Depends(RequiresAuth())])
+async def revoke_session(request: Request, family_id: uuid.UUID) -> Response:
+    """Sign one device out. Revoking the session you are currently using is
+    allowed — it is "log out everywhere else", done one row at a time — so the
+    UI, not the API, is what warns which one you are ending."""
+    principal = _user_principal(request)
+    revoked = await accounts.revoke_session(
+        request.app.state.engine, request.app.state.redis, principal.sub, family_id
+    )
+    if not revoked:
+        raise _not_found("No such session for this account.")
+    return Response(status_code=204)
+
+
+@router.get(
+    "/api-keys", response_model=list[accounts.ApiKeyOut], dependencies=[Depends(RequiresAuth())]
+)
+async def list_api_keys(request: Request) -> list[accounts.ApiKeyOut]:
+    principal = _user_principal(request)
+    async with request.app.state.engine.connect() as conn:
+        return await accounts.list_api_keys(conn, principal.sub)
+
+
+@router.delete(
+    "/api-keys/{key_id}",
+    response_model=accounts.ApiKeyOut,
+    dependencies=[Depends(RequiresAuth())],
+)
+async def revoke_api_key(request: Request, key_id: uuid.UUID) -> accounts.ApiKeyOut:
+    principal = _user_principal(request)
+    async with request.app.state.engine.begin() as conn:
+        revoked = await accounts.revoke_api_key(conn, principal.sub, key_id)
+    if revoked is None:
+        raise _not_found("No such API key for this account.")
+    return revoked
+
+
+# --- Settings: member administration (Vol 4 §6.13) ---------------------------
+#
+# A separate router because these are org resources, not auth endpoints: the
+# identity module owns the tables so the code belongs here, but mounting them
+# under /api/v1/auth/... would misdescribe them.
+
+members_router = APIRouter(prefix="/api/v1", tags=["members"])
+
+_MemberReader = Annotated[Principal, Depends(Requires("member:read"))]
+_MemberAdmin = Annotated[Principal, Depends(Requires("member:write"))]
+
+
+@members_router.get("/members", response_model=list[accounts.MemberOut])
+async def list_members(request: Request, principal: _MemberReader) -> list[accounts.MemberOut]:
+    async with request.app.state.engine.connect() as conn:
+        return await accounts.list_members(conn)
+
+
+@members_router.get("/roles", response_model=list[str])
+async def list_roles(request: Request, principal: _MemberReader) -> list[str]:
+    """The role names the DB defines — §9.3's five, not §6.13's four. There is
+    no `developer` role, so the picker reads this rather than offering one that
+    assignment would reject."""
+    async with request.app.state.engine.connect() as conn:
+        return await accounts.list_roles(conn)
+
+
+@members_router.put("/members/{user_id}/roles", response_model=accounts.MemberOut)
+async def set_member_roles(
+    request: Request,
+    user_id: uuid.UUID,
+    body: accounts.MemberRolesUpdate,
+    principal: _MemberAdmin,
+) -> accounts.MemberOut:
+    async with request.app.state.engine.begin() as conn:
+        try:
+            member = await accounts.set_member_roles(conn, user_id, body)
+        except accounts.LastOwnerError as exc:
+            raise ProblemException(
+                status=409,
+                title="Last owner",
+                detail=str(exc),
+                problem_type=problem_type("conflict"),
+            ) from exc
+        except ValueError as exc:
+            raise ProblemException(
+                status=422,
+                title="Unknown role",
+                detail=str(exc),
+                problem_type=problem_type("validation"),
+            ) from exc
+    if member is None:
+        raise _not_found("No such member.")
+    return member
+
+
 async def auth_strategy(request: Request) -> Response | None:
     """Fills the Phase-7 AuthenticationSlot (app.state.auth_strategy).
 
@@ -172,6 +331,7 @@ async def auth_strategy(request: Request) -> Response | None:
 
 
 def mount(app: FastAPI) -> None:
-    """Attach identity to the app: router + keyring + auth slot strategy."""
+    """Attach identity to the app: routers + keyring + auth slot strategy."""
     app.include_router(router)
+    app.include_router(members_router)
     app.state.auth_strategy = auth_strategy

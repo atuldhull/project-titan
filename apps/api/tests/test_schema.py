@@ -77,6 +77,11 @@ ARTIFACTS_TABLES = {"derived_artifacts"}
 # …plus the manifest-driven plugin runtime added in Phase 52 (migration 0029,
 # Vol 7 §3 / TITAN-INT-010..017 — the catalogue + the lifecycle install record).
 PLUGIN_TABLES = {"plugins", "plugin_installs"}
+# …plus per-user notification channel routing added in Phase 64 (migration 0033,
+# Vol 4 §7.1 — the CHANNEL half of the category × channel matrix; the category
+# half has been on notifications since 0003). Sparse: a row exists only
+# where a user has overridden a §7.1 default.
+PREFERENCES_TABLES = {"notification_preferences"}
 # NOTE: the Memory/KB/KG tables (Phases 33–39, migrations 0014–0018) live in the
 # ``brain`` schema, which inspect().get_table_names() does not enumerate by
 # default — so they are intentionally absent from this public-schema census.
@@ -97,6 +102,7 @@ EXPECTED_TABLES = (
     | PLANNING_TABLES
     | ARTIFACTS_TABLES
     | PLUGIN_TABLES
+    | PREFERENCES_TABLES
 )
 
 EXPECTED_INDEXES = {

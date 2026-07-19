@@ -27,7 +27,7 @@ from titan.agents.service import (
 )
 from titan.conflict.service import vetoing_roles as _vetoing_roles
 from titan.events.service import QueueBus
-from titan.llm.service import ConfigLoader, build_gateway
+from titan.llm.service import ConfigLoader, build_gateway, effective_profile
 from titan.memory import service as memory_service
 from titan.runtime.binding import (
     ANTHROPIC_TIER_ALIAS,
@@ -127,16 +127,28 @@ def build_runtime(
     # alias -> context window for the §8.1 budget allocator; a missing/broken
     # models.yaml degrades to the allocator's default window, never a crash.
     windows: dict[str, int] = {}
+    # The profile Settings has written, else the process setting. Resolved here
+    # (per runtime build) rather than frozen at import, so a Settings change
+    # re-points agent turns without a restart.
+    #
+    # This is the load-bearing switch, and it is NOT `routing.default`: an agent
+    # turn never falls through to it, because `GatewayBinding.build_request`
+    # always passes an explicit `model_alias` resolved from model-policy. So the
+    # profile, not the default alias, is what TITAN-FRT-036's "the next agent
+    # action logs the new provider" actually depends on.
+    profile = settings.model_policy_profile
     try:
-        config = ConfigLoader(Path(settings.models_config_path)).get()
+        loader = ConfigLoader(Path(settings.models_config_path))
+        config = loader.get()
         windows = {
             alias: model.context_window
             for alias, model in config.model_aliases.items()
             if model.context_window
         }
+        profile = effective_profile(loader, settings.model_policy_profile)
     except Exception:
         logger.warning("runtime.context_windows_unavailable", exc_info=True)
-    binding = GatewayBinding(policy, settings.model_policy_profile, context_windows=windows)
+    binding = GatewayBinding(policy, profile, context_windows=windows)
     tool_registry = build_registry()
     bus = (
         tool_bus if tool_bus is not None else build_bus(engine, registry=tool_registry, redis=redis)

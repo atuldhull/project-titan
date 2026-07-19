@@ -76,7 +76,13 @@ class PluginInstallOut(BaseModel):
     granted_permissions: dict[str, Any] = Field(default_factory=dict)
     #: The installed manifest — the router reads contributes.webhooks / ui_panels from it.
     manifest: dict[str, Any] = Field(default_factory=dict)
-    plugin_dir: str = ""
+    #: Absolute server-side path of the plugin's directory. Needed in-process
+    #: (the UI-asset and config-schema routes resolve against it) but EXCLUDED
+    #: from serialization: these responses are guarded only by `plugin:read`,
+    #: which `*:read` grants to every role INCLUDING every agent, so returning
+    #: it published the host's filesystem layout to callers with no other way
+    #: to learn it. Attribute access is unaffected — only the JSON changes.
+    plugin_dir: str = Field(default="", exclude=True)
     error_count: int = 0
     last_error: str = ""
     tools: list[str] = Field(default_factory=list)

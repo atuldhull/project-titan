@@ -14,9 +14,10 @@ from fastapi import APIRouter, Depends, FastAPI, Query, Request
 from pydantic import BaseModel
 
 from titan.gateway.pagination import Page, Pagination, keyset_from
+from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import Requires, RequiresAuth
 from titan.identity.service import Principal
-from titan.messaging import service
+from titan.messaging import preferences, service
 from titan.messaging.service import (
     DecisionCreate,
     DecisionOut,
@@ -175,6 +176,35 @@ async def mark_all_read(request: Request, principal: _Authenticated) -> MarkAllR
     async with request.app.state.engine.begin() as conn:
         count = await service.mark_all_notifications_read(conn, principal.sub)
     return MarkAllReadResult(marked_read=count)
+
+
+@router.get("/notification-preferences", response_model=preferences.PreferencesOut)
+async def get_notification_preferences(
+    request: Request, principal: _Authenticated
+) -> preferences.PreferencesOut:
+    """§7.1's channel matrix for the calling user, defaults merged in.
+
+    Self-scoped, so authentication IS the authorisation — no permission string,
+    exactly as for the notification list above.
+    """
+    async with request.app.state.engine.connect() as conn:
+        return await preferences.get_preferences(conn, principal.sub)
+
+
+@router.put("/notification-preferences", response_model=preferences.PreferencesOut)
+async def set_notification_preferences(
+    request: Request, body: preferences.PreferencesUpdate, principal: _Authenticated
+) -> preferences.PreferencesOut:
+    async with request.app.state.engine.begin() as conn:
+        try:
+            return await preferences.set_preferences(conn, principal.sub, body)
+        except ValueError as exc:
+            raise ProblemException(
+                status=422,
+                title="Invalid notification preferences",
+                detail=str(exc),
+                problem_type=problem_type("validation"),
+            ) from exc
 
 
 def mount(app: FastAPI) -> None:

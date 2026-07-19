@@ -141,44 +141,175 @@ def parse_config(raw: str) -> GatewayConfig:
     return GatewayConfig.model_validate(_resolve_env(data))
 
 
+#: Keys the overlay may override, and how. ``providers`` and ``model_aliases``
+#: merge per-entry (an overlay can add one provider without restating the rest);
+#: ``routing`` and ``budgets`` merge per-field. Anything else is replaced whole.
+_PER_ENTRY_KEYS = ("providers", "model_aliases")
+_PER_FIELD_KEYS = ("routing", "budgets")
+
+#: Keys the overlay may carry that are NOT part of models.yaml. ``GatewayConfig``
+#: is ``extra="forbid"``, so anything outside its schema has to be dropped before
+#: validation or the whole overlay is rejected. The overlay is also the Settings
+#: surface's own store — ``agent_profile`` (the model-policy profile) lives there
+#: because it is the same operator decision and must be read on the same mtime
+#: check — so those keys are stripped here rather than being forbidden.
+_NON_GATEWAY_KEYS = frozenset({"agent_profile"})
+
+
+def resolve_config_path(configured: str | Path) -> Path:
+    """Resolve a relative config path against the nearest enclosing repo root.
+
+    ``models_config_path`` defaults to the relative ``config/models.yaml``, so
+    the gateway only ever loaded when the process happened to be started from
+    the repository root. Anything with a different working directory — pytest
+    run from ``apps/api``, a CLI invoked from a subdirectory — got
+    ``FileNotFoundError`` from the very first ``get()``.
+
+    Deliberately duplicates ``titan.agents.loader.resolve_config_file`` (ten
+    lines) rather than importing it: ``llm`` importing ``agents`` would couple
+    two domain modules across a seam the boundary check exists to protect, and
+    the cure would be worse than the duplication.
+    """
+    path = Path(configured)
+    if path.is_absolute():
+        return path
+    cwd = Path.cwd()
+    for base in (cwd, *cwd.parents):
+        if (base / path).is_file():
+            return base / path
+        if (base / ".git").exists():  # repo boundary — never search above it
+            break
+    return cwd / path
+
+
+def overlay_path_for(base: Path) -> Path:
+    """``config/models.yaml`` → ``config/models.overrides.yaml``.
+
+    Derived rather than configured, so all three ``ConfigLoader`` call sites
+    pick the overlay up without threading a new setting through them, and so
+    the offline profile (``models.local.yaml``) gets its own separate overlay
+    instead of silently inheriting the cloud profile's overrides.
+    """
+    return base.with_name(f"{base.stem}.overrides{base.suffix}")
+
+
+def merge_overlay(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    """Overlay over base, one level deep on the keys where that is meaningful.
+
+    Deliberately NOT a general recursive merge: a model alias is a whole record
+    (provider + model + price + context window), so half-overriding one would
+    produce an alias whose price belongs to a different model. Entries are
+    replaced whole; only their containers merge.
+    """
+    merged = dict(base)
+    for key, value in overlay.items():
+        if key in _NON_GATEWAY_KEYS:
+            continue
+        if key in (*_PER_ENTRY_KEYS, *_PER_FIELD_KEYS) and isinstance(value, dict):
+            existing = merged.get(key)
+            merged[key] = {**existing, **value} if isinstance(existing, dict) else dict(value)
+        else:
+            merged[key] = value
+    return merged
+
+
 class ConfigLoader:
     """Loads and caches ``models.yaml``, reloading on mtime change (§8.2 hot
     reload). ``get()`` is intentionally synchronous — a stat + small read is
-    sub-millisecond and must not be awaited from adapter hot paths."""
+    sub-millisecond and must not be awaited from adapter hot paths.
 
-    def __init__(self, path: Path) -> None:
-        self._path = path
+    An optional sibling ``models.overrides.yaml`` is merged over the base when
+    present. That file is the ONLY thing the Settings API writes: the
+    hand-maintained ``models.yaml`` keeps its comments and stays the operator's,
+    while a UI change lands in a small generated file that can simply be deleted
+    to revert. Because the merge happens inside the same mtime-checked read, a
+    Settings write is picked up by every process on its next request with no
+    restart and no DB round-trip on the hot path — which is what makes
+    TITAN-FRT-036 ("switching the default provider takes effect without
+    redeploying") true across the API *and* the worker, not just in whichever
+    process happened to serve the write.
+    """
+
+    def __init__(self, path: Path, overlay_path: Path | None = None) -> None:
+        self._path = resolve_config_path(path)
+        self._overlay_path = (
+            overlay_path if overlay_path is not None else overlay_path_for(self._path)
+        )
         self._cached: GatewayConfig | None = None
-        self._mtime: float | None = None
+        self._stamp: tuple[float, float | None] | None = None
 
     @property
     def path(self) -> Path:
         return self._path
 
-    def get(self) -> GatewayConfig:
+    @property
+    def overlay_path(self) -> Path:
+        return self._overlay_path
+
+    def invalidate(self) -> None:
+        """Drop the cache so the next ``get()`` re-reads from disk.
+
+        The mtime check alone is not enough for read-your-own-write: filesystem
+        timestamp granularity is coarse (a whole second on some filesystems), so
+        a write followed immediately by a read can land inside the same tick and
+        be served the pre-write config. The writer calls this; other processes
+        still converge via mtime, which is all they need.
+        """
+        self._cached = None
+        self._stamp = None
+
+    @staticmethod
+    def _stat(path: Path) -> float | None:
         try:
-            mtime = self._path.stat().st_mtime
-        except OSError as exc:
+            return path.stat().st_mtime
+        except OSError:
+            return None
+
+    def get(self) -> GatewayConfig:
+        base_mtime = self._stat(self._path)
+        if base_mtime is None:
             # A vanished file must not take a running gateway down if we have a
             # last-good config; only fail hard when nothing was ever loaded.
             if self._cached is not None:
                 return self._cached
-            raise FileNotFoundError(f"models.yaml not found at {self._path}") from exc
-        if self._cached is None or mtime != self._mtime:
+            raise FileNotFoundError(f"models.yaml not found at {self._path}")
+        stamp = (base_mtime, self._stat(self._overlay_path))
+        if self._cached is None or stamp != self._stamp:
             try:
-                parsed = parse_config(self._path.read_text(encoding="utf-8"))
+                parsed = self._read_merged()
             except (OSError, ValueError, yaml.YAMLError) as exc:
                 if self._cached is None:
                     raise  # nothing good to fall back to — surface the error
                 # A bad hot edit (invalid YAML / broken cross-reference) must not
                 # 500 all LLM traffic: keep serving the last-good config and stop
-                # re-parsing until the file changes again (mtime advances on fix).
+                # re-parsing until a file changes again (mtime advances on fix).
                 logger.warning("models_config.reload_failed", path=str(self._path), error=str(exc))
-                self._mtime = mtime
+                self._stamp = stamp
                 return self._cached
             self._cached = parsed
-            self._mtime = mtime
+            self._stamp = stamp
         return self._cached
+
+    def _read_merged(self) -> GatewayConfig:
+        data = yaml.safe_load(self._path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("models.yaml must be a mapping at the top level")
+        try:
+            raw_overlay = self._overlay_path.read_text(encoding="utf-8")
+        except OSError:
+            merged = data
+        else:
+            overlay = yaml.safe_load(raw_overlay)
+            if overlay is None:  # an empty overlay file means "no overrides"
+                overlay = {}
+            if not isinstance(overlay, dict):
+                raise ValueError(f"{self._overlay_path.name} must be a mapping at the top level")
+            merged = merge_overlay(data, overlay)
+        # Validation runs on the MERGED document, so an overlay that points
+        # routing.default at an alias nobody defines is rejected as a unit and
+        # the last-good config keeps serving. An overlay cannot break the
+        # gateway merely by being well-formed on its own.
+        return GatewayConfig.model_validate(_resolve_env(merged))
 
 
 __all__ = [
@@ -189,5 +320,8 @@ __all__ = [
     "Price",
     "ProviderConfig",
     "Routing",
+    "merge_overlay",
+    "resolve_config_path",
+    "overlay_path_for",
     "parse_config",
 ]

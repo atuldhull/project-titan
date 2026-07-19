@@ -77,3 +77,46 @@ export type MemorySearchHit = Schemas["MemorySearchHit"];
  *  chain and usage history TITAN-FRT-034 requires. */
 export type MemoryRecordDetail = Schemas["MemoryRecordDetail"];
 export type DeploymentOut = Schemas["DeploymentOut"];
+
+// --- Plugin Manager (Vol 4 §6.12, Phase 64) ---------------------------------
+
+/** The discovered catalogue entry (AVAILABLE) — a manifest on disk that has not
+ *  necessarily been installed. "Catalogue" here means the LOCAL plugins
+ *  directory: there is no remote marketplace and no registry fetch. */
+export type PluginOut = Schemas["PluginOut"];
+/** An installed plugin's lifecycle record. Note there is NO `config` field and
+ *  no `plugin_dir`: config never round-trips (which is what makes a saved
+ *  secret unreachable through any response), and the server's absolute
+ *  filesystem path is excluded because `plugin:read` reaches every agent. */
+export type PluginInstallOut = Schemas["PluginInstallOut"];
+export type PermissionDiff = Schemas["PermissionDiff"];
+/** Schema + redacted values + secret status — everything the generated config
+ *  form needs (TITAN-FRT-035). */
+export type PluginConfigOut = Schemas["PluginConfigOut"];
+export type PluginHealthOut = Schemas["PluginHealthOut"];
+/** A manifest-declared secret. TITAN never stores these — they resolve from the
+ *  process environment (Vol 8 SEC-050) — so the UI reports whether one resolves
+ *  and never offers to save a value. */
+export type PluginSecretStatus = Schemas["SecretStatus"];
+export type McpServerSpec = Schemas["McpServerSpec"];
+export type McpPreviewOut = Schemas["McpPreviewOut"];
+
+// --- Settings (Vol 4 §6.13) --------------------------------------------------
+
+export type ProfileOut = Schemas["ProfileOut"];
+export type SessionOut = Schemas["SessionOut"];
+export type ApiKeyOut = Schemas["ApiKeyOut"];
+export type MemberOut = Schemas["MemberOut"];
+export type MemberRolesUpdate = Schemas["MemberRolesUpdate"];
+/** The EFFECTIVE gateway config: models.yaml with any Settings override merged
+ *  in. Provider keys are never present — only `key_configured` and a
+ *  four-character `key_hint`. */
+export type LlmSettingsOut = Schemas["LlmSettingsOut"];
+export type LlmProviderOut = Schemas["ProviderOut"];
+export type LlmModelAliasOut = Schemas["ModelAliasOut"];
+export type LlmBudgetsOut = Schemas["BudgetsOut"];
+export type ProviderTestResult = Schemas["ProviderTestResult"];
+/** §7.1's category × channel matrix. A category flagged `is_default` has no
+ *  stored row — it tracks the spec default rather than being pinned to it. */
+export type NotificationPreferences = Schemas["PreferencesOut"];
+export type NotificationCategoryPreference = Schemas["CategoryPreference"];

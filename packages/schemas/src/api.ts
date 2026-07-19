@@ -115,11 +115,29 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Api Keys */
+        get: operations["list_api_keys_api_v1_auth_api_keys_get"];
         put?: never;
         /** Create Api Key */
         post: operations["create_api_key_api_v1_auth_api_keys_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/api-keys/{key_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Api Key */
+        delete: operations["revoke_api_key_api_v1_auth_api_keys__key_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -140,6 +158,24 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Profile */
+        get: operations["get_profile_api_v1_auth_profile_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Profile */
+        patch: operations["update_profile_api_v1_auth_profile_patch"];
         trace?: never;
     };
     "/api/v1/auth/refresh": {
@@ -174,6 +210,45 @@ export interface paths {
          */
         post: operations["revoke_api_v1_auth_revoke_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sessions */
+        get: operations["list_sessions_api_v1_auth_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/sessions/{family_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Session
+         * @description Sign one device out. Revoking the session you are currently using is
+         *     allowed — it is "log out everywhere else", done one row at a time — so the
+         *     UI, not the API, is what warns which one you are ending.
+         */
+        delete: operations["revoke_session_api_v1_auth_sessions__family_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -447,6 +522,40 @@ export interface paths {
          */
         get: operations["list_logs_api_v1_logs_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Members */
+        get: operations["list_members_api_v1_members_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/members/{user_id}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Member Roles */
+        put: operations["set_member_roles_api_v1_members__user_id__roles_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -834,6 +943,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/notification-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Notification Preferences
+         * @description §7.1's channel matrix for the calling user, defaults merged in.
+         *
+         *     Self-scoped, so authentication IS the authorisation — no permission string,
+         *     exactly as for the notification list above.
+         */
+        get: operations["get_notification_preferences_api_v1_notification_preferences_get"];
+        /** Set Notification Preferences */
+        put: operations["set_notification_preferences_api_v1_notification_preferences_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/notifications": {
         parameters: {
             query?: never;
@@ -947,10 +1080,25 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get Config
+         * @description The config form's data: the plugin's JSON Schema, its saved values with
+         *     every write-only field masked, and the status of each manifest-declared
+         *     secret (TITAN-FRT-035).
+         *
+         *     `plugin:admin`, not `plugin:read`: even masked, a plugin's configuration
+         *     names internal hosts, repositories and channels, and `plugin:read` is
+         *     reachable by every agent.
+         */
+        get: operations["get_config_api_v1_plugins__plugin_id__config_get"];
         /**
          * Configure
          * @description Operator settings from ``config_schema``, encrypted at rest (SEC-063).
+         *
+         *     A submitted value still equal to the mask means "unchanged": the form
+         *     renders saved secrets as ``••••``, so persisting that verbatim would
+         *     replace a working credential with four bullet characters and leave the
+         *     plugin failing to authenticate against a config that looks correct.
          */
         put: operations["configure_api_v1_plugins__plugin_id__config_put"];
         post?: never;
@@ -991,6 +1139,30 @@ export interface paths {
          * @description Grant the manifest's declared permissions and start the sandboxed worker.
          */
         post: operations["enable_api_v1_plugins__plugin_id__enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugins/{plugin_id}/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Health
+         * @description Whether the supervisor is actually holding this plugin up.
+         *
+         *     There is no health COLUMN — ``plugin_installs`` records lifecycle state and
+         *     an error counter, not liveness — so "healthy" is computed from the live
+         *     supervisor rather than read back from a row that nothing updates.
+         */
+        get: operations["health_api_v1_plugins__plugin_id__health_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1078,6 +1250,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/plugins:add-mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Mcp
+         * @description Add an MCP server by URL or command (§6.12).
+         *
+         *     Materialises it as an ordinary plugin directory and re-runs discovery, so
+         *     the server then installs, enables, quarantines and upgrades through the
+         *     Phase-52 lifecycle rather than acquiring a parallel one of its own. It
+         *     lands as AVAILABLE — adding is not granting.
+         */
+        post: operations["add_mcp_api_v1_plugins_add_mcp_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/plugins:discover": {
         parameters: {
             query?: never;
@@ -1089,6 +1286,30 @@ export interface paths {
         put?: never;
         /** Discover */
         post: operations["discover_api_v1_plugins_discover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugins:preview-mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Mcp
+         * @description Connect to a candidate MCP server and list its tools WITHOUT installing.
+         *
+         *     §6.12 wants the operator to see what a server offers before granting it
+         *     anything. A failed connection is a 200 with ``ok=false`` and the reason —
+         *     "your URL is wrong" is the answer to the question, not a server error.
+         */
+        post: operations["preview_mcp_api_v1_plugins_preview_mcp_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2035,6 +2256,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Roles
+         * @description The role names the DB defines — §9.3's five, not §6.13's four. There is
+         *     no `developer` role, so the picker reads this rather than offering one that
+         *     assignment would reject.
+         */
+        get: operations["list_roles_api_v1_roles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs": {
         parameters: {
             query?: never;
@@ -2097,6 +2340,60 @@ export interface paths {
         put?: never;
         /** Cancel Run */
         post: operations["cancel_run_api_v1_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/llm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Llm Settings
+         * @description The EFFECTIVE gateway config — models.yaml with any overrides applied.
+         *     Provider API keys are never included; only whether one resolved, plus a
+         *     four-character hint.
+         */
+        get: operations["get_llm_settings_api_v1_settings_llm_get"];
+        /**
+         * Update Llm Settings
+         * @description Persist routing/budget overrides. Takes effect on the next gateway call
+         *     in every process — no restart (TITAN-FRT-036).
+         */
+        put: operations["update_llm_settings_api_v1_settings_llm_put"];
+        post?: never;
+        /**
+         * Clear Llm Settings
+         * @description Discard every override and fall back to the operator's models.yaml.
+         */
+        delete: operations["clear_llm_settings_api_v1_settings_llm_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/llm:test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Llm Provider
+         * @description Live round-trip against one alias, reporting latency and what served it.
+         *
+         *     `settings:write`, not `settings:read`: this spends real money and writes a
+         *     row to the usage ledger, so it is a mutation however much it reads like one.
+         */
+        post: operations["test_llm_provider_api_v1_settings_llm_test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2473,6 +2770,35 @@ export interface components {
              */
             grant_type: "api_key";
         };
+        /**
+         * ApiKeyOut
+         * @description A personal access token. The secret is returned exactly once, at
+         *     creation; this is the durable record and carries only the prefix.
+         */
+        ApiKeyOut: {
+            /** Agent Id */
+            agent_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Expires At */
+            expires_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Name */
+            name: string;
+            /** Prefix */
+            prefix: string;
+            /** Revoked At */
+            revoked_at: string | null;
+        };
         /** ApiKeyRequest */
         ApiKeyRequest: {
             /** Agent Id */
@@ -2687,6 +3013,20 @@ export interface components {
             /** Tasks */
             tasks: components["schemas"]["BoardCard"][];
         };
+        /**
+         * BudgetsOut
+         * @description §8.4 caps. Named per_project_usd but enforced as ONE cap applied to
+         *     whatever project a call carries — there is no per-project override table,
+         *     so this is a single global ceiling and the UI says so.
+         */
+        BudgetsOut: {
+            /** Action On Exceeded */
+            action_on_exceeded?: string | null;
+            /** Per Project Usd */
+            per_project_usd?: string | null;
+            /** Per Task Usd */
+            per_task_usd?: string | null;
+        };
         /** CacheMetrics */
         CacheMetrics: {
             /** Hit Rate */
@@ -2695,6 +3035,27 @@ export interface components {
             hits: number;
             /** Misses */
             misses: number;
+        };
+        /** CategoryPreference */
+        CategoryPreference: {
+            /** Category */
+            category: string;
+            /** Channels */
+            channels?: string[];
+            /**
+             * Is Default
+             * @default true
+             */
+            is_default: boolean;
+            /** Severity */
+            severity: string;
+        };
+        /** CategoryUpdate */
+        CategoryUpdate: {
+            /** Category */
+            category: string;
+            /** Channels */
+            channels?: string[];
         };
         /**
          * ChatRequest
@@ -3703,6 +4064,61 @@ export interface components {
              */
             record_id: string;
         };
+        /** LlmSettingsOut */
+        LlmSettingsOut: {
+            /** Agent Profile */
+            agent_profile?: string | null;
+            /** Aliases */
+            aliases?: components["schemas"]["ModelAliasOut"][];
+            budgets?: components["schemas"]["BudgetsOut"];
+            /** By Agent */
+            by_agent?: {
+                [key: string]: string;
+            };
+            /** Default Alias */
+            default_alias: string;
+            /** Embeddings Default Alias */
+            embeddings_default_alias?: string | null;
+            /** Fallbacks */
+            fallbacks?: {
+                [key: string]: string[];
+            };
+            /**
+             * Overridden
+             * @default false
+             */
+            overridden: boolean;
+            /** Providers */
+            providers?: components["schemas"]["ProviderOut"][];
+        };
+        /**
+         * LlmSettingsUpdate
+         * @description Every field optional: a PATCH-shaped PUT. Only what is supplied is
+         *     written to the overlay, so the UI can change the default provider without
+         *     having to restate budgets it never showed.
+         */
+        LlmSettingsUpdate: {
+            /** Action On Exceeded */
+            action_on_exceeded?: string | null;
+            /** Agent Profile */
+            agent_profile?: string | null;
+            /** By Agent */
+            by_agent?: {
+                [key: string]: string;
+            } | null;
+            /** Default Alias */
+            default_alias?: string | null;
+            /** Embeddings Default Alias */
+            embeddings_default_alias?: string | null;
+            /** Fallbacks */
+            fallbacks?: {
+                [key: string]: string[];
+            } | null;
+            /** Per Project Usd */
+            per_project_usd?: number | string | null;
+            /** Per Task Usd */
+            per_task_usd?: number | string | null;
+        };
         /**
          * LogLine
          * @description One structured log line.
@@ -3873,6 +4289,69 @@ export interface components {
             /** Marked Read */
             marked_read: number;
         };
+        /**
+         * McpPreviewOut
+         * @description The result of connecting to a candidate server WITHOUT installing it.
+         */
+        McpPreviewOut: {
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /** Ok */
+            ok: boolean;
+            /**
+             * Protocol Version
+             * @default
+             */
+            protocol_version: string;
+            /** Server Info */
+            server_info?: {
+                [key: string]: unknown;
+            };
+            /** Tools */
+            tools?: components["schemas"]["McpToolPreview"][];
+        };
+        /**
+         * McpServerSpec
+         * @description §6.12's "add by URL/command". Mirrors ``RuntimeSpec`` for MCP, but is a
+         *     separate DTO because the manifest allows shapes this endpoint must not (a
+         *     python entrypoint, for instance).
+         */
+        McpServerSpec: {
+            /** Auth Secret */
+            auth_secret?: string | null;
+            /** Command */
+            command?: string[];
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Name */
+            name: string;
+            /** Network */
+            network?: string[];
+            /** Plugin Id */
+            plugin_id: string;
+            /** Scopes */
+            scopes?: string[];
+            /** Transport */
+            transport: string;
+            /** Url */
+            url?: string | null;
+        };
+        /** McpToolPreview */
+        McpToolPreview: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Name */
+            name: string;
+        };
         /** MeResponse */
         MeResponse: {
             /** Agent Id */
@@ -3891,6 +4370,36 @@ export interface components {
              * Format: uuid
              */
             sub: string;
+        };
+        /** MemberOut */
+        MemberOut: {
+            /** Display Name */
+            display_name: string;
+            /** Email */
+            email: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Project Grants */
+            project_grants?: components["schemas"]["RoleGrant"][];
+            /** Roles */
+            roles?: string[];
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
+        /**
+         * MemberRolesUpdate
+         * @description Replace a member's grants at one scope. ``project_id`` NULL rewrites the
+         *     org-wide set; a project id rewrites that project's set and leaves org-wide
+         *     grants untouched.
+         */
+        MemberRolesUpdate: {
+            /** Project Id */
+            project_id?: string | null;
+            /** Roles */
+            roles?: string[];
         };
         /**
          * MemoryBrowseRow
@@ -4480,6 +4989,21 @@ export interface components {
             /** Patterns */
             patterns: components["schemas"]["MinedPattern"][];
         };
+        /** ModelAliasOut */
+        ModelAliasOut: {
+            /** Alias */
+            alias: string;
+            /** Context Window */
+            context_window?: number | null;
+            /** Input Per Mtok */
+            input_per_mtok?: string | null;
+            /** Model */
+            model: string;
+            /** Output Per Mtok */
+            output_per_mtok?: string | null;
+            /** Provider */
+            provider: string;
+        };
         /**
          * ModelPolicy
          * @description Which model tier, sampling, and output bounds the agent's turns use
@@ -4893,6 +5417,52 @@ export interface components {
             /** Walking Skeleton */
             walking_skeleton: boolean;
         };
+        /**
+         * PluginConfigOut
+         * @description What the config form needs, in one response.
+         */
+        PluginConfigOut: {
+            /** Config Schema */
+            config_schema?: {
+                [key: string]: unknown;
+            } | null;
+            /** Plugin Id */
+            plugin_id: string;
+            /**
+             * Schema Unavailable
+             * @default false
+             */
+            schema_unavailable: boolean;
+            /** Secret Keys */
+            secret_keys?: string[];
+            /** Secrets */
+            secrets?: components["schemas"]["SecretStatus"][];
+            /** Values */
+            values?: {
+                [key: string]: unknown;
+            };
+        };
+        /** PluginHealthOut */
+        PluginHealthOut: {
+            /**
+             * Error Count
+             * @default 0
+             */
+            error_count: number;
+            /**
+             * Last Error
+             * @default
+             */
+            last_error: string;
+            /** Plugin Id */
+            plugin_id: string;
+            /** Running */
+            running: boolean;
+            /** State */
+            state: string;
+            /** Tools */
+            tools?: string[];
+        };
         /** PluginInstallOut */
         PluginInstallOut: {
             /** Content Hash */
@@ -4917,11 +5487,6 @@ export interface components {
             manifest?: {
                 [key: string]: unknown;
             };
-            /**
-             * Plugin Dir
-             * @default
-             */
-            plugin_dir: string;
             /** Plugin Id */
             plugin_id: string;
             /** State */
@@ -4954,6 +5519,25 @@ export interface components {
             /** Plugin Version */
             plugin_version: string;
         };
+        /** PreferencesOut */
+        PreferencesOut: {
+            /** Available Channels */
+            available_channels?: string[];
+            /** Categories */
+            categories?: components["schemas"]["CategoryPreference"][];
+            /** Unavailable Channels */
+            unavailable_channels?: string[];
+        };
+        /**
+         * PreferencesUpdate
+         * @description Replace the whole matrix. Partial updates would make "unchecked" and
+         *     "unmentioned" indistinguishable, and unchecking every channel for a
+         *     category is a thing a user is entitled to mean.
+         */
+        PreferencesUpdate: {
+            /** Categories */
+            categories?: components["schemas"]["CategoryUpdate"][];
+        };
         /**
          * Problem
          * @description RFC 9457 Problem Details (§4.1 error contract)
@@ -4966,6 +5550,45 @@ export interface components {
             title: string;
             /** @default about:blank */
             type: string;
+        };
+        /**
+         * ProfileOut
+         * @description The signed-in human. §6.13 also lists an avatar — there is no avatar
+         *     column, no blob store and no upload path anywhere in TITAN, so this DTO
+         *     does not pretend otherwise and the UI renders initials.
+         */
+        ProfileOut: {
+            /** Auth Provider */
+            auth_provider: string;
+            /** Display Name */
+            display_name: string;
+            /** Email */
+            email: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Roles */
+            roles?: string[];
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
+        /**
+         * ProfileUpdate
+         * @description Only ``display_name`` is editable. Email is the local-auth login
+         *     identity and the unique key; changing it is an account-recovery flow with
+         *     a verification step, which does not exist — so it is read-only here rather
+         *     than silently re-pointing a login.
+         *
+         *     ``extra="forbid"`` is load-bearing, not tidiness: without it a submitted
+         *     ``email`` is silently DROPPED and the caller gets a 200 with their old
+         *     address, which reads exactly like a successful change that did not stick.
+         *     Rejecting the field says so.
+         */
+        ProfileUpdate: {
+            /** Display Name */
+            display_name: string;
         };
         /** ProjectCreate */
         ProjectCreate: {
@@ -5083,6 +5706,54 @@ export interface components {
             topic: string;
         };
         /**
+         * ProviderOut
+         * @description One configured provider. Never carries key material.
+         */
+        ProviderOut: {
+            /** Base Url */
+            base_url?: string | null;
+            /** Key Configured */
+            key_configured: boolean;
+            /** Key Hint */
+            key_hint?: string | null;
+            /** Key Required */
+            key_required: boolean;
+            /** Name */
+            name: string;
+        };
+        /** ProviderTestRequest */
+        ProviderTestRequest: {
+            /** Alias */
+            alias: string;
+        };
+        /**
+         * ProviderTestResult
+         * @description A real round-trip, not a config lookup.
+         */
+        ProviderTestResult: {
+            /** Alias */
+            alias: string;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /** Latency Ms */
+            latency_ms: number;
+            /** Model */
+            model: string;
+            /** Ok */
+            ok: boolean;
+            /** Provider */
+            provider: string;
+            /** Provider Models */
+            provider_models?: string[];
+            /** Served Model */
+            served_model?: string | null;
+            /** Served Provider */
+            served_provider?: string | null;
+        };
+        /**
          * ReadyzResponse
          * @description Readiness probe response; ``failing`` is non-empty exactly when unready.
          */
@@ -5160,6 +5831,16 @@ export interface components {
             project_id?: string | null;
             /** Task Id */
             task_id?: string | null;
+        };
+        /**
+         * RoleGrant
+         * @description One row of ``user_roles``. ``project_id`` NULL = org-wide.
+         */
+        RoleGrant: {
+            /** Project Id */
+            project_id: string | null;
+            /** Role */
+            role: string;
         };
         /** RunCreate */
         RunCreate: {
@@ -5244,6 +5925,56 @@ export interface components {
             story_id: string;
             /** Title */
             title: string;
+        };
+        /**
+         * SecretStatus
+         * @description One entry of ``permissions.secrets``.
+         *
+         *     ``resolved`` is whether the runtime can currently get a value for it. There
+         *     is deliberately no way to SET one here: Vol 8 SEC-050 keeps secret material
+         *     out of application tables entirely, so the value lives in the environment
+         *     (``TITAN_PLUGIN_SECRET_<NAME>``) and an operator sets it there. A UI field
+         *     that accepted one would have nowhere honest to put it.
+         */
+        SecretStatus: {
+            /** Env Var */
+            env_var: string;
+            /** Name */
+            name: string;
+            /** Resolved */
+            resolved: boolean;
+        };
+        /**
+         * SessionOut
+         * @description One refresh-token family = one signed-in device.
+         */
+        SessionOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Current */
+            current: boolean;
+            /** Expired */
+            expired: boolean;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Family Id
+             * Format: uuid
+             */
+            family_id: string;
+            /**
+             * Last Used At
+             * Format: date-time
+             */
+            last_used_at: string;
+            /** Revoked */
+            revoked: boolean;
         };
         /** SprintCeremonyOut */
         SprintCeremonyOut: {
@@ -6108,6 +6839,26 @@ export interface operations {
             };
         };
     };
+    list_api_keys_api_v1_auth_api_keys_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyOut"][];
+                };
+            };
+        };
+    };
     create_api_key_api_v1_auth_api_keys_post: {
         parameters: {
             query?: never;
@@ -6141,6 +6892,37 @@ export interface operations {
             };
         };
     };
+    revoke_api_key_api_v1_auth_api_keys__key_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     me_api_v1_auth_me_get: {
         parameters: {
             query?: never;
@@ -6157,6 +6939,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+        };
+    };
+    get_profile_api_v1_auth_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+        };
+    };
+    update_profile_api_v1_auth_profile_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
@@ -6209,6 +7044,55 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_sessions_api_v1_auth_sessions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionOut"][];
+                };
+            };
+        };
+    };
+    revoke_session_api_v1_auth_sessions__family_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                family_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
             };
         };
     };
@@ -6614,6 +7498,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_LogLine_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_members_api_v1_members_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberOut"][];
+                };
+            };
+        };
+    };
+    set_member_roles_api_v1_members__user_id__roles_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberRolesUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberOut"];
                 };
             };
             /** @description Validation Error */
@@ -7139,6 +8078,59 @@ export interface operations {
             };
         };
     };
+    get_notification_preferences_api_v1_notification_preferences_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreferencesOut"];
+                };
+            };
+        };
+    };
+    set_notification_preferences_api_v1_notification_preferences_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreferencesUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreferencesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     list_notifications_api_v1_notifications_get: {
         parameters: {
             query?: {
@@ -7325,6 +8317,37 @@ export interface operations {
             };
         };
     };
+    get_config_api_v1_plugins__plugin_id__config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plugin_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginConfigOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     configure_api_v1_plugins__plugin_id__config_put: {
         parameters: {
             query?: never;
@@ -7409,6 +8432,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginInstallOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    health_api_v1_plugins__plugin_id__health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plugin_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginHealthOut"];
                 };
             };
             /** @description Validation Error */
@@ -7551,6 +8605,39 @@ export interface operations {
             };
         };
     };
+    add_mcp_api_v1_plugins_add_mcp_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpServerSpec"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     discover_api_v1_plugins_discover_post: {
         parameters: {
             query?: never;
@@ -7567,6 +8654,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginOut"][];
+                };
+            };
+        };
+    };
+    preview_mcp_api_v1_plugins_preview_mcp_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpServerSpec"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpPreviewOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
@@ -9471,6 +10591,26 @@ export interface operations {
             };
         };
     };
+    list_roles_api_v1_roles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+        };
+    };
     list_runs_api_v1_runs_get: {
         parameters: {
             query: {
@@ -9587,6 +10727,112 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_llm_settings_api_v1_settings_llm_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmSettingsOut"];
+                };
+            };
+        };
+    };
+    update_llm_settings_api_v1_settings_llm_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmSettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    clear_llm_settings_api_v1_settings_llm_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmSettingsOut"];
+                };
+            };
+        };
+    };
+    test_llm_provider_api_v1_settings_llm_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderTestResult"];
                 };
             };
             /** @description Validation Error */

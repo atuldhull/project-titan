@@ -307,6 +307,36 @@ class PluginSupervisor:
             return {}
         return {str(k): str(v) for k, v in raw.items() if isinstance(v, str)}
 
+    async def preview_mcp(
+        self,
+        manifest: PluginManifest,
+        granted: Permissions,
+        *,
+        plugin_dir: str,
+        handshake_timeout_s: float = 10.0,
+    ) -> tuple[str, dict[str, Any], list[McpTool]]:
+        """Connect to a candidate MCP server, list its tools, and disconnect.
+
+        §6.12's tool-list preview: an operator should see what a server actually
+        offers BEFORE granting it anything. Deliberately reuses
+        ``_build_mcp_transport`` so a preview runs under the same sandbox and
+        egress rules as a real connection — a server reachable only by
+        bypassing them must not appear reachable here.
+
+        Nothing is registered and no state is kept: the client is torn down on
+        both paths, so a preview leaves the supervisor exactly as it found it.
+        """
+        transport = await self._build_mcp_transport(manifest, granted, plugin_dir=plugin_dir)
+        client = McpClient(manifest.id, transport, call_timeout_s=self._call_timeout_s)
+        await client.start()
+        try:
+            async with asyncio.timeout(_DISCOVERY_DEADLINE_S):
+                await client.initialize(timeout_s=handshake_timeout_s)
+                tools = await client.list_tools()
+                return client.protocol_version, dict(client.server_info), tools
+        finally:
+            await client.stop()
+
     async def _build_mcp_transport(
         self, manifest: PluginManifest, granted: Permissions, *, plugin_dir: str
     ) -> McpTransport:

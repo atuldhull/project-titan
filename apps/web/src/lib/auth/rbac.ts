@@ -39,7 +39,9 @@ export type Role = (typeof ROLES)[number];
 export const SENSITIVE_RESOURCES: ReadonlySet<string> = new Set([
   "audit",
   "logs",
+  "member",
   "secret",
+  "settings",
 ]);
 
 const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
@@ -65,6 +67,12 @@ const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     "pipeline:advance",
     "pipeline:override",
     "plugin:admin",
+    // Same shape and same reason as `logs:read` above (Phase 64): `member` and
+    // `settings` are in SENSITIVE_RESOURCES, so `*:read` does not reach them.
+    "member:read",
+    "member:write",
+    "settings:read",
+    "settings:write",
     "*:read",
   ],
   maintainer: [

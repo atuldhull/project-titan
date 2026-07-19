@@ -49,7 +49,16 @@ AGENT_ROLE = "operator"
 # runs as — already hold, so minting the permission would itself have published
 # the firehose. Adding the resource here is the only thing that carves it out;
 # the name you pick cannot.
-SENSITIVE_RESOURCES = frozenset({"audit", "logs", "secret"})
+#
+# `member` and `settings` join them in Phase 64 (Vol 4 §6.13). Both are
+# org-administration surfaces with no project tenancy. `member` lists real
+# people — display names and email addresses — so leaving it reachable by
+# `*:read` would let EVERY agent (every agent runs as `operator`, whose bundle
+# carries `*:read`) enumerate the humans in the org: a PII disclosure no screen
+# needs. `settings` carries the gateway's provider registry, model routing and
+# spend caps; reading it is an operator act and writing it re-points every
+# agent's traffic at a different provider. Neither is a viewer surface.
+SENSITIVE_RESOURCES = frozenset({"audit", "logs", "member", "secret", "settings"})
 
 # The canonical set of RBAC scopes the host recognises. Permissions are otherwise
 # free-form strings, so this is the reference list a PLUGIN MANIFEST is validated
@@ -94,6 +103,18 @@ KNOWN_SCOPES: frozenset[str] = frozenset(
         "deploy:local",
         "plugin:read",
         "plugin:admin",
+        # Carved-out sensitive reads. These are seeded and enforced but were
+        # missing here until Phase 64, which meant a manifest legitimately
+        # requesting one failed installation with "unknown scope" — the list is
+        # the contract a plugin is validated against, so a scope the host
+        # enforces but does not list is a latent install-time false negative.
+        "logs:read",
+        "usage:read",
+        # Org administration (Vol 4 §6.13, Phase 64).
+        "member:read",
+        "member:write",
+        "settings:read",
+        "settings:write",
     }
 )
 

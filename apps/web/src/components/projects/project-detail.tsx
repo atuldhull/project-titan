@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PluginSlot } from "@/components/plugins/plugin-slot";
 import { StubPage } from "@/components/shell/stub-page";
 import { boardStats } from "@/lib/projects/derive";
 import { useProject, useProjectBoard, useSprints } from "@/lib/projects/hooks";
@@ -207,6 +208,13 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           />
         </TabsContent>
       </Tabs>
+
+      {/* Named extension slot (TITAN-INT-011): every enabled plugin declaring
+          `mount: project.sidebar` renders here, from its manifest alone. This
+          one line is the ONLY core change a plugin's UI ever needs — the panel
+          itself is plugin-authored HTML in a sandboxed frame. Renders nothing
+          at all when no plugin mounts here. */}
+      <PluginSlot name="project.sidebar" className="space-y-3" />
     </div>
   );
 }

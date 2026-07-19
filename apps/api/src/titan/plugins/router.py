@@ -14,6 +14,7 @@ Two non-CRUD surfaces:
   bypass RBAC), with an explicit path-traversal check.
 """
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Annotated, Any
@@ -25,8 +26,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import Requires
 from titan.identity.service import Principal
-from titan.plugins import service
-from titan.plugins.secrets import verify_hmac_sha256
+from titan.plugins import manager, service
+from titan.plugins.manifest import ManifestError
+from titan.plugins.secrets import ENV_PREFIX, verify_hmac_sha256
 from titan.plugins.service import PermissionDiff, PluginInstallOut, PluginOut
 
 logger = structlog.get_logger("titan.plugins.router")
@@ -52,6 +54,15 @@ class ConfigIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     config: dict[str, Any] = Field(default_factory=dict)
+
+
+def _invalid_spec(errors: list[str]) -> ProblemException:
+    return ProblemException(
+        status=422,
+        title="Invalid MCP server",
+        detail="; ".join(errors),
+        problem_type=problem_type("validation"),
+    )
 
 
 def _runtime(request: Request) -> tuple[Any, Any, frozenset[str], Any]:
@@ -148,9 +159,155 @@ async def remove(request: Request, plugin_id: str, principal: _Admin) -> PluginI
 async def configure(
     request: Request, plugin_id: str, body: ConfigIn, principal: _Admin
 ) -> PluginInstallOut:
-    """Operator settings from ``config_schema``, encrypted at rest (SEC-063)."""
+    """Operator settings from ``config_schema``, encrypted at rest (SEC-063).
+
+    A submitted value still equal to the mask means "unchanged": the form
+    renders saved secrets as ``••••``, so persisting that verbatim would
+    replace a working credential with four bullet characters and leave the
+    plugin failing to authenticate against a config that looks correct.
+    """
     engine, _sup, _scopes, cipher = _runtime(request)
-    return await service.configure(engine, plugin_id, body.config, cipher=cipher)
+    async with engine.connect() as conn:
+        install = await service.get_install(conn, plugin_id)
+        current = await service.get_config(conn, plugin_id, cipher=cipher)
+    schema = manager.load_config_schema(install)
+    merged = manager.strip_sentinels(body.config, current, manager.secret_keys_of(schema))
+    return await service.configure(engine, plugin_id, merged, cipher=cipher)
+
+
+@router.get("/plugins/{plugin_id}/config", response_model=manager.PluginConfigOut)
+async def get_config(
+    request: Request, plugin_id: str, principal: _Admin
+) -> manager.PluginConfigOut:
+    """The config form's data: the plugin's JSON Schema, its saved values with
+    every write-only field masked, and the status of each manifest-declared
+    secret (TITAN-FRT-035).
+
+    `plugin:admin`, not `plugin:read`: even masked, a plugin's configuration
+    names internal hosts, repositories and channels, and `plugin:read` is
+    reachable by every agent.
+    """
+    _engine, _sup, _scopes, cipher = _runtime(request)
+    async with request.app.state.engine.connect() as conn:
+        install = await service.get_install(conn, plugin_id)
+        saved = await service.get_config(conn, plugin_id, cipher=cipher)
+    schema = manager.load_config_schema(install)
+    # Declared-but-unreadable is NOT the same as "declares none". Without the
+    # schema nothing identifies which keys are secret, so an empty key list
+    # would return every stored credential verbatim. Fail closed: mask
+    # everything and tell the dialog why it is read-only.
+    unavailable = schema is None and manager.declares_config_schema(install)
+    secret_keys = manager.secret_keys_of(schema)
+    return manager.PluginConfigOut(
+        plugin_id=plugin_id,
+        config_schema=schema,
+        schema_unavailable=unavailable,
+        values=manager.redact_config(saved, secret_keys, mask_all=unavailable),
+        secret_keys=secret_keys,
+        secrets=await manager.secret_status(
+            install.manifest, request.app.state.plugin_secrets, env_prefix=ENV_PREFIX
+        ),
+    )
+
+
+@router.get("/plugins/{plugin_id}/health", response_model=manager.PluginHealthOut)
+async def health(request: Request, plugin_id: str, principal: _Reader) -> manager.PluginHealthOut:
+    """Whether the supervisor is actually holding this plugin up.
+
+    There is no health COLUMN — ``plugin_installs`` records lifecycle state and
+    an error counter, not liveness — so "healthy" is computed from the live
+    supervisor rather than read back from a row that nothing updates.
+    """
+    _engine, supervisor, _scopes, _cipher = _runtime(request)
+    async with request.app.state.engine.connect() as conn:
+        install = await service.get_install(conn, plugin_id, supervisor)
+    return manager.PluginHealthOut(
+        plugin_id=plugin_id,
+        state=install.state,
+        running=plugin_id in supervisor.running(),
+        tools=install.tools,
+        error_count=install.error_count,
+        last_error=install.last_error,
+    )
+
+
+@router.post("/plugins:preview-mcp", response_model=manager.McpPreviewOut)
+async def preview_mcp(
+    request: Request, body: manager.McpServerSpec, principal: _Admin
+) -> manager.McpPreviewOut:
+    """Connect to a candidate MCP server and list its tools WITHOUT installing.
+
+    §6.12 wants the operator to see what a server offers before granting it
+    anything. A failed connection is a 200 with ``ok=false`` and the reason —
+    "your URL is wrong" is the answer to the question, not a server error.
+    """
+    _engine, supervisor, scopes, _cipher = _runtime(request)
+    try:
+        candidate = manager.validate_spec(body, known_scopes=scopes)
+    except ManifestError as exc:
+        raise _invalid_spec(exc.errors) from exc
+    except ValueError as exc:
+        raise _invalid_spec([str(exc)]) from exc
+    try:
+        version, info, tools = await supervisor.preview_mcp(
+            candidate, candidate.permissions, plugin_dir=str(request.app.state.plugins_dir)
+        )
+    except Exception as exc:  # noqa: BLE001 — a failed probe is a reportable RESULT
+        logger.info("plugin.mcp_preview_failed", plugin_id=body.plugin_id, error=str(exc))
+        return manager.McpPreviewOut(ok=False, detail=str(exc)[:500])
+    return manager.McpPreviewOut(
+        ok=True,
+        protocol_version=version,
+        server_info=info,
+        tools=manager.tool_previews(tools),
+    )
+
+
+@router.post("/plugins:add-mcp", response_model=PluginOut, status_code=201)
+async def add_mcp(request: Request, body: manager.McpServerSpec, principal: _Admin) -> PluginOut:
+    """Add an MCP server by URL or command (§6.12).
+
+    Materialises it as an ordinary plugin directory and re-runs discovery, so
+    the server then installs, enables, quarantines and upgrades through the
+    Phase-52 lifecycle rather than acquiring a parallel one of its own. It
+    lands as AVAILABLE — adding is not granting.
+    """
+    engine, _sup, scopes, _cipher = _runtime(request)
+    try:
+        manager.validate_spec(body, known_scopes=scopes)
+    except ManifestError as exc:
+        raise _invalid_spec(exc.errors) from exc
+    except ValueError as exc:
+        raise _invalid_spec([str(exc)]) from exc
+
+    plugins_dir = Path(request.app.state.plugins_dir)
+    try:
+        await asyncio.to_thread(manager.write_mcp_manifest, plugins_dir, body)
+    except FileExistsError as exc:
+        raise ProblemException(
+            status=409,
+            title="Already exists",
+            detail=str(exc),
+            problem_type=problem_type("conflict"),
+        ) from exc
+    except OSError as exc:
+        raise ProblemException(
+            status=500,
+            title="Could not write plugin",
+            detail=str(exc),
+            problem_type=problem_type("internal"),
+        ) from exc
+
+    discovered = await service.discover(engine, plugins_dir, known_scopes=scopes)
+    added = next((p for p in discovered if p.plugin_id == body.plugin_id), None)
+    if added is None:
+        raise ProblemException(
+            status=500,
+            title="Discovery failed",
+            detail=f"'{body.plugin_id}' was written but did not discover",
+            problem_type=problem_type("internal"),
+        )
+    return added
 
 
 # --- webhooks (HMAC-authenticated; deliberately no JWT) ----------------------

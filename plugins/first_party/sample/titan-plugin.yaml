@@ -12,6 +12,13 @@ runtime:
   entrypoint: sample_plugin:SamplePlugin
   python: ">=3.12"
 
+# A path, relative to this directory, to the JSON Schema describing operator
+# settings. TITAN-FRT-035: the Plugin Manager's config form is GENERATED from
+# this — no plugin ships a form of its own. Fields marked `writeOnly` are
+# treated as secrets: masked as •••• once saved, and never present in any API
+# response body.
+config_schema: config.schema.json
+
 # Deny-by-default: the plugin can touch NOTHING it does not declare here and the
 # operator does not approve at enable time (Vol 7 §3.4, TITAN-INT-015).
 permissions:
