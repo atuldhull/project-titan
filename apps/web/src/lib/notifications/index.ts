@@ -9,6 +9,11 @@ export {
   type NotificationSeverity,
 } from "./taxonomy";
 export { emitNotification } from "./bus";
+export {
+  announceCritical,
+  useAnnounceStore,
+  type CriticalAnnouncement,
+} from "./announce";
 export { showNotificationToast } from "./notify";
 export { useAttentionStore } from "./attention-store";
 export {

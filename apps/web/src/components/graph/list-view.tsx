@@ -30,7 +30,17 @@ export function ListView({
   onSelect: (id: string) => void;
   /** The canvas's double-click action — FRT-047 says the list offers it too. */
   onActivate?: (id: string) => void;
-  /** Names that action. Absent = the row offers selection only. */
+  /**
+   * Names that action.
+   *
+   * It is a LABEL, never a switch. Until Phase 65 the row rendered its activate
+   * button only when both this and `onActivate` were set, and `graph-shell.tsx`
+   * passed a label only while clustered — so on an unclustered task graph the
+   * canvas had a double-click that opened the task on the board and the list
+   * had no equivalent at all. That is precisely the half of TITAN-FRT-047 that
+   * says "same data AND actions", missed on the common path and present only on
+   * the rare one. The action's existence is now decided by `onActivate` alone.
+   */
   activateLabel?: string;
   emptyLabel: string;
 }) {
@@ -85,13 +95,17 @@ export function ListView({
                   >
                     {node.label}
                   </button>
-                  {onActivate && activateLabel ? (
+                  {onActivate ? (
                     <button
                       type="button"
                       onClick={() => onActivate(node.id)}
-                      className="ml-2 text-xs text-muted-foreground underline"
+                      // §8 wants ≥44 px touch targets under `md`, and a bare
+                      // underlined word is about 16. It is inline-flex so the
+                      // min-height applies at all — `min-h` does nothing to an
+                      // inline box.
+                      className="ml-2 inline-flex items-center text-xs text-muted-foreground underline max-md:min-h-11"
                     >
-                      {activateLabel}
+                      {activateLabel ?? "Open"}
                     </button>
                   ) : null}
                 </th>

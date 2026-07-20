@@ -1,6 +1,6 @@
 "use client";
 
-import Markdown from "react-markdown";
+import Markdown, { type Components } from "react-markdown";
 
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -20,6 +20,44 @@ import { useArtifact } from "@/lib/projects/hooks";
  * produced by the H1->H4 handoff chain, so a young project legitimately has
  * none.
  */
+
+/**
+ * TITAN-FRT-043 ("tables as tables") — the agent-authored Markdown in a roadmap
+ * or risk register is full of tables, and they were losing their table role.
+ *
+ * `.prose-titan table` in globals.css sets `display: block; overflow-x: auto` to
+ * stop wide tables scrolling the page body (§8). It works visually and is a
+ * total accessibility failure: `display: block` on a `<table>` DESTROYS the
+ * generated table box in every major browser, so the element stops mapping to
+ * the table role and its rows and cells stop mapping to row/cell — a screen
+ * reader gets an undifferentiated run of text with no column headers and no
+ * grid navigation, which is precisely the defect this requirement names.
+ *
+ * The fix is structural rather than cosmetic: put the scroll port on a WRAPPER
+ * <div> and let the <table> stay `display: table`. `overflow-x-auto` here beats
+ * the stylesheet on the wrapper, and the inline `display: table` beats
+ * `.prose-titan table` on the element (inline styles outrank any selector), so
+ * this is correct even while the globals.css rule is still present — see the
+ * report, that rule's `display: block` should be deleted.
+ *
+ * HONEST CAVEAT: this override is currently DORMANT. Pipe tables are a GFM
+ * extension, `remark-gfm` is not a dependency of this app and no `remarkPlugins`
+ * are passed anywhere, so CommonMark-only react-markdown parses a Markdown table
+ * as paragraphs of literal `|` text and never emits a `<table>` at all. Adding
+ * the plugin is an npm dependency change and out of scope here — flagged in the
+ * report. The override is written now so the accessible structure lands with the
+ * plugin rather than a release after it.
+ */
+const MARKDOWN_COMPONENTS: Components = {
+  // `children` only — deliberately not spreading react-markdown's props. It
+  // passes a `node` (the mdast node) that must never reach the DOM, and a GFM
+  // `<table>` carries no attributes of its own (alignment lives on th/td).
+  table: ({ children }) => (
+    <div className="overflow-x-auto">
+      <table style={{ display: "table" }}>{children}</table>
+    </div>
+  ),
+};
 export function ArtifactPanel({
   projectId,
   kind,
@@ -73,7 +111,9 @@ export function ArtifactPanel({
           <p className="text-sm text-muted-foreground">{emptyHint}</p>
         ) : (
           <div className="prose-titan max-w-none text-sm">
-            <Markdown>{data.content_md}</Markdown>
+            <Markdown components={MARKDOWN_COMPONENTS}>
+              {data.content_md}
+            </Markdown>
           </div>
         )}
       </div>

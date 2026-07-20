@@ -3,6 +3,7 @@
 import { Moon, Sun } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { FOCUS_RING, TOUCH_TARGET_ICON } from "@/components/ui/focus-ring";
 
 /*
  * Light/dark toggle (TITAN-FRT-011, ADR-FRT-06). Persists to localStorage;
@@ -23,8 +24,15 @@ export function ThemeToggle({ className }: { className?: string }) {
       onClick={toggle}
       aria-label="Toggle theme"
       className={cn(
-        "inline-flex size-8 items-center justify-center rounded-md text-muted-foreground",
+        // `shrink-0`: the top bar is a crowded flex row at 375px, and without
+        // it this measured 29px WIDE — under even its own size-8, let alone
+        // §8's 44px minimum. It is a raw <button>, not the Button primitive,
+        // so it inherits neither the touch minimum nor the §9 focus ring and
+        // has to opt into both explicitly.
+        "inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground",
         "hover:bg-accent hover:text-foreground",
+        TOUCH_TARGET_ICON,
+        FOCUS_RING,
         className,
       )}
     >

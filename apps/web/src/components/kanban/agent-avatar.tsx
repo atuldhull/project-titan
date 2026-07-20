@@ -12,6 +12,8 @@
  * a record that has none.
  */
 
+import { ArrowLeftRight } from "lucide-react";
+
 import {
   Tooltip,
   TooltipContent,
@@ -53,23 +55,40 @@ export function AgentAvatar({
     );
   }
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          data-testid={`agent-avatar-${agent.id}`}
-          data-pulsing={pulsing ? "true" : undefined}
-          className={cn(
-            "inline-flex size-5 items-center justify-center rounded-full bg-secondary text-[9px] font-semibold text-secondary-foreground",
-            pulsing && "animate-pulse ring-2 ring-primary",
-            className,
-          )}
-        >
-          {initials(agent.name)}
+    <span className="inline-flex items-center gap-1">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            data-testid={`agent-avatar-${agent.id}`}
+            data-pulsing={pulsing ? "true" : undefined}
+            className={cn(
+              "inline-flex size-5 items-center justify-center rounded-full bg-secondary text-[9px] font-semibold text-secondary-foreground",
+              pulsing && "animate-pulse ring-2 ring-primary",
+              className,
+            )}
+          >
+            {initials(agent.name)}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          {agent.name} · {agent.role}
+          {pulsing ? " · just moved this task" : ""}
+        </TooltipContent>
+      </Tooltip>
+      {/* TITAN-FRT-044. The pulse was the ONLY signal that this agent had just
+          acted, and it is made of two things that do not survive the checklist:
+          an animation, which `prefers-reduced-motion` correctly kills outright
+          (globals.css zeroes every duration app-wide, TITAN-FRT-045), and a
+          coloured ring. So on a reduced-motion machine, in grayscale, or through
+          a screen reader, the card said nothing had happened. A glyph plus the
+          word carries it in all three. It is not `aria-hidden`: this is the
+          announcement, not decoration — the icon is, the text is not. */}
+      {pulsing ? (
+        <span className="inline-flex items-center gap-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+          <ArrowLeftRight aria-hidden className="size-2.5 shrink-0" />
+          moved
         </span>
-      </TooltipTrigger>
-      <TooltipContent>
-        {agent.name} · {agent.role}
-      </TooltipContent>
-    </Tooltip>
+      ) : null}
+    </span>
   );
 }

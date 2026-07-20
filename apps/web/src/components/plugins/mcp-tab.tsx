@@ -57,9 +57,14 @@ type FormShape = z.infer<typeof schema>;
 export function McpServersTab({
   rows,
   canAdmin,
+  filtering = false,
 }: {
   readonly rows: readonly PluginRow[];
   readonly canAdmin: boolean;
+  /** The screen's filter box has text in it, so `rows` may be empty because it
+   *  matched nothing rather than because no server is connected. Two different
+   *  facts; only one of them should say "Add one below". */
+  readonly filtering?: boolean;
 }) {
   const preview = useMcpPreview();
   const add = useAddMcpServer();
@@ -100,7 +105,9 @@ export function McpServersTab({
         <h2 className="text-sm font-medium">Connected servers</h2>
         {rows.length === 0 ? (
           <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No MCP servers yet. Add one below.
+            {filtering
+              ? "No connected MCP server matches the filter."
+              : "No MCP servers yet. Add one below."}
           </p>
         ) : (
           rows.map((row) => (

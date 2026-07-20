@@ -24,25 +24,47 @@
  * What IS real: the message log, its kinds, cursor pagination on scroll-up,
  * live append via `message.created`, posting as a human, the type filter, and
  * task deep links.
+ *
+ * The responsive rules (§8) and the live region (§9) are commented at the
+ * markup they govern; the one thing worth stating up here is that the screen no
+ * longer sizes itself from the viewport. It was `h-[calc(100vh-10rem)]`, which
+ * was wrong three ways at once: `100vh` ignores mobile browser chrome (the
+ * shell uses `h-dvh` for exactly that reason), the `10rem` was a guess at the
+ * topbar + padding that no longer matched either, and it budgeted nothing for
+ * the `< 768` bottom tab bar — so the composer sat under it. `h-full` against
+ * the shell's already-correct `<main>` box, plus `min-h-0` so the scroller may
+ * shrink below its content, needs no arithmetic and cannot drift.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ChevronLeft, Hash } from "lucide-react";
 
 import { isDomainFrame } from "@titan/ws-protocol";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MessageRow } from "@/components/conversations/message-row";
+import {
+  MessageRow,
+  senderLabel,
+} from "@/components/conversations/message-row";
 import { StreamBubble } from "@/components/conversations/stream-bubble";
 import { Composer } from "@/components/conversations/composer";
 import { ChannelList } from "@/components/conversations/channel-list";
 import { useChannelMessages } from "@/lib/conversations/hooks";
 import {
+  announceArrivals,
   filterByKind,
   isAtBottom,
-  isBehindModal,
   liveStreams,
   orderOldestFirst,
   pruneStreams,
@@ -51,12 +73,21 @@ import {
   type Streams,
 } from "@/lib/conversations/feed";
 import { MESSAGE_KINDS, kindMeta } from "@/lib/conversations/kinds";
+import { summarize } from "@/lib/conversations/refs";
 import { useProjects } from "@/lib/projects/hooks";
+import { isBehindOverlay } from "@/lib/shortcuts/keys";
+import { useShortcuts } from "@/lib/shortcuts/provider";
 import { createRafBatcher } from "@/lib/ws/raf-batch";
 import { useWsClient } from "@/lib/ws/manager";
 import { useTopic } from "@/lib/ws/use-topic";
 import { useConnection } from "@/lib/ws/connection-store";
 import { cn } from "@/lib/utils";
+
+/**
+ * Flipped into the live region so a repeated sentence still counts as a change.
+ * Not voiced by any screen reader; see the region's own comment.
+ */
+const ZERO_WIDTH_SPACE = "\u200B";
 
 export function ConversationsScreen({
   channelId,
@@ -75,6 +106,10 @@ export function ConversationsScreen({
   const [streams, setStreams] = useState<Streams>(new Map());
   const [pending, setPending] = useState(0);
   const [pinned, setPinned] = useState(true);
+  // §8, 768–1023: the feed goes full-bleed and the channel list becomes
+  // reachable rather than resident. Below 768 this Sheet is never opened — the
+  // URL swaps the panels outright — and at ≥1024 its trigger is not rendered.
+  const [channelSheet, setChannelSheet] = useState(false);
 
   const scroller = useRef<HTMLDivElement>(null);
   // Where the reader was, captured just before a history page is requested.
@@ -241,6 +276,55 @@ export function ConversationsScreen({
     setStreams((prev) => pruneStreams(prev));
   }, [all.length]);
 
+  // --- the polite live region (§9 / TITAN-FRT-043) --------------------------
+  //
+  // A SEPARATE sr-only region, not `aria-live` on the scroller. The scroller is
+  // the thing history is prepended into and the thing the kind filter rebuilds,
+  // so a live region on it would read a screenful of OLD messages aloud every
+  // time the reader paged up or toggled a chip. `announceArrivals` decides what
+  // is genuinely new; this only holds the string.
+  //
+  // `announcement` carries a PARITY bit as well as its text. A live region only
+  // speaks when its content CHANGES, and two consecutive arrivals routinely
+  // produce byte-identical text: `summarize` returns null for any body without
+  // a summary/text/title field — a `progress_report` of `{percent: 40}` is one —
+  // so two progress reports in a row from the same agent both render
+  // "New message: PM-1, Progress" and the second is silently never spoken.
+  // Flipping a zero-width space (which no screen reader voices) guarantees the
+  // node's text differs from the previous one whatever the sentence says.
+  const [announcement, setAnnouncement] = useState({ text: "", parity: false });
+  const spokenId = useRef<string | null>(null);
+
+  // Re-seed on channel switch: the first render of a new channel's log is a
+  // navigation result, not an arrival, and announcing its newest message would
+  // duplicate what the reader just chose.
+  //
+  // Declared BEFORE the announcing effect, and that order is load-bearing.
+  // Effects run in declaration order within a commit, and a channel whose
+  // messages are already in the query cache changes `active` and `shown` in the
+  // SAME commit. Re-seeding second would null the anchor the announcer had just
+  // set, so the next genuine arrival would be swallowed as a seed and the
+  // reader's first message on that channel would never be spoken.
+  useEffect(() => {
+    spokenId.current = null;
+    setAnnouncement({ text: "", parity: false });
+  }, [active]);
+
+  useEffect(() => {
+    const next = announceArrivals(shown, spokenId.current, (message) => {
+      const summary = summarize(message);
+      const label = `${senderLabel(message)}, ${kindMeta(message.kind).label}`;
+      return summary ? `${label}. ${summary}` : label;
+    });
+    if (!next) {
+      return;
+    }
+    spokenId.current = next.lastId;
+    if (next.text !== "") {
+      setAnnouncement((prev) => ({ text: next.text, parity: !prev.parity }));
+    }
+  }, [shown]);
+
   const onScroll = useCallback(() => {
     const el = scroller.current;
     if (!el) {
@@ -266,41 +350,57 @@ export function ConversationsScreen({
     }
   }, [messages]);
 
-  // §10: Alt+↑/↓ switches channel. Scoped to this screen and skipped inside a
-  // text input, per §10's own rule.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (
-        !event.altKey ||
-        (event.key !== "ArrowUp" && event.key !== "ArrowDown")
-      ) {
-        return;
-      }
-      const target = event.target as HTMLElement | null;
-      if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) {
-        return;
-      }
-      // Never navigate the page out from under a modal. A window listener sees
-      // keys aimed at an open dropdown, dialog or sheet — Phase 60 shipped
-      // exactly this bug with a Tab handler — and Alt+Down inside the topbar
-      // menu silently switched channel behind it.
-      if (isBehindModal(scroller.current)) {
+  // §10: Alt+↑/↓ switches channel.
+  //
+  // Registered with the global engine rather than on `window`. The hand-rolled
+  // listener this replaces guarded with `/^(INPUT|TEXTAREA)$/` on the event
+  // target, which misses `contenteditable` and Radix's `role="textbox"` and
+  // `role="combobox"` triggers — the engine's `isTextEntry` walks ancestors and
+  // covers all of them, and it owns `preventDefault` too, so neither is repeated
+  // here. Navigating to `/conversations/{id}` is also what makes the ≥768
+  // one-panel rule below follow along: the URL is the panel selector.
+  //
+  // What the engine does NOT replace is the old `isBehindModal` call. Its
+  // `isBehindOverlay` asks about the EVENT TARGET — "is what the user is aiming
+  // at hidden?" — and inside an open dialog the answer is no: Radix hides the
+  // rest of the page and puts focus in the dialog. The question a SCREEN-scoped
+  // navigation has to ask is the other one, "is my screen the one the user can
+  // see?", and only the screen can ask it, about its own element. Without this,
+  // Alt+↓ from inside the `?` help overlay silently switches channel behind it —
+  // which is the Phase 60 bug the original guard was written for.
+  const switchChannel = useCallback(
+    (delta: number): void => {
+      if (isBehindOverlay(scroller.current)) {
         return;
       }
       const index = channels.findIndex((c) => c.id === active);
       if (index === -1) {
         return;
       }
-      const next = event.key === "ArrowUp" ? index - 1 : index + 1;
-      const target_ = channels[next];
-      if (target_) {
-        event.preventDefault();
-        router.push(`/conversations/${target_.id}`);
+      const next = channels[index + delta];
+      if (next) {
+        router.push(`/conversations/${next.id}`);
       }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [channels, active, router]);
+    },
+    [channels, active, router],
+  );
+
+  useShortcuts([
+    {
+      id: "conversations-prev",
+      keys: "Alt+ArrowUp",
+      label: "Previous channel",
+      group: "Conversations",
+      run: () => switchChannel(-1),
+    },
+    {
+      id: "conversations-next",
+      keys: "Alt+ArrowDown",
+      label: "Next channel",
+      group: "Conversations",
+      run: () => switchChannel(1),
+    },
+  ]);
 
   const toggleKind = (kind: string): void => {
     setKinds((prev) => {
@@ -332,15 +432,96 @@ export function ConversationsScreen({
     );
   }
 
-  return (
-    <div className="grid gap-3 lg:grid-cols-[220px_1fr]">
-      <ChannelList channels={channels} activeId={active} />
+  const channelName =
+    channels.find((c) => c.id === active)?.display_name ?? "Channel";
 
-      <section className="flex h-[calc(100vh-10rem)] flex-col rounded-lg border bg-card">
+  return (
+    /*
+     * §8's three bands, all of them pure CSS — there is no `matchMedia` in this
+     * app and adding one would need a jsdom mock the suite does not have.
+     *
+     *   < 768   ONE panel. Which one is derived from `channelId`, i.e. from the
+     *           URL, so the choice survives a reload and a share (TITAN-FRT-006)
+     *           and the back button unwinds it. Note this reads `channelId`, NOT
+     *           `active`: `active` falls back to the first channel so the ≥768
+     *           layout always has a feed to show, and using it here would mean
+     *           `/conversations` never showed the channel list at all.
+     *   768–1023 Feed full-bleed; the list moves into a Sheet.
+     *   ≥ 1024  Both panels inline, as wireframed.
+     *
+     * Both panels stay MOUNTED in every band and are hidden with `hidden` rather
+     * than unmounted. Unmounting the feed under 768 would tear down the socket
+     * subscription and the message query on every panel swap, so returning to a
+     * channel would re-fetch and re-render from a skeleton.
+     */
+    <div className="flex h-full min-h-0 flex-col gap-3 lg:grid lg:grid-cols-[220px_1fr] lg:grid-rows-[minmax(0,1fr)]">
+      {/* The screen's own heading. The visible <h2> below names the CHANNEL,
+          which changes as you navigate — so on its own it left the screen with
+          no stable <h1> to orient by, and the heading order started at 2
+          (§9, TITAN-FRT-043). */}
+      <h1 className="sr-only">Conversations</h1>
+      <ChannelList
+        channels={channels}
+        activeId={active}
+        className={cn(
+          "min-h-0 overflow-y-auto lg:block",
+          channelId
+            ? "hidden lg:block"
+            : // No channel chosen: the list IS the screen under 768, so it
+              // takes the leftover height and scrolls inside itself rather than
+              // pushing the body (§8: no horizontal or body scroll).
+              "block flex-1 md:hidden lg:block lg:flex-none",
+        )}
+      />
+
+      <section
+        className={cn(
+          "min-h-0 flex-1 flex-col rounded-lg border bg-card",
+          // Hidden only in the one band where the list has the screen to itself.
+          channelId ? "flex" : "hidden md:flex",
+        )}
+      >
         <header className="flex flex-wrap items-center gap-2 border-b p-2">
-          <h2 className="text-sm font-medium">
-            {channels.find((c) => c.id === active)?.display_name ?? "Channel"}
-          </h2>
+          {/* §8: "one panel at a time (channel list ↔ feed)" needs a way BACK,
+              and it is deliberately the first focusable thing in the feed so a
+              keyboard or screen-reader user meets it before 200 messages. A
+              Link, not `router.back()`: the feed is reachable by deep link and
+              from the bottom tab bar, where there is no channel list to go back
+              TO. */}
+          <Link
+            href="/conversations"
+            className="-ml-1 flex items-center gap-1 rounded-md px-2 text-sm text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none max-md:min-h-11 md:hidden"
+          >
+            <ChevronLeft aria-hidden className="size-4" />
+            Channels
+          </Link>
+
+          {/* The 768–1023 affordance. `md:flex lg:hidden` is exactly §8's middle
+              band: below it the Link above does the job, above it the list is
+              resident and a trigger would be a second way to reach a panel
+              already on screen. */}
+          <Sheet open={channelSheet} onOpenChange={setChannelSheet}>
+            <SheetTrigger className="-ml-1 hidden min-h-11 items-center gap-1 rounded-md px-2 text-sm text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none md:flex lg:hidden">
+              <Hash aria-hidden className="size-4" />
+              Channels
+            </SheetTrigger>
+            <SheetContent side="left" className="w-72 p-0">
+              <SheetHeader className="px-4 py-3">
+                <SheetTitle className="text-left text-sm">Channels</SheetTitle>
+              </SheetHeader>
+              <ChannelList
+                channels={channels}
+                activeId={active}
+                className="mx-2 mb-2 overflow-y-auto border-0 bg-transparent"
+                // Choosing a channel has to dismiss the sheet: the navigation
+                // is client-side, so nothing else unmounts it and the reader
+                // would be left staring at the list they just used.
+                onNavigate={() => setChannelSheet(false)}
+              />
+            </SheetContent>
+          </Sheet>
+
+          <h2 className="truncate text-sm font-medium">{channelName}</h2>
           {connection === "live" ? (
             <Badge variant="secondary">live</Badge>
           ) : (
@@ -350,8 +531,21 @@ export function ConversationsScreen({
               and `architecture` are themselves variant "outline", so toggling
               them changed nothing on screen — the filter worked and looked
               broken. A ring plus a ✓ marks it, which also satisfies
-              TITAN-FRT-044 (status is never colour-only). */}
-          <div className="ml-auto flex flex-wrap gap-1">
+              TITAN-FRT-044 (status is never colour-only).
+
+              Nine chips wrapped to three rows at 375px and every one of them was
+              under the 44px §8 requires. They now sit on one horizontally
+              scrolling row under md — §8's own "wide content scrolls in its own
+              container" — at full touch height; at md+ they wrap and go dense
+              again. `shrink-0` is what makes the scroll happen instead of the
+              chips being squeezed to unreadable slivers. */}
+          {/* `max-md:-my-1 max-md:py-1` is not spacing — it is the focus ring's
+              room. Setting `overflow-x` to anything but `visible` makes the
+              UNSET `overflow-y` compute to `auto` as well, so a scroller whose
+              height is exactly its 44px chips clips every chip's focus ring flat
+              against the top and bottom edges (TITAN-FRT-042). The negative
+              margin gives the padding back so nothing moves. */}
+          <div className="-mx-2 flex w-full snap-x gap-1 overflow-x-auto px-2 max-md:-my-1 max-md:py-1 md:mx-0 md:ml-auto md:w-auto md:flex-wrap md:overflow-x-visible md:px-0">
             {MESSAGE_KINDS.map((kind) => {
               const on = kinds.has(kind);
               return (
@@ -361,7 +555,7 @@ export function ConversationsScreen({
                   onClick={() => toggleKind(kind)}
                   aria-pressed={on}
                   className={cn(
-                    "rounded-md focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
+                    "flex shrink-0 snap-start items-center rounded-md focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none max-md:min-h-11",
                     on &&
                       "ring-2 ring-primary ring-offset-1 ring-offset-background",
                   )}
@@ -438,6 +632,13 @@ export function ConversationsScreen({
             </Button>
           </div>
         ) : null}
+
+        {/* TITAN-FRT-043's polite activity feed. Outside the scroller on
+            purpose — see the effect that fills it. */}
+        <div aria-live="polite" role="status" className="sr-only">
+          {announcement.text}
+          {announcement.parity ? ZERO_WIDTH_SPACE : ""}
+        </div>
 
         <Composer projectId={active} onSent={jumpToBottom} />
       </section>

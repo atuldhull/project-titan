@@ -21,13 +21,9 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  ResponsiveTable,
+  type ResponsiveColumn,
+} from "@/components/settings/responsive-table";
 import { useCan } from "@/lib/auth";
 import { errorMessage } from "@/lib/settings/errors";
 import { useMembers, useRoles, useSetMemberRoles } from "@/lib/settings/hooks";
@@ -108,6 +104,103 @@ export function MembersScreen() {
     }
   };
 
+  // Declared once, rendered as a table at md+ and as cards below (§8). The
+  // role picker is CONDITIONAL, which is exactly the drift a hand-written
+  // second layout gets wrong: appended here, it appears in — or is absent
+  // from — both layouts together.
+  const columns: readonly ResponsiveColumn<MemberOut>[] = [
+    {
+      key: "member",
+      header: "Member",
+      primary: true,
+      cell: (member) => member.display_name,
+    },
+    {
+      key: "email",
+      header: "Email",
+      cell: (member) => (
+        // `break-all`: an email is one unbreakable token, and at 343px a long
+        // one is the single most likely thing on this screen to push the card
+        // wider than the viewport.
+        <span className="text-xs break-all text-muted-foreground">
+          {member.email}
+        </span>
+      ),
+    },
+    {
+      key: "roles",
+      header: "Org roles",
+      cell: (member) => {
+        const memberRoles = member.roles ?? [];
+        return (
+          <div className="flex flex-wrap gap-1">
+            {memberRoles.length === 0 ? (
+              <span className="text-xs text-muted-foreground">none</span>
+            ) : (
+              memberRoles.map((role) => (
+                <Badge key={role} variant="secondary">
+                  {role}
+                </Badge>
+              ))
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: "grants",
+      header: "Project grants",
+      cell: (member) => {
+        const grants = member.project_grants ?? [];
+        return (
+          <span className="text-xs text-muted-foreground">
+            {grants.length === 0
+              ? "—"
+              : `${grants.length} project${grants.length === 1 ? "" : "s"}`}
+          </span>
+        );
+      },
+    },
+    ...(editable
+      ? [
+          {
+            key: "change-role",
+            header: "Change role",
+            cell: (member: MemberOut) => {
+              const memberRoles = member.roles ?? [];
+              return (
+                <Select
+                  // Empty when the member holds several org roles: the PUT
+                  // REPLACES the org-wide set, so picking one would silently
+                  // drop the others. Leaving it unselected makes that a
+                  // deliberate act.
+                  value={memberRoles.length === 1 ? memberRoles[0] : ""}
+                  disabled={pending === member.user_id}
+                  onValueChange={(role) => void changeRole(member, role)}
+                >
+                  {/* §8's 44px touch minimum below md; `size="sm"` is 32px. */}
+                  <SelectTrigger
+                    size="sm"
+                    className="min-h-11 md:min-h-0"
+                    aria-label={`Org role for ${member.display_name}`}
+                  >
+                    <SelectValue placeholder="Set one role…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {roleOptions.map((role) => (
+                      <SelectItem key={role} value={role}>
+                        {role}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              );
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <div className="space-y-6">
       <Card>
@@ -133,84 +226,12 @@ export function MembersScreen() {
               No members. That normally means the database has not been seeded.
             </p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Member</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Org roles</TableHead>
-                  <TableHead>Project grants</TableHead>
-                  {editable ? <TableHead>Change role</TableHead> : null}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((member) => {
-                  const memberRoles = member.roles ?? [];
-                  const grants = member.project_grants ?? [];
-                  return (
-                    <TableRow key={member.user_id}>
-                      <TableCell className="font-medium">
-                        {member.display_name}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {member.email}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {memberRoles.length === 0 ? (
-                            <span className="text-xs text-muted-foreground">
-                              none
-                            </span>
-                          ) : (
-                            memberRoles.map((role) => (
-                              <Badge key={role} variant="secondary">
-                                {role}
-                              </Badge>
-                            ))
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {grants.length === 0
-                          ? "—"
-                          : `${grants.length} project${grants.length === 1 ? "" : "s"}`}
-                      </TableCell>
-                      {editable ? (
-                        <TableCell>
-                          <Select
-                            // Empty when the member holds several org roles:
-                            // the PUT REPLACES the org-wide set, so picking one
-                            // would silently drop the others. Leaving it
-                            // unselected makes that a deliberate act.
-                            value={
-                              memberRoles.length === 1 ? memberRoles[0] : ""
-                            }
-                            disabled={pending === member.user_id}
-                            onValueChange={(role) =>
-                              void changeRole(member, role)
-                            }
-                          >
-                            <SelectTrigger
-                              size="sm"
-                              aria-label={`Org role for ${member.display_name}`}
-                            >
-                              <SelectValue placeholder="Set one role…" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {roleOptions.map((role) => (
-                                <SelectItem key={role} value={role}>
-                                  {role}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                      ) : null}
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <ResponsiveTable
+              rows={rows}
+              rowKey={(member) => member.user_id}
+              columns={columns}
+              caption="Org members and their roles"
+            />
           )}
 
           {!canWrite ? (

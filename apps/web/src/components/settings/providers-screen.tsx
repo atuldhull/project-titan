@@ -22,13 +22,9 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  ResponsiveTable,
+  type ResponsiveColumn,
+} from "@/components/settings/responsive-table";
 import { useCan } from "@/lib/auth";
 import { errorMessage } from "@/lib/settings/errors";
 import {
@@ -146,6 +142,117 @@ export function ProvidersScreen() {
   };
 
   const defaultAlias = aliasOf(data.default_alias);
+
+  // Both tables become card lists below 768 (§8). Declared once each so the
+  // narrow layout cannot fall behind the wide one.
+  const providerColumns: readonly ResponsiveColumn<
+    (typeof providers)[number]
+  >[] = [
+    {
+      key: "provider",
+      header: "Provider",
+      primary: true,
+      cell: (provider) => provider.name,
+    },
+    {
+      key: "endpoint",
+      header: "Endpoint",
+      cell: (provider) => (
+        // `break-all`: a base URL is one unbreakable token and is the widest
+        // thing on this screen.
+        <span className="font-mono text-xs break-all text-muted-foreground">
+          {provider.base_url ?? "provider default"}
+        </span>
+      ),
+    },
+    {
+      key: "key",
+      header: "Key",
+      // Three distinct states, and conflating the last two is the bug worth
+      // avoiding: a keyless local runtime (Ollama) is READY, not misconfigured.
+      cell: (provider) =>
+        !provider.key_required ? (
+          <Badge variant="secondary">no key needed</Badge>
+        ) : provider.key_configured ? (
+          <span className="font-mono text-xs">
+            ••••{provider.key_hint ?? ""}
+          </span>
+        ) : (
+          <Badge variant="outline">not set</Badge>
+        ),
+    },
+  ];
+
+  const aliasColumns: readonly ResponsiveColumn<(typeof aliases)[number]>[] = [
+    {
+      key: "alias",
+      header: "Alias",
+      primary: true,
+      cell: (alias) => (
+        <>
+          <span className="font-mono text-xs">{alias.alias}</span>
+          {alias.alias === data.default_alias ? (
+            <Badge variant="secondary" className="ml-2">
+              default
+            </Badge>
+          ) : null}
+        </>
+      ),
+    },
+    {
+      key: "model",
+      header: "Provider / model",
+      cell: (alias) => {
+        const result = results[alias.alias];
+        return (
+          <span className="text-xs break-all text-muted-foreground">
+            {alias.provider} / {alias.model}
+            {result ? (
+              // ✔/✖ carries the outcome as well as the colour does
+              // (TITAN-FRT-044).
+              <span
+                className={
+                  result.ok ? "ml-2 text-foreground" : "ml-2 text-destructive"
+                }
+              >
+                {result.ok ? "✔" : "✖"} {result.latency_ms} ms
+                {result.served_model && result.served_model !== alias.model
+                  ? ` — served by ${result.served_provider}/${result.served_model}`
+                  : ""}
+              </span>
+            ) : null}
+          </span>
+        );
+      },
+    },
+    {
+      key: "test",
+      header: "Test",
+      align: "right",
+      // settings:write, not read: a test spends real money and writes a row to
+      // the usage ledger.
+      cell: (alias) =>
+        canWrite ? (
+          // §8's 44px touch minimum below md; `size="sm"` is 32px.
+          <Button
+            size="sm"
+            variant="outline"
+            className="min-h-11 md:min-h-0"
+            disabled={test.isPending}
+            onClick={() => void runTest(alias.alias)}
+          >
+            Test
+          </Button>
+        ) : (
+          <span
+            className="text-xs text-muted-foreground"
+            title="Testing a provider spends real money, so it needs the owner or admin role."
+          >
+            admin only
+          </span>
+        ),
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -279,39 +386,12 @@ export function ProvidersScreen() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Provider</TableHead>
-                <TableHead>Endpoint</TableHead>
-                <TableHead>Key</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {providers.map((provider) => (
-                <TableRow key={provider.name}>
-                  <TableCell className="font-medium">{provider.name}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {provider.base_url ?? "provider default"}
-                  </TableCell>
-                  <TableCell>
-                    {/* Three distinct states, and conflating the last two is
-                        the bug worth avoiding: a keyless local runtime
-                        (Ollama) is READY, not misconfigured. */}
-                    {!provider.key_required ? (
-                      <Badge variant="secondary">no key needed</Badge>
-                    ) : provider.key_configured ? (
-                      <span className="font-mono text-xs">
-                        ••••{provider.key_hint ?? ""}
-                      </span>
-                    ) : (
-                      <Badge variant="outline">not set</Badge>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <ResponsiveTable
+            rows={providers}
+            rowKey={(provider) => provider.name}
+            columns={providerColumns}
+            caption="Configured LLM providers and whether their key resolves"
+          />
           <p className="mt-3 text-xs text-muted-foreground">
             To add or rotate a key, set its environment variable and restart the
             API. There is deliberately no field for one here: TITAN keeps secret
@@ -330,71 +410,12 @@ export function ProvidersScreen() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Alias</TableHead>
-                <TableHead>Provider / model</TableHead>
-                <TableHead className="text-right">Test</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {aliases.map((alias) => {
-                const result = results[alias.alias];
-                return (
-                  <TableRow key={alias.alias}>
-                    <TableCell className="font-mono text-xs">
-                      {alias.alias}
-                      {alias.alias === data.default_alias ? (
-                        <Badge variant="secondary" className="ml-2">
-                          default
-                        </Badge>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {alias.provider} / {alias.model}
-                      {result ? (
-                        <span
-                          className={
-                            result.ok
-                              ? "ml-2 text-foreground"
-                              : "ml-2 text-destructive"
-                          }
-                        >
-                          {result.ok ? "✔" : "✖"} {result.latency_ms} ms
-                          {result.served_model &&
-                          result.served_model !== alias.model
-                            ? ` — served by ${result.served_provider}/${result.served_model}`
-                            : ""}
-                        </span>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {/* settings:write, not read: a test spends real money and
-                          writes a row to the usage ledger. */}
-                      {canWrite ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={test.isPending}
-                          onClick={() => void runTest(alias.alias)}
-                        >
-                          Test
-                        </Button>
-                      ) : (
-                        <span
-                          className="text-xs text-muted-foreground"
-                          title="Testing a provider spends real money, so it needs the owner or admin role."
-                        >
-                          admin only
-                        </span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+          <ResponsiveTable
+            rows={aliases}
+            rowKey={(alias) => alias.alias}
+            columns={aliasColumns}
+            caption="Model aliases and their live test result"
+          />
         </CardContent>
       </Card>
     </div>

@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
 import { Sparkline, StackedSeries } from "./sparkline";
-import { stack, type Series } from "@/lib/monitoring/chart";
+import { type Series } from "@/lib/monitoring/chart";
+import { formatUsd } from "@/lib/monitoring/usage";
 
 /**
  * Monitoring's charts (Vol 4 §6.10) in their states. The full screen owns data
@@ -39,9 +40,13 @@ function Panel({ series }: { series: Series[] }) {
           <Sparkline points={series[0]?.points ?? []} />
         </div>
       </div>
+      {/* RAW series, not `stack(series)`: Phase 65 moved the stacking inside
+          the component so the chart and its TITAN-FRT-047 table cannot
+          disagree. Pre-stacking here would now stack twice. */}
       <StackedSeries
-        series={stack(series)}
+        series={series}
         label="LLM cost by provider over 24h"
+        format={formatUsd}
       />
     </div>
   );

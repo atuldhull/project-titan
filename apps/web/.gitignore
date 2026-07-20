@@ -42,3 +42,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# playwright (Phase 65 E2E)
+/.playwright/
+/playwright-report/
+/test-results/

@@ -19,11 +19,13 @@ import {
   DndContext,
   DragOverlay,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   type Announcements,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
+  type ScreenReaderInstructions,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
@@ -33,6 +35,7 @@ import type { components } from "@titan/schemas";
 
 import { AgentPicker } from "@/components/kanban/agent-picker";
 import {
+  BOARD_SCROLLER_CLASS,
   BoardColumn,
   BoardEmpty,
   BoardError,
@@ -54,6 +57,7 @@ import {
 import { useBoardMoves } from "@/lib/kanban/use-moves";
 import { unmetDependencyCounts } from "@/lib/kanban/deps";
 import {
+  BOARD_DRAG_INSTRUCTIONS,
   onDragCancelMessage,
   onDragEndMessage,
   onDragOverMessage,
@@ -65,13 +69,45 @@ import {
   useWorkflow,
 } from "@/lib/kanban/hooks";
 import { boardCoordinateGetter, nextCardId } from "@/lib/kanban/navigation";
-import { moveIndex, resolveMove, statusLabel } from "@/lib/kanban/workflow";
+import {
+  moveIndex,
+  permittedTargets,
+  statusLabel,
+} from "@/lib/kanban/workflow";
 import { useAgents, useProjectBoard } from "@/lib/projects/hooks";
+import { useShortcuts } from "@/lib/shortcuts/provider";
+import type { Shortcut } from "@/lib/shortcuts/registry";
 import { useConnection } from "@/lib/ws/connection-store";
 import { useWsClient } from "@/lib/ws/manager";
 import { useTopic } from "@/lib/ws/use-topic";
 
 type AgentOut = components["schemas"]["AgentOut"];
+
+/**
+ * §10's Board rows, verbatim, for the `?` overlay (TITAN-FRT-048).
+ *
+ * Module scope so the array identity is stable across renders — `useShortcuts`
+ * reads it at event time, but a stable reference keeps the registry from
+ * churning on every board re-render.
+ */
+const BOARD_SHORTCUTS: Shortcut[] = (
+  [
+    ["board-navigate", "ArrowUp", "Move between cards"],
+    ["board-open", "Enter", "Open the focused card"],
+    ["board-lift", "Space", "Lift a card, then arrows to move"],
+    ["board-drop", "Space", "Drop the lifted card"],
+    ["board-cancel", "Escape", "Cancel the drag"],
+  ] as const
+).map(([id, keys, label]) => ({
+  id,
+  keys,
+  label,
+  group: "Board" as const,
+  // Listed, never dispatched. Registering `ArrowUp` for real would make the
+  // engine preventDefault it and kill the card navigation it documents.
+  documentationOnly: true,
+  run: () => {},
+}));
 
 /**
  * How long the acting agent's avatar pulses after an agent-driven move (§6.3).
@@ -244,8 +280,24 @@ export function BoardScreen({ projectId }: { projectId: string }) {
   } = useBoardMoves({ stateRef, commit, index });
 
   // --- dnd ------------------------------------------------------------------
+  //
+  // Mouse + Touch, NOT Pointer. §8 requires "long-press initiation on touch",
+  // which is a different activation constraint from the mouse's 4 px, and one
+  // sensor cannot hold two. Keeping PointerSensor alongside TouchSensor does not
+  // work either — a touch fires pointer events too, so the pointer sensor would
+  // claim the gesture after 4 px of finger travel, which both defeats the
+  // long-press and makes the board's own horizontal scroller impossible to swipe
+  // (every pan would lift a card instead). dnd-kit's documented answer to mixed
+  // constraints is exactly this pair. The cost is pen input, which now arrives
+  // through the browser's compatibility mouse events rather than natively.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, {
+      // Hold, then drag. `tolerance` is the slop allowed DURING the delay: too
+      // small and a resting thumb's micro-movement cancels the press before it
+      // arms, too large and a deliberate scroll turns into a drag.
+      activationConstraint: { delay: 300, tolerance: 8 },
+    }),
     useSensor(KeyboardSensor, {
       // §10 gives Enter and Space different jobs on this screen: Enter OPENS a
       // card, Space lifts it. dnd-kit's default start/end codes are ['Space',
@@ -256,6 +308,20 @@ export function BoardScreen({ projectId }: { projectId: string }) {
       coordinateGetter: boardCoordinateGetter,
     }),
   );
+
+  /*
+   * TITAN-FRT-048 requires §10's Board bindings to APPEAR in the `?` overlay,
+   * and that overlay is generated from the live registry — so a binding the
+   * engine never sees is one no user can discover, however well it works.
+   *
+   * These are DOCUMENTATION rows with an inert `run`. The engine must not
+   * dispatch them: it calls preventDefault() before running a match, so
+   * claiming Space/Enter/arrows globally would break the very interaction they
+   * describe (`isNativeActivation` in lib/shortcuts/keys.ts exists for exactly
+   * that reason, and would ignore them anyway). The real handling stays where
+   * it belongs — the dnd-kit KeyboardSensor above, and TaskCard's onKeyDown.
+   */
+  useShortcuts(BOARD_SHORTCUTS);
 
   // §10: arrows move focus between cards while nothing is lifted.
   const cardNodes = useRef(new Map<string, HTMLElement>());
@@ -278,19 +344,21 @@ export function BoardScreen({ projectId }: { projectId: string }) {
 
   const dragCard = dragging ? state.cards.get(dragging) : undefined;
   const dragFrom = dragging ? effectiveStatus(state, dragging) : null;
-  const allowedTargets = useMemo(() => {
-    if (!index || !dragFrom) {
-      return new Set<string>();
-    }
-    const targets = new Set<string>();
-    for (const status of workflow.data?.states ?? []) {
-      const move = resolveMove(index, dragFrom, status);
-      if (move && can(move.required_permission)) {
-        targets.add(status);
-      }
-    }
-    return targets;
-  }, [index, dragFrom, workflow.data, can]);
+
+  const moveTargets = useMemo(
+    () => permittedTargets(index, can, workflow.data?.states ?? []),
+    [index, workflow.data, can],
+  );
+
+  const allowedTargets = useMemo(
+    () => new Set(dragFrom ? (moveTargets.get(dragFrom) ?? []) : []),
+    [moveTargets, dragFrom],
+  );
+
+  const screenReaderInstructions: ScreenReaderInstructions = useMemo(
+    () => ({ draggable: BOARD_DRAG_INSTRUCTIONS }),
+    [],
+  );
 
   const announcements: Announcements = useMemo(
     () => ({
@@ -390,7 +458,7 @@ export function BoardScreen({ projectId }: { projectId: string }) {
     <TooltipProvider>
       <DndContext
         sensors={sensors}
-        accessibility={{ announcements }}
+        accessibility={{ announcements, screenReaderInstructions }}
         onDragStart={onDragStart}
         onDragOver={onDragOver}
         onDragEnd={onDragEnd}
@@ -399,7 +467,10 @@ export function BoardScreen({ projectId }: { projectId: string }) {
           setOverStatus(null);
         }}
       >
-        <div className="flex gap-3 overflow-x-auto pb-2">
+        {/* §8: the board scrolls in its OWN container (the shell gives the
+            content region `min-w-0`), and snaps column-to-column under `lg` —
+            see `BOARD_SCROLLER_CLASS` for why snapping stops there. */}
+        <div className={BOARD_SCROLLER_CLASS}>
           {columns.map((column) => (
             <BoardColumn
               key={column.status}
@@ -422,6 +493,14 @@ export function BoardScreen({ projectId }: { projectId: string }) {
                   }
                   unmetDeps={unmet.get(card.id) ?? 0}
                   draggable={can("task:transition")}
+                  // Keyed by the COLUMN's status, not `card.status`. A column is
+                  // a grouping by EFFECTIVE status (server truth with any live
+                  // optimistic override laid over it), and `attemptMove`
+                  // resolves the action from that same effective status — so
+                  // this is the one key that cannot disagree with what the move
+                  // will actually do while a drag of this card is in flight.
+                  moveTargets={moveTargets.get(column.status) ?? []}
+                  onMove={attemptMove}
                   pulsing={animating.get(card.id) === card.assignee_agent_id}
                   animating={animating.has(card.id)}
                   onOpen={openTask}
@@ -450,7 +529,15 @@ export function BoardScreen({ projectId }: { projectId: string }) {
       {/* A failed move is announced separately: dnd-kit's own live region has
           already said "moved to X" by the time the server refuses, so the
           rollback needs its own voice. */}
-      <div aria-live="assertive" className="sr-only" role="status">
+      {/* `role="alert"` rather than `role="status" aria-live="assertive"`.
+          The pair worked — an explicit `aria-live` overrides the role's implicit
+          `polite` — but it asks a reader to reconcile a role that means "polite"
+          with an attribute that says "assertive", and the platform mapping for
+          that contradiction is not something to rely on. `alert` IS
+          assertive-by-role, which is what TITAN-FRT-043 asks for here: a move
+          that failed and rolled back is the one board event a user must not miss
+          while reading something else. */}
+      <div role="alert" className="sr-only">
         {failureAnnouncement}
       </div>
 

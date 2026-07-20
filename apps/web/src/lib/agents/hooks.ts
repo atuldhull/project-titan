@@ -47,9 +47,16 @@ const MAX_PAGE = 200;
  */
 const RUNS_REFRESH_MS = 10_000;
 
-/** The RUNTIME registry: id, role, name, status, model_binding, roster_id. */
-export function useAgents() {
+/**
+ * The RUNTIME registry: id, role, name, status, model_binding, roster_id.
+ *
+ * `enabled` exists for the command palette, which mounts in the SHELL and so
+ * renders on every screen: without it, opening any page at all would fetch the
+ * agent registry whether or not anything on screen shows an agent.
+ */
+export function useAgents(options: { enabled?: boolean } = {}) {
   return useQuery({
+    enabled: options.enabled ?? true,
     queryKey: queryKeys.agents(),
     queryFn: async () =>
       unwrap(

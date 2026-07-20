@@ -182,106 +182,115 @@ export function ArchitectureScreen({ projectId }: { projectId: string }) {
         </div>
       ) : null}
 
+      {/* §8: two-panel screens keep both panels at 1024+, and stack below it.
+          `min-w-0` on the canvas column is what makes that survive at 375 px —
+          a grid track sized `1fr` is `minmax(auto, 1fr)`, so its floor is the
+          content's min-content width, and React Flow's measured surface plus the
+          toolbar's three selects is wider than a phone. Without it the track
+          refuses to shrink and the BODY scrolls sideways, which §8 forbids
+          outright ("no horizontal body scroll ever") and TITAN-FRT-041 tests. */}
       <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
-        <GraphShell
-          model={model}
-          selectedId={selectedId}
-          onSelect={(id) => select(id)}
-          groupOf={layerGroup}
-          exportName={`architecture-v${shown ?? 0}`}
-          emptyLabel={
-            layer
-              ? `No components in the ${layer.replace(/_/g, " ")} layer.`
-              : "This version has no components."
-          }
-          toolbar={
-            <>
-              <label
-                className="text-xs text-muted-foreground"
-                htmlFor="arch-version"
-              >
-                Version
-              </label>
-              <select
-                id="arch-version"
-                className="rounded-md border bg-background px-2 py-1 text-xs"
-                value={shown ?? ""}
-                onChange={(e) => setViewing(Number(e.target.value))}
-              >
-                {all.map((v) => (
-                  <option key={v.version} value={v.version}>
-                    v{v.version}
-                    {v.version === latest ? " (current)" : ""} ·{" "}
-                    {new Date(v.created_at).toLocaleDateString()}
-                  </option>
-                ))}
-              </select>
-
-              {/* §6.8 wants a Context→Container→Component switcher. The package
-                  is single-level; this filters the layers it really has. */}
-              <label
-                className="text-xs text-muted-foreground"
-                htmlFor="arch-layer"
-              >
-                Layer
-              </label>
-              <select
-                id="arch-layer"
-                className="rounded-md border bg-background px-2 py-1 text-xs"
-                value={layer ?? ""}
-                onChange={(e) => setLayer(e.target.value || null)}
-              >
-                <option value="">All layers</option>
-                {LAYERS.map((l) => (
-                  <option key={l} value={l}>
-                    {l.replace(/_/g, " ")}
-                  </option>
-                ))}
-              </select>
-
-              <label
-                className="text-xs text-muted-foreground"
-                htmlFor="arch-diff"
-              >
-                <GitCompare aria-hidden className="mr-1 inline size-3" />
-                Diff vs
-              </label>
-              <select
-                id="arch-diff"
-                className="rounded-md border bg-background px-2 py-1 text-xs"
-                value={compareTo ?? ""}
-                onChange={(e) =>
-                  setCompareTo(e.target.value ? Number(e.target.value) : null)
-                }
-              >
-                <option value="">Off</option>
-                {all
-                  .filter((v) => v.version !== shown)
-                  .map((v) => (
+        <div className="min-w-0">
+          <GraphShell
+            model={model}
+            selectedId={selectedId}
+            onSelect={(id) => select(id)}
+            groupOf={layerGroup}
+            exportName={`architecture-v${shown ?? 0}`}
+            emptyLabel={
+              layer
+                ? `No components in the ${layer.replace(/_/g, " ")} layer.`
+                : "This version has no components."
+            }
+            toolbar={
+              <>
+                <label
+                  className="text-xs text-muted-foreground"
+                  htmlFor="arch-version"
+                >
+                  Version
+                </label>
+                <select
+                  id="arch-version"
+                  className="rounded-md border bg-background px-2 py-1 text-xs max-md:min-h-11"
+                  value={shown ?? ""}
+                  onChange={(e) => setViewing(Number(e.target.value))}
+                >
+                  {all.map((v) => (
                     <option key={v.version} value={v.version}>
                       v{v.version}
+                      {v.version === latest ? " (current)" : ""} ·{" "}
+                      {new Date(v.created_at).toLocaleDateString()}
                     </option>
                   ))}
-              </select>
-            </>
-          }
-          inspector={
-            selected ? (
-              <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-2 text-sm">
-                <span className="font-medium">{selected.label}</span>
-                <Badge variant="secondary">
-                  {selected.data.layer.replace(/_/g, " ") || "unclassified"}
-                </Badge>
-                {selected.data.diff ? (
-                  <Badge variant="outline">{selected.data.diff}</Badge>
-                ) : null}
-                {/* §6.8's wireframe shows "tech: FastAPI · owns: auth, catalog".
+                </select>
+
+                {/* §6.8 wants a Context→Container→Component switcher. The package
+                  is single-level; this filters the layers it really has. */}
+                <label
+                  className="text-xs text-muted-foreground"
+                  htmlFor="arch-layer"
+                >
+                  Layer
+                </label>
+                <select
+                  id="arch-layer"
+                  className="rounded-md border bg-background px-2 py-1 text-xs max-md:min-h-11"
+                  value={layer ?? ""}
+                  onChange={(e) => setLayer(e.target.value || null)}
+                >
+                  <option value="">All layers</option>
+                  {LAYERS.map((l) => (
+                    <option key={l} value={l}>
+                      {l.replace(/_/g, " ")}
+                    </option>
+                  ))}
+                </select>
+
+                <label
+                  className="text-xs text-muted-foreground"
+                  htmlFor="arch-diff"
+                >
+                  <GitCompare aria-hidden className="mr-1 inline size-3" />
+                  Diff vs
+                </label>
+                <select
+                  id="arch-diff"
+                  className="rounded-md border bg-background px-2 py-1 text-xs max-md:min-h-11"
+                  value={compareTo ?? ""}
+                  onChange={(e) =>
+                    setCompareTo(e.target.value ? Number(e.target.value) : null)
+                  }
+                >
+                  <option value="">Off</option>
+                  {all
+                    .filter((v) => v.version !== shown)
+                    .map((v) => (
+                      <option key={v.version} value={v.version}>
+                        v{v.version}
+                      </option>
+                    ))}
+                </select>
+              </>
+            }
+            inspector={
+              selected ? (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-2 text-sm">
+                  <span className="font-medium">{selected.label}</span>
+                  <Badge variant="secondary">
+                    {selected.data.layer.replace(/_/g, " ") || "unclassified"}
+                  </Badge>
+                  {selected.data.diff ? (
+                    <Badge variant="outline">{selected.data.diff}</Badge>
+                  ) : null}
+                  {/* §6.8's wireframe shows "tech: FastAPI · owns: auth, catalog".
                     A Component is {name, layer, depends_on} — there is no tech
                     and no ownership on it, so neither is shown. */}
-              </div>
-            ) : null
-          }
-        />
+                </div>
+              ) : null
+            }
+          />
+        </div>
 
         <AdrPanel projectId={projectId} packageAdrs={currentPkg?.adrs ?? []} />
       </div>

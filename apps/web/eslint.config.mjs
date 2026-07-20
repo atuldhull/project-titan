@@ -40,9 +40,21 @@ const eslintConfig = [
   },
   {
     // Tests mock fetch and drive internals — relax the fetch ban (token stays).
-    files: ["tests/**/*.{ts,tsx}", "src/**/*.test.{ts,tsx}"],
+    // `e2e/**` is the Playwright suite (Phase 65): it mints its own session and
+    // reads computed styles, so it needs the same latitude. Without this entry
+    // it silently inherits the app's full rule set, ad-hoc-fetch ban included.
+    files: [
+      "tests/**/*.{ts,tsx}",
+      "src/**/*.test.{ts,tsx}",
+      "e2e/**/*.{ts,tsx}",
+      "playwright.config.ts",
+    ],
     rules: {
       ...restrictedSyntax(TOKEN_SELECTORS),
+      // Playwright's fixture API is `async ({ page }, use) => { await use(x) }`.
+      // The React plugin sees a bare `use(...)` call and reads it as React 19's
+      // `use` hook in a non-component. It is not — this file has no React in it.
+      "react-hooks/rules-of-hooks": "off",
     },
   },
   {
@@ -55,6 +67,8 @@ const eslintConfig = [
       "lint-fixtures/**",
       ".storybook/**",
       "storybook-static/**",
+      ".playwright/**",
+      "playwright-report/**",
     ],
   },
 ];

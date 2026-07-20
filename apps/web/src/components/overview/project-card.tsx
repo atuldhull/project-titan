@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import type { components } from "@titan/schemas";
 
+import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -13,6 +14,7 @@ import {
 } from "@/components/ui/tooltip";
 import { boardStats } from "@/lib/projects/derive";
 import type { ProjectAgentCounts } from "@/lib/projects/derive";
+import { cn } from "@/lib/utils";
 
 type ProjectOut = components["schemas"]["ProjectOut"];
 type Board = components["schemas"]["Board"];
@@ -45,7 +47,14 @@ export function ProjectCard({
   return (
     <Link
       href={`/projects/${project.id}`}
-      className="block rounded-lg border bg-card p-4 transition-colors hover:border-ring focus-visible:outline-none"
+      // TITAN-FRT-042: was `focus-visible:outline-none` with no replacement, so
+      // the Overview's main navigation targets were invisible to a keyboard
+      // user (`hover:border-ring` is pointer-only). FOCUS_RING is the shared §9
+      // ring; the hover border stays as the separate pointer affordance.
+      className={cn(
+        "block rounded-lg border bg-card p-4 transition-colors hover:border-ring",
+        FOCUS_RING,
+      )}
     >
       <div className="flex items-baseline gap-2">
         <span className="truncate font-medium">{project.display_name}</span>

@@ -238,7 +238,17 @@ export function BudgetsScreen() {
                 )
               }
             >
-              <SelectTrigger id="action_on_exceeded" className="max-w-md">
+              {/* `w-full` BEFORE the cap. The primitive is `w-fit`, and
+                  `max-w-md` is a ceiling rather than a width — so the trigger
+                  still sized to its longest option ("Pause — hold the budget
+                  and fail the call") at 361px inside a 293px form and scrolled
+                  the page sideways (§8). tailwind-merge also strips the
+                  primitive's own `max-w-full` whenever a call site passes any
+                  `max-w-*`, so the constraint has to be stated here. */}
+              <SelectTrigger
+                id="action_on_exceeded"
+                className="w-full max-w-md"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

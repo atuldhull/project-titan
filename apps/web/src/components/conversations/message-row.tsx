@@ -54,7 +54,12 @@ function Refs({
   );
 }
 
-function senderLabel(message: MessageOut): string {
+/**
+ * Exported so the screen's live region names a sender exactly the way the row
+ * does (TITAN-FRT-043): a reader who hears "New message: PM-1, progress" and
+ * then finds a row labelled `a3f91c02` has been told about a different message.
+ */
+export function senderLabel(message: MessageOut): string {
   // from_agent is the bus's own display name; sender_agent_id is the FK. A
   // human message has neither and carries sender_user_id instead.
   if (message.from_agent) {

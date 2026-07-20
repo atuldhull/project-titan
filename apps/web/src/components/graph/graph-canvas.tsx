@@ -13,7 +13,7 @@
  * This module must stay dynamically imported (TITAN-FRT-005) — see `canvas.tsx`.
  */
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import {
   Background,
   Controls,
@@ -28,7 +28,16 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { NODE_TYPES, type RenderData } from "@/components/graph/node-types";
+import {
+  degrees,
+  edgeAriaLabel,
+  labelsById,
+  nodeAriaLabel,
+} from "@/lib/graph/aria";
+import { CANVAS_FRAME_CLASS } from "@/lib/graph/canvas-frame";
 import type { LaidOut } from "@/lib/graph/model";
+import { useShortcuts } from "@/lib/shortcuts/provider";
+import { cn } from "@/lib/utils";
 
 export interface CanvasProps {
   laid: LaidOut<unknown>;
@@ -45,6 +54,7 @@ export interface CanvasProps {
 
 function toNodes(props: CanvasProps): Node<RenderData>[] {
   const { laid, selectedId, accented, spotlight, alsoSelected } = props;
+  const { incoming, outgoing } = degrees(laid.edges);
   return laid.nodes.map((node) => ({
     id: node.id,
     type: node.kind in NODE_TYPES ? node.kind : "task",
@@ -54,6 +64,14 @@ function toNodes(props: CanvasProps): Node<RenderData>[] {
     width: node.width,
     height: node.height,
     selected: selectedId === node.id || alsoSelected?.has(node.id) === true,
+    // TITAN-FRT-043: React Flow's default name for a node is its id, and every
+    // id here is a UUID. See `lib/graph/aria.ts` for what is said instead.
+    ariaLabel: nodeAriaLabel(
+      node.label,
+      node.kind,
+      incoming.get(node.id) ?? 0,
+      outgoing.get(node.id) ?? 0,
+    ),
     data: {
       label: node.label,
       kind: node.kind,
@@ -67,6 +85,10 @@ function toNodes(props: CanvasProps): Node<RenderData>[] {
 
 function toEdges(props: CanvasProps): Edge[] {
   const { laid, spotlight, accented } = props;
+  // Node ids are UUIDs. React Flow's default edge name is "Edge from <id> to
+  // <id>", so without this every edge reads as 72 characters of hex —
+  // technically labelled, practically silent (TITAN-FRT-043).
+  const labels = labelsById(laid.nodes);
   return laid.edges.map((edge) => {
     const onChain =
       spotlight == null || (spotlight.has(edge.from) && spotlight.has(edge.to));
@@ -76,6 +98,11 @@ function toEdges(props: CanvasProps): Edge[] {
       id: `${edge.from}->${edge.to}`,
       source: edge.from,
       target: edge.to,
+      ariaLabel: edgeAriaLabel(
+        labels.get(edge.from) ?? edge.from,
+        labels.get(edge.to) ?? edge.to,
+        edge.blocked === true,
+      ),
       // §6.4: "blocked edges rendered dashed-red".
       animated: false,
       style: {
@@ -93,49 +120,102 @@ function toEdges(props: CanvasProps): Edge[] {
   });
 }
 
+/** One arrow press pans this many pixels. */
+const PAN_STEP = 80;
+
 /**
  * §10's Graph bindings: `+`/`-` zoom, `0` fit, arrows pan, Tab cycles nodes.
  *
- * SCOPED TO THE CANVAS, not the window. §10 calls these "screen-scoped", and for
- * `Tab` that is not a nicety: this binding preventDefaults it, so a window-level
- * listener would swallow Tab for the whole page while the graph is mounted and
- * strand the keyboard on the toolbar, the version selects and the ADR panel —
- * exactly the trap TITAN-FRT-042 forbids. So the handler returns unless focus is
- * genuinely inside the canvas, which is why the canvas is focusable.
+ * They are split across TWO mechanisms, and the split is the whole point of this
+ * function, so it is worth being explicit about why.
+ *
+ * **Zoom and fit go through the global engine** (`useShortcuts`, group "Graph").
+ * They are screen-scoped in §10's sense — pressing `0` while focus sits on the
+ * version select should still fit the graph — and bare `+`/`-`/`0` carry no
+ * browser default worth protecting, so the engine's unconditional
+ * `preventDefault` costs nothing. Registering them there is also the only way
+ * they appear in the `?` overlay (TITAN-FRT-048), which reads the live table.
+ *
+ * **Pan and Tab stay a React `onKeyDown` on the canvas element.** This is NOT
+ * laziness about migrating, it is forced: the engine calls `preventDefault()` on
+ * every match BEFORE it calls `run`, so a binding cannot decline a key it turns
+ * out not to want. For `Tab` that would mean the whole page loses tab navigation
+ * for as long as a graph is mounted — the focus trap TITAN-FRT-042 forbids, and
+ * the exact bug the fix below exists to remove. For the arrows it would mean the
+ * ADR record dialog (`adr-panel.tsx`, `max-h-[80vh] overflow-y-auto`) could not
+ * be scrolled by keyboard while it is open, because a target inside a Radix
+ * dialog is not "behind" the overlay by `isBehindOverlay`'s test and so is not
+ * suppressed. Handled here, both keys are consumed only when focus is genuinely
+ * inside the canvas and `preventDefault` is called only when we act.
+ *
+ * The cost, honestly: pan and Tab do not appear in the `?` overlay. The canvas's
+ * own `aria-label` states them. Lifting them into the table needs a
+ * listing-without-dispatch registration in `lib/shortcuts` — see the report.
  */
-function useKeybindings({
+function useCanvasKeys({
   laid,
   selectedId,
   onSelect,
-  container,
 }: {
   laid: LaidOut<unknown>;
   selectedId: string | null;
   onSelect: (id: string | null, additive: boolean) => void;
-  container: React.RefObject<HTMLDivElement | null>;
-}) {
+}): React.KeyboardEventHandler<HTMLDivElement> {
   const flow = useReactFlow();
   const order = useMemo(() => laid.nodes.map((n) => n.id), [laid.nodes]);
+  // Refs, not deps: the handler must see the CURRENT layout and selection
+  // without being rebuilt every time a realtime patch re-ranks the graph.
   const orderRef = useRef(order);
   orderRef.current = order;
   const selectedRef = useRef(selectedId);
   selectedRef.current = selectedId;
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      const target = event.target as HTMLElement | null;
-      // Ours ONLY while the canvas holds focus. Everywhere else — including the
-      // toolbar directly above it — the browser's own keyboard must survive.
-      const root = container.current;
-      if (!root || !target || !root.contains(target)) {
-        return;
-      }
-      // §10: shortcuts are disabled inside text inputs.
+  useShortcuts([
+    {
+      id: "graph-zoom-in",
+      keys: "+",
+      label: "Zoom in",
+      group: "Graph",
+      run: () => flow.zoomIn(),
+    },
+    {
+      // The same physical key unshifted. Kept because the original binding
+      // accepted it and dropping it would silently break every user who never
+      // reached for Shift.
+      id: "graph-zoom-in-unshifted",
+      keys: "=",
+      label: "Zoom in (without Shift)",
+      group: "Graph",
+      run: () => flow.zoomIn(),
+    },
+    {
+      id: "graph-zoom-out",
+      keys: "-",
+      label: "Zoom out",
+      group: "Graph",
+      run: () => flow.zoomOut(),
+    },
+    {
+      id: "graph-fit",
+      keys: "0",
+      label: "Fit the whole graph in view",
+      group: "Graph",
+      run: () => void flow.fitView(),
+    },
+  ]);
+
+  return useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>): void => {
+      const target = event.target;
+      // §10: shortcuts are disabled inside text inputs. The canvas has none of
+      // its own, but React Flow's node renderers are arbitrary components and
+      // the architecture screen's controls sit one container away.
       if (
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.tagName === "SELECT" ||
-        target.isContentEditable
+        target instanceof HTMLElement &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
       ) {
         return;
       }
@@ -144,49 +224,47 @@ function useKeybindings({
         flow.setViewport({ ...at, x: at.x + x, y: at.y + y });
       };
       switch (event.key) {
-        case "+":
-        case "=":
-          event.preventDefault();
-          flow.zoomIn();
-          return;
-        case "-":
-          event.preventDefault();
-          flow.zoomOut();
-          return;
-        case "0":
-          event.preventDefault();
-          void flow.fitView();
-          return;
         case "ArrowLeft":
           event.preventDefault();
-          pan(80, 0);
+          pan(PAN_STEP, 0);
           return;
         case "ArrowRight":
           event.preventDefault();
-          pan(-80, 0);
+          pan(-PAN_STEP, 0);
           return;
         case "ArrowUp":
           event.preventDefault();
-          pan(0, 80);
+          pan(0, PAN_STEP);
           return;
         case "ArrowDown":
           event.preventDefault();
-          pan(0, -80);
+          pan(0, -PAN_STEP);
           return;
         case "Tab": {
           const ids = orderRef.current;
-          if (ids.length === 0) {
+          const at = ids.indexOf(selectedRef.current ?? "");
+          // TITAN-FRT-042, and this branch is the whole reason it is a bug fix
+          // rather than a refactor.
+          //
+          // `at === -1` is the state the canvas MOUNTS in — nothing selected —
+          // and also what a selection filtered out of the current view leaves
+          // behind. The previous version treated -1 as "one before the first"
+          // and so answered the very first Tab by selecting node 0 and eating
+          // the key. A user who was merely tabbing THROUGH the page towards the
+          // ADR panel was captured, and getting out again cost one press per
+          // node: on a 300-node graph that is a trap in every sense that
+          // matters, whatever the arithmetic says about the last index.
+          //
+          // So: Tab cycles only once a node is already selected, and releases at
+          // both ends. Entering the cycle is a selection — a click, the List
+          // view (FRT-047), or a `?node=` deep link — not a keystroke that a
+          // passer-by can trigger by accident.
+          if (at === -1) {
             return;
           }
-          // Tab CYCLES nodes while the canvas has focus (§10) — and Shift+Tab at
-          // the first node hands focus BACK to the page rather than wrapping, so
-          // the canvas is somewhere you can leave. The List view remains the
-          // accessible path through the same data (TITAN-FRT-047).
-          const at = ids.indexOf(selectedRef.current ?? "");
-          const step = event.shiftKey ? -1 : 1;
-          const next = at + step;
+          const next = at + (event.shiftKey ? -1 : 1);
           if (next < 0 || next >= ids.length) {
-            return; // let the browser move focus out of the canvas
+            return; // at an end — let the browser move focus out of the canvas
           }
           event.preventDefault();
           onSelect(ids[next], false);
@@ -194,23 +272,20 @@ function useKeybindings({
         }
         default:
       }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [flow, onSelect, container]);
+    },
+    [flow, onSelect],
+  );
 }
 
 function Canvas(props: CanvasProps) {
   const nodes = useMemo(() => toNodes(props), [props]);
   const edges = useMemo(() => toEdges(props), [props]);
   const { onSelect, onActivate } = props;
-  const container = useRef<HTMLDivElement | null>(null);
 
-  useKeybindings({
+  const onKeyDown = useCanvasKeys({
     laid: props.laid,
     selectedId: props.selectedId,
     onSelect,
-    container,
   });
 
   const onNodeClick = useCallback(
@@ -222,14 +297,18 @@ function Canvas(props: CanvasProps) {
 
   return (
     <div
-      ref={container}
-      // Focusable so §10's bindings have somewhere to be scoped TO, and labelled
-      // so a screen reader announces what it just entered rather than a silent
-      // pile of divs.
+      // Focusable so pan and Tab have somewhere to be scoped TO, and labelled so
+      // a screen reader announces what it just entered rather than a silent pile
+      // of divs. The label carries the two bindings that cannot be listed in the
+      // `?` overlay — see `useCanvasKeys`.
       tabIndex={0}
       role="application"
-      aria-label="Graph canvas. Plus and minus zoom, zero fits, arrows pan, tab cycles nodes. Use the List view button for a table of the same data."
-      className="h-[70vh] w-full rounded-lg border outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onKeyDown={onKeyDown}
+      aria-label="Graph canvas. Plus and minus zoom, zero fits, arrows pan, and tab steps through nodes once one is selected. Use the List view button for a table of the same data."
+      className={cn(
+        CANVAS_FRAME_CLASS,
+        "outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      )}
     >
       <ReactFlow
         nodes={nodes}

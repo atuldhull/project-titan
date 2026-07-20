@@ -12,11 +12,12 @@ import {
   alignSeries,
   areaPath,
   colorFor,
+  dashFor,
+  DISTINCT_SERIES,
   extentOf,
   linePath,
   project,
   stack,
-  thresholdLevel,
   type Series,
 } from "@/lib/monitoring/chart";
 
@@ -214,12 +215,46 @@ describe("colorFor", () => {
   });
 });
 
-describe("thresholdLevel", () => {
-  it("colours by threshold, inclusive at the boundary", () => {
-    const t = { warn: 10, critical: 20 };
-    expect(thresholdLevel(9, t)).toBe("ok");
-    expect(thresholdLevel(10, t)).toBe("warn");
-    expect(thresholdLevel(20, t)).toBe("critical");
-    expect(thresholdLevel(999, t)).toBe("critical");
+/**
+ * `thresholdLevel` was deleted in Phase 65 and its tests with it — it had zero
+ * callers, the golden signals it was written for have no backend at all, and its
+ * only output was a colour bucket, which is the shape TITAN-FRT-044 exists to
+ * discourage. The reasoning is recorded in `chart.ts` where it used to live.
+ */
+describe("dashFor", () => {
+  it("gives each of the first six series a distinguishing dash", () => {
+    // TITAN-FRT-044: the stacked chart's series differed ONLY by stroke colour,
+    // which is unreadable in greyscale and to a dichromat. The dash is the
+    // second, non-colour channel — so within one screenful of series it must
+    // actually vary, not merely exist.
+    const first = [0, 1, 2, 3, 4].map(dashFor);
+    expect(new Set(first).size).toBe(5);
+  });
+
+  it("is undefined for the first series, so solid paths carry no attribute", () => {
+    expect(dashFor(0)).toBeUndefined();
+  });
+
+  it("keeps (colour, dash) unique past the six-colour palette", () => {
+    // The real bug this guards: `usage.data.groups` is server-driven and
+    // unbounded, `colorFor` wraps at 6, so series 7 was drawn EXACTLY like
+    // series 1. Pairing is what disambiguates it — and only because 5 and 6 are
+    // coprime. A 6-long dash array would repeat at 6 alongside the colours and
+    // fix nothing, which is the mistake this asserts against.
+    const pairs = Array.from(
+      { length: DISTINCT_SERIES },
+      (_, i) => `${colorFor("k", i)}|${dashFor(i) ?? "solid"}`,
+    );
+    expect(new Set(pairs).size).toBe(DISTINCT_SERIES);
+    expect(DISTINCT_SERIES).toBe(30);
+
+    // Specifically: 7 must not look like 1.
+    expect(colorFor("k", 6)).toBe(colorFor("k", 0)); // colour DOES wrap …
+    expect(dashFor(6)).not.toBe(dashFor(0)); // … and the dash is why that is ok
+  });
+
+  it("repeats only after the full cycle", () => {
+    const cycle = (i: number) => `${colorFor("k", i)}|${dashFor(i) ?? "solid"}`;
+    expect(cycle(DISTINCT_SERIES)).toBe(cycle(0));
   });
 });

@@ -187,14 +187,61 @@ export function colorFor(key: string, index: number): string {
   return PALETTE[index % PALETTE.length];
 }
 
-/** §6.10's threshold colouring. */
-export type Level = "ok" | "warn" | "critical";
+/**
+ * Stroke dash patterns, paired with `colorFor` (TITAN-FRT-044).
+ *
+ * Two separate requirements land on this one array, and only the second is
+ * obvious:
+ *
+ * 1. **-044 forbids colour-only encoding.** A stacked chart whose series differ
+ *    ONLY by stroke colour is unreadable in greyscale and to a dichromat — the
+ *    legend says "anthropic is blue" and the reader cannot tell blue from
+ *    green. The dash is the second, non-colour channel, and the legend mirrors
+ *    it (see `sparkline.tsx`) so the pairing is learnable.
+ * 2. **The palette runs out.** `usage.data.groups` is server-driven and
+ *    unbounded — group-by `model` on a busy stack easily exceeds six — and
+ *    `colorFor` wraps, so series 7 would be drawn exactly like series 1.
+ *
+ * FIVE patterns against SIX colours is deliberate: the lengths are coprime, so
+ * (colour, dash) is unique for the first **30** series rather than repeating at
+ * 6 (which `Math.floor(index / 6)` would give) or at 5. Past 30 it does repeat;
+ * a chart with 31 series is illegible for reasons no palette can fix, and the
+ * backend's `truncated` flag already trims the worst of it.
+ */
+const DASHES: readonly (string | undefined)[] = [
+  undefined, // solid
+  "7 4", // dashed
+  "1.5 3", // dotted
+  "11 4 2 4", // dash-dot
+  "3 3", // short dash
+] as const;
 
-export function thresholdLevel(
-  value: number,
-  thresholds: { readonly warn: number; readonly critical: number },
-): Level {
-  if (value >= thresholds.critical) return "critical";
-  if (value >= thresholds.warn) return "warn";
-  return "ok";
+/**
+ * The dash pattern for a series position, or `undefined` for a solid line.
+ *
+ * `undefined` rather than `"none"` so React omits `stroke-dasharray` entirely —
+ * `"none"` is legal but puts a redundant attribute on every solid path, and the
+ * legend swatch below reuses this same value.
+ */
+export function dashFor(index: number): string | undefined {
+  return DASHES[index % DASHES.length];
 }
+
+/** How many series get a unique (colour, dash) pair before the scheme repeats. */
+export const DISTINCT_SERIES = PALETTE.length * DASHES.length;
+
+/*
+ * `thresholdLevel(value, {warn, critical})` used to live here, for §6.10's
+ * "threshold colouring". It was deleted in Phase 65 rather than wired, for two
+ * reasons:
+ *
+ *  - It had zero callers and never had any. §6.10's thresholds belong to the
+ *    golden signals (API p95, error rate, queue depth), and those have no
+ *    backend at all — see the header of `monitoring-screen.tsx`. The one number
+ *    on this screen with a ceiling is LLM spend, but the ceiling
+ *    (`budgets.per_project_usd`) is per-PROJECT while these totals are org-wide,
+ *    so comparing them would be arithmetic that means nothing.
+ *  - Its whole output was a colour bucket, which is the shape TITAN-FRT-044
+ *    exists to discourage. Anything that reintroduces threshold state must pair
+ *    it with an icon or a word, so it would not have been reusable as written.
+ */

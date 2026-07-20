@@ -10,7 +10,7 @@ SCHEMAS_DIR := packages/schemas
 .PHONY: dev test test-web test-schema test-llm-live lint lint-style boundaries route-guards \
         agent-purity typecheck migrate seed generate-types check-types-drift \
         lint-openapi secret-scan eval-retrieval eval-baseline bench-memory \
-        budget-web
+        budget-web e2e-web
 
 ## dev: run the API (uvicorn, reload) and the web app (next dev) together.
 ## Docker Compose is the primary dev loop from Phase 2 onward.
@@ -32,6 +32,18 @@ test-web:
 budget-web:
 	cd $(WEB_DIR) && npm run build
 	cd $(WEB_DIR) && npm run budget:org
+
+# Phase 65: the responsive (TITAN-FRT-041) + accessibility (TITAN-FRT-042/043/
+# 045/046) + palette & shortcut (TITAN-FRT-007/048) sweep, in a real browser.
+#
+# Hermetic: every API response is served by page.route fixtures typed against the
+# generated OpenAPI contract, and the session is a locally minted cookie — so
+# this needs Chromium but NOT Postgres, Qdrant or Ollama. The offline-against-
+# Compose run TITAN-FRT-004 asks for is Phase 66's job, not this one.
+# Playwright's own webServer runs `next build && next start` on :3100.
+e2e-web:
+	cd $(WEB_DIR) && npx playwright install --with-deps chromium
+	cd $(WEB_DIR) && npm run e2e
 
 # Style + formatting gates (ruff incl. ASYNC + ADR-007 banned imports, eslint, prettier)
 lint-style:

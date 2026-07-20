@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Radio } from "lucide-react";
 
 import { isDomainFrame, type ServerFrame } from "@titan/ws-protocol";
 
+import { CONNECTION_PRESENTATION } from "@/lib/ws/connection-presentation";
+import { useConnection } from "@/lib/ws/connection-store";
 import { useWsClient } from "@/lib/ws/manager";
 import { createRafBatcher } from "@/lib/ws/raf-batch";
 import { cn } from "@/lib/utils";
@@ -28,6 +30,18 @@ import { cn } from "@/lib/utils";
  */
 const MAX_ROWS = 500; // ring buffer — the feed is live-only, so it can't grow forever
 const HIGHLIGHT_MS = 200;
+
+/**
+ * How often the polite live region may change (TITAN-FRT-043).
+ *
+ * The feed is RAF-batched, so without this the announcement text could change
+ * ~60×/s under a burst. A polite region that mutates that fast is worse than
+ * none: some screen readers queue every revision and fall minutes behind the
+ * UI, others drop the lot. Throttling on the trailing edge means the region
+ * settles on "what just arrived, and how much of it" a few times a second at
+ * most — which is the only thing a listener can actually use anyway.
+ */
+const ANNOUNCE_THROTTLE_MS = 2_000;
 
 export interface ActivityRow {
   readonly id: string;
@@ -85,15 +99,39 @@ export function toRow(frame: ServerFrame): ActivityRow | null {
 
 export function ActivityFeed({ rows: injected }: { rows?: ActivityRow[] }) {
   const client = useWsClient();
+  const { status } = useConnection();
+  const presentation = CONNECTION_PRESENTATION[status];
   const [rows, setRows] = useState<ActivityRow[]>(injected ?? []);
   const [freshIds, setFreshIds] = useState<ReadonlySet<string>>(new Set());
+  const [announcement, setAnnouncement] = useState("");
   const parentRef = useRef<HTMLDivElement>(null);
+  const headingId = useId();
 
   useEffect(() => {
     if (injected || !client) {
       return;
     }
     let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+    // Trailing-edge throttle for the polite region (see ANNOUNCE_THROTTLE_MS).
+    // `pending` accumulates across bursts so nothing is silently dropped — the
+    // count is what tells a listener they missed traffic.
+    let announceTimer: ReturnType<typeof setTimeout> | undefined;
+    let pendingCount = 0;
+    let pendingLatest: ActivityRow | undefined;
+    const flushAnnouncement = () => {
+      announceTimer = undefined;
+      if (!pendingLatest) {
+        return;
+      }
+      const extra = pendingCount - 1;
+      setAnnouncement(
+        extra > 0
+          ? `${pendingLatest.type}, and ${extra} more ${extra === 1 ? "update" : "updates"}`
+          : pendingLatest.type,
+      );
+      pendingCount = 0;
+      pendingLatest = undefined;
+    };
     const batcher = createRafBatcher<ActivityRow>((incoming) => {
       // Newest-first. `toReversed` (not `reverse`) because a React updater must
       // be pure — StrictMode double-invokes it, and mutating the captured array
@@ -106,6 +144,14 @@ export function ActivityFeed({ rows: injected }: { rows?: ActivityRow[] }) {
       // highlight early (under a sustained stream, after ~one frame).
       clearTimeout(highlightTimer);
       highlightTimer = setTimeout(() => setFreshIds(new Set()), HIGHLIGHT_MS);
+
+      pendingCount += newestFirst.length;
+      pendingLatest = newestFirst[0];
+      // Only ARM the timer — never restart it. A restart on every burst would
+      // starve the region completely under a sustained stream: the deadline
+      // would keep moving and the user would be told nothing at all while the
+      // most traffic was flowing, which is exactly backwards.
+      announceTimer ??= setTimeout(flushAnnouncement, ANNOUNCE_THROTTLE_MS);
     });
     const unsubscribe = client.onAnyFrame((frame) => {
       const row = toRow(frame);
@@ -117,6 +163,7 @@ export function ActivityFeed({ rows: injected }: { rows?: ActivityRow[] }) {
       unsubscribe();
       batcher.dispose();
       clearTimeout(highlightTimer);
+      clearTimeout(announceTimer);
     };
   }, [client, injected]);
 
@@ -132,9 +179,45 @@ export function ActivityFeed({ rows: injected }: { rows?: ActivityRow[] }) {
 
   return (
     <div className="flex h-full flex-col rounded-lg border bg-card">
+      {/*
+        TITAN-FRT-043's "activity feed aria-live=polite" lives HERE and not on
+        the list, because the list is virtualized (see role="log" below). This
+        region holds exactly one short sentence describing the newest arrival,
+        it is never recycled, and it is `aria-atomic` so the whole sentence is
+        read rather than the diff. `sr-only` — the sighted equivalent is the
+        200 ms prepend highlight the rows already have.
+      */}
+      <div aria-live="polite" aria-atomic className="sr-only">
+        {announcement}
+      </div>
+
       <div className="flex items-center gap-2 border-b px-3 py-2">
-        <Radio aria-hidden className="size-3.5 text-success" />
-        <span className="text-sm font-semibold">Live activity</span>
+        {/*
+          TITAN-FRT-044. This icon used to be a hardcoded `text-success` beside
+          a static "Live activity" label: it stayed green while the socket was
+          reconnecting or offline, so the one thing on screen that claimed the
+          feed was live was the one thing that could never know. It now reads
+          the real status, and the status is spelled out in TEXT next to it —
+          colour was previously the only channel, which §9 forbids outright.
+
+          The label and dot colour come from CONNECTION_PRESENTATION in lib/ws,
+          shared with the top-bar pill, so the two never word the same state
+          differently ("Reconnecting…" here, "reconnecting" there).
+        */}
+        <Radio aria-hidden className={cn("size-3.5", presentation.icon)} />
+        <span id={headingId} className="text-sm font-semibold">
+          Live activity
+        </span>
+        {/*
+          NOT a live region, deliberately. <ConnectionPill> is mounted in the top
+          bar on every screen and already carries `role="status"` for exactly
+          this value; adding a second one here would make a screen reader
+          announce every reconnect twice. This copy is for the eyes — it is the
+          non-colour channel §9 requires beside the dot.
+        */}
+        <span className="ml-auto text-xs text-muted-foreground">
+          {presentation.label}
+        </span>
       </div>
 
       {empty ? (
@@ -146,7 +229,29 @@ export function ActivityFeed({ rows: injected }: { rows?: ActivityRow[] }) {
           </span>
         </p>
       ) : (
-        <div ref={parentRef} className="max-h-80 flex-1 overflow-y-auto">
+        <div
+          ref={parentRef}
+          // TITAN-FRT-043. `role="log"` gives this scroller its correct
+          // semantics — an append-only running record, which assistive tech
+          // exposes as a navigable landmark-ish container.
+          //
+          // `aria-live="off"` is NOT redundant and must not be deleted. In ARIA,
+          // `role="log"` carries an IMPLICIT `aria-live="polite"`; simply
+          // omitting the attribute leaves the live region switched ON. That is
+          // fatal here because the list is VIRTUALIZED: @tanstack/react-virtual
+          // mounts and unmounts row nodes as the window moves, so every scroll
+          // tick and every re-measure is a burst of DOM insertions that a screen
+          // reader would read out as new activity — re-announcing rows the user
+          // has already heard, for content that did not change. Only an explicit
+          // `off` overrides a role's implicit live value.
+          //
+          // Real arrivals are announced by the separate, non-virtualized polite
+          // region above, which holds one sentence and recycles nothing.
+          role="log"
+          aria-live="off"
+          aria-labelledby={headingId}
+          className="max-h-80 flex-1 overflow-y-auto"
+        >
           <div
             style={{ height: virtualizer.getTotalSize(), position: "relative" }}
           >

@@ -22,14 +22,13 @@
  *   and no Ack endpoint; `[Ack]` would be a button that does nothing.
  * - **Not real — `metric.sample`.** Zero producers. The tiles poll.
  */
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sparkline, StackedSeries } from "@/components/monitoring/sparkline";
 import { useUsage } from "@/lib/monitoring/hooks";
-import { stack } from "@/lib/monitoring/chart";
 import {
   formatTokens,
   formatUsd,
@@ -54,16 +53,14 @@ export function MonitoringScreen() {
   // recompute forever.
   const points = useMemo(() => usage.data?.series ?? [], [usage.data]);
 
+  // BOTH charts stack, and `StackedSeries` now does the stacking (and the
+  // x-axis alignment that stops a bucket one group is missing from drawing a
+  // line straight through zero) ITSELF, from these raw per-group series. That
+  // moved in Phase 65 so the chart and its TITAN-FRT-047 table are two views of
+  // one array: a table fed the cumulative data would have reported every group
+  // as the sum of itself and everything under it.
   const costSeries = useMemo(() => toSeries(points, "cost"), [points]);
   const tokenSeries = useMemo(() => toSeries(points, "tokens"), [points]);
-  // BOTH charts stack. `StackedSeries` expects cumulative data — a series sits
-  // on the sum of those before it — and also aligns the x-axis so a bucket one
-  // group is missing from does not draw a line straight through zero. Feeding
-  // it raw `toSeries` output (as an earlier draft did for tokens) gave the two
-  // charts opposite semantics: stacked cost beside overlaid, gap-crossing
-  // tokens.
-  const stackedCost = useMemo(() => stack(costSeries), [costSeries]);
-  const stackedTokens = useMemo(() => stack(tokenSeries), [tokenSeries]);
   // The spend sparkline is the whole range's cost per bucket, so it sums the
   // groups rather than picking one.
   const spendSpark = useMemo(() => {
@@ -81,6 +78,40 @@ export function MonitoringScreen() {
   const totalUsd = total ? Number(total.cost_usd) : null;
   const perHour =
     totalUsd === null ? null : spendPerHour(totalUsd, RANGES[range].ms);
+
+  const groups = usage.data?.groups ?? [];
+  /**
+   * ONE definition of what a group row shows, rendered twice (table at md+,
+   * cards below) rather than written twice.
+   *
+   * The group-key column is deliberately NOT in here: it is the row's heading
+   * in both layouts — a `<th scope="row">` in the table and the card's title —
+   * so it is the one field whose two renderings genuinely differ.
+   */
+  const groupColumns: readonly {
+    key: string;
+    header: string;
+    cell: (group: (typeof groups)[number]) => ReactNode;
+  }[] = [
+    {
+      key: "cost",
+      header: "cost",
+      // The string, not a re-formatted float: this column is the ledger's own
+      // number, and it is asserted to the micro-dollar against it.
+      cell: (group) => `$${group.cost_usd}`,
+    },
+    {
+      key: "tokens",
+      header: "tokens in/out",
+      cell: (group) =>
+        `${formatTokens(group.input_tokens)} / ${formatTokens(group.output_tokens)}`,
+    },
+    {
+      key: "calls",
+      header: "calls",
+      cell: (group) => group.calls.toLocaleString(),
+    },
+  ];
 
   if (usage.isLoading) {
     return (
@@ -183,68 +214,112 @@ export function MonitoringScreen() {
           </div>
         </div>
         {usage.data?.truncated ? (
-          <p
-            className="text-[11px] text-amber-600 dark:text-amber-400"
-            role="status"
-          >
+          <p className="text-[11px] text-warning" role="status">
             Showing the dearest groups only — the chart is trimmed, but the
             totals above are not.
           </p>
         ) : null}
         <StackedSeries
-          series={stackedCost}
+          series={costSeries}
           label={`LLM cost by ${groupBy} over ${range}`}
+          format={formatUsd}
         />
       </section>
 
       <section className="space-y-3 rounded-lg border bg-card p-4">
         <h2 className="text-sm font-medium">Tokens over time</h2>
         <StackedSeries
-          series={stackedTokens}
+          series={tokenSeries}
           height={160}
           label={`Token usage by ${groupBy} over ${range}`}
+          format={formatTokens}
         />
       </section>
 
       <section className="space-y-3 rounded-lg border bg-card p-4">
         <h2 className="text-sm font-medium">Cost by {groupBy}</h2>
-        {(usage.data?.groups ?? []).length === 0 ? (
+        {groups.length === 0 ? (
           <p className="text-xs text-muted-foreground">No data in range.</p>
         ) : (
-          <table className="w-full text-left text-xs">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 font-medium">{groupBy}</th>
-                <th className="py-1 text-right font-medium">cost</th>
-                <th className="py-1 text-right font-medium">tokens in/out</th>
-                <th className="py-1 text-right font-medium">calls</th>
-              </tr>
-            </thead>
-            <tbody className="font-mono">
-              {(usage.data?.groups ?? []).map((g) => (
-                <tr key={g.key ?? "(none)"} className="border-t">
-                  <td className="py-1">
-                    {g.key ?? (
-                      <span className="text-muted-foreground">(none)</span>
-                    )}
-                  </td>
-                  {/* The string, not a re-formatted float: this column is the
-                      ledger's own number, and it is asserted to the
-                      micro-dollar against it. */}
-                  <td className="py-1 text-right tabular-nums">
-                    ${g.cost_usd}
-                  </td>
-                  <td className="py-1 text-right tabular-nums text-muted-foreground">
-                    {formatTokens(g.input_tokens)} /{" "}
-                    {formatTokens(g.output_tokens)}
-                  </td>
-                  <td className="py-1 text-right tabular-nums text-muted-foreground">
-                    {g.calls.toLocaleString()}
-                  </td>
-                </tr>
+          <>
+            {/*
+             * §8: "tables → card lists" below 768. This table is a raw <table>
+             * rather than `components/ui/table`, so it had no scroll port of its
+             * own either — four numeric columns at 375px pushed the whole
+             * CONTENT REGION sideways, which §8 forbids outright ("no horizontal
+             * body scroll ever"). It gets both: its own `overflow-x-auto` at
+             * md+, and cards below.
+             */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full text-left text-xs">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th scope="col" className="py-1 font-medium">
+                      {groupBy}
+                    </th>
+                    {groupColumns.map((column) => (
+                      <th
+                        key={column.key}
+                        scope="col"
+                        className="py-1 text-right font-medium whitespace-nowrap"
+                      >
+                        {column.header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="font-mono">
+                  {groups.map((group) => (
+                    <tr key={group.key ?? "(none)"} className="border-t">
+                      <th
+                        scope="row"
+                        className="py-1 text-left font-normal break-all"
+                      >
+                        {groupLabel(group.key)}
+                      </th>
+                      {groupColumns.map((column) => (
+                        <td
+                          key={column.key}
+                          className="py-1 text-right tabular-nums whitespace-nowrap"
+                        >
+                          {column.cell(group)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <ul className="space-y-2 md:hidden">
+              {groups.map((group) => (
+                <li
+                  key={group.key ?? "(none)"}
+                  className="rounded-md border p-2"
+                >
+                  {/* `break-all`: a group key is server-driven and can be a
+                      model id with no break opportunity in it at all
+                      (`claude-opus-4-20250514`), which at 343px is exactly how
+                      a card list ends up overflowing anyway. */}
+                  <p className="font-mono text-xs font-medium break-all">
+                    {groupLabel(group.key)}
+                  </p>
+                  <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
+                    {groupColumns.map((column) => (
+                      <Fragment key={column.key}>
+                        <dt className="text-muted-foreground">
+                          {column.header}
+                        </dt>
+                        <dd className="font-mono tabular-nums">
+                          {column.cell(group)}
+                        </dd>
+                      </Fragment>
+                    ))}
+                  </dl>
+                </li>
               ))}
-            </tbody>
-          </table>
+            </ul>
+          </>
         )}
       </section>
 
@@ -284,6 +359,12 @@ export function MonitoringScreen() {
   );
 }
 
+/** A null group key is real and common (unbound project/agent) — a group, not
+ *  a gap, so it is named rather than left blank. */
+function groupLabel(key: string | null | undefined): string {
+  return key ?? "(none)";
+}
+
 function Tile({
   label,
   value,
@@ -301,7 +382,7 @@ function Tile({
       <div className="mt-1 flex items-end justify-between gap-2">
         <span className="text-xl font-semibold tabular-nums">{value}</span>
         {spark && spark.length > 0 ? (
-          <span className="text-sky-600 dark:text-sky-400">
+          <span className="text-primary">
             <Sparkline points={spark} />
           </span>
         ) : null}

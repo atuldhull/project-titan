@@ -101,6 +101,34 @@ jobs:
       - run: cd packages/api-client && npm ci
       - run: make test-web
 
+  # Phase 65: TITAN-FRT-041 (375 px on all 13 screens, no horizontal body
+  # scroll), -042/-043/-045/-046 (axe clean in BOTH themes, visible focus ring,
+  # reduced motion, 200% zoom) and -007/-048 (palette, shortcut engine, the ?
+  # overlay), in real Chromium.
+  #
+  # Blocking, not advisory. Hermetic — every API response comes from a page.route
+  # fixture typed against the generated contract — so it needs a browser but no
+  # Postgres, Qdrant or Ollama.
+  e2e-web:
+    needs: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: cd apps/web && npm ci
+      - run: cd packages/api-client && npm ci
+      - run: make e2e-web
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: apps/web/.playwright/results
+          retention-days: 7
+
   # TITAN-FRT-005: the /org First Load JS budget (<= 300 kB gzipped) — the build
   # fails CI when a heavy import lands on the Overview route.
   web-bundle-budget:

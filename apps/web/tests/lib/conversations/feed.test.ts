@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { MessageOut } from "@titan/api-client";
 
 import {
+  announceArrivals,
   AT_BOTTOM_THRESHOLD_PX,
   filterByKind,
   isAtBottom,
@@ -331,5 +332,61 @@ describe("liveStreams / pruneStreams", () => {
     });
     s = reduceStreams(s, { type: "finished", runId: "r2" });
     expect([...pruneStreams(s).keys()]).toEqual(["r1"]);
+  });
+});
+
+describe("announceArrivals", () => {
+  const describeOne = (m: MessageOut) => `sender, ${m.kind}`;
+  const feed = [
+    message("a", "2026-07-01T00:00:01Z"),
+    message("b", "2026-07-01T00:00:02Z"),
+    message("c", "2026-07-01T00:00:03Z"),
+  ];
+
+  it("says nothing on the first paint, but records where it started", () => {
+    // Landing on a channel with 200 messages must not read 200 messages aloud.
+    const result = announceArrivals(feed, null, describeOne);
+    expect(result).toEqual({ text: "", lastId: "c" });
+  });
+
+  it("says nothing when the newest message has already been spoken", () => {
+    expect(announceArrivals(feed, "c", describeOne)).toEqual({
+      text: "",
+      lastId: "c",
+    });
+  });
+
+  it("announces a single arrival", () => {
+    const result = announceArrivals(feed, "b", describeOne);
+    expect(result?.text).toBe("New message: sender, progress_report");
+    expect(result?.lastId).toBe("c");
+  });
+
+  it("collapses a burst into one utterance with a count", () => {
+    // An agent standup lands several at once; five queued utterances the reader
+    // cannot interrupt is worse than one.
+    const result = announceArrivals(feed, "a", describeOne);
+    expect(result?.text).toBe(
+      "2 new messages. Latest: sender, progress_report",
+    );
+  });
+
+  it("is silent about a PREPEND — history paging is not an arrival", () => {
+    const older = message("z", "2026-07-01T00:00:00Z");
+    expect(announceArrivals([older, ...feed], "c", describeOne)).toEqual({
+      text: "",
+      lastId: "c",
+    });
+  });
+
+  it("treats a vanished anchor as ONE arrival, not the whole feed", () => {
+    // The spoken message was filtered away by a kind chip. `messages.length`
+    // here would announce "3 new messages" for an action the reader just took.
+    const result = announceArrivals(feed, "gone", describeOne);
+    expect(result?.text).toBe("New message: sender, progress_report");
+  });
+
+  it("returns null for an empty feed rather than seeding on nothing", () => {
+    expect(announceArrivals([], null, describeOne)).toBeNull();
   });
 });

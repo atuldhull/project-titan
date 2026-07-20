@@ -36,6 +36,8 @@ function Harness({
   onOpen,
   onNavigate,
   onDragStart,
+  onMove,
+  moveTargets,
   card = CARD,
   draggable = true,
   unmetDeps = 0,
@@ -43,6 +45,8 @@ function Harness({
   onOpen?: (id: string) => void;
   onNavigate?: (id: string, key: string) => void;
   onDragStart?: () => void;
+  onMove?: (id: string, toStatus: string) => void;
+  moveTargets?: readonly string[];
   card?: Card;
   draggable?: boolean;
   unmetDeps?: number;
@@ -63,6 +67,8 @@ function Harness({
             draggable={draggable}
             pulsing={false}
             animating={false}
+            moveTargets={moveTargets}
+            onMove={onMove}
             onOpen={onOpen ?? (() => undefined)}
             onNavigate={onNavigate}
           />
@@ -171,6 +177,81 @@ describe("TaskCard keyboard contract", () => {
     await user.tab();
     await user.keyboard("{Enter}");
     expect(onOpen).toHaveBeenCalledWith(CARD.id);
+  });
+});
+
+describe("TaskCard 'Move to…' menu (§8's DnD fallback)", () => {
+  const TARGETS = ["ready", "blocked"] as const;
+
+  it("moves the card without any drag at all", async () => {
+    // §8 requires this verbatim: drag-and-drop "gains long-press initiation on
+    // touch plus an explicit 'Move to…' menu fallback". It is also the only way
+    // to move a card that does not require holding a gesture, which is what
+    // makes the board operable with a tremor or through switch access.
+    const user = userEvent.setup();
+    const onMove = vi.fn();
+    render(<Harness moveTargets={[...TARGETS]} onMove={onMove} />);
+
+    await user.click(
+      screen.getByRole("button", {
+        name: /move payment api to another column/i,
+      }),
+    );
+    await user.click(await screen.findByRole("menuitem", { name: "Blocked" }));
+
+    expect(onMove).toHaveBeenCalledWith(CARD.id, "blocked");
+  });
+
+  it("does NOT shadow dnd-kit's activator — the card still lifts on Space", async () => {
+    // The Phase 59 trap, re-armed by this menu. dnd-kit's KeyboardSensor
+    // activator IS an `onKeyDown` inside the draggable's `listeners`, so any
+    // control that ends up INSIDE that button and handles keys of its own makes
+    // every card silently unliftable. The menu is deliberately a sibling; this
+    // fails the moment someone moves it in.
+    const user = userEvent.setup();
+    const onDragStart = vi.fn();
+    render(
+      <Harness
+        moveTargets={[...TARGETS]}
+        onMove={vi.fn()}
+        onDragStart={onDragStart}
+      />,
+    );
+
+    await user.tab(); // the card's own control comes first
+    await user.keyboard("{ }");
+
+    expect(onDragStart).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers no menu when the workflow allows this card nowhere", () => {
+    // A terminal status, or a viewer who holds no transition permission. An
+    // empty menu behind a live-looking button reads to a screen reader as an
+    // available action that then is not one.
+    render(<Harness moveTargets={[]} onMove={vi.fn()} />);
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+  });
+
+  it("offers no menu when the board wires no move handler", () => {
+    render(<Harness moveTargets={[...TARGETS]} />);
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+  });
+
+  it("lists exactly the targets it was handed, in the order it was handed them", () => {
+    // The board hands down only what the workflow index allows from this card's
+    // status for this user's permissions. The card must not re-sort or filter:
+    // the order is the board's column order, which is how a user reads it.
+    render(<Harness moveTargets={["blocked", "ready"]} onMove={vi.fn()} />);
+    return userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: /move payment api/i }))
+      .then(async () => {
+        const items = await screen.findAllByRole("menuitem");
+        expect(items.map((item) => item.textContent)).toEqual([
+          "Blocked",
+          "Ready",
+        ]);
+      });
   });
 });
 

@@ -163,6 +163,9 @@ export function TaskGraphScreen({ projectId }: { projectId: string }) {
       onActivate={(id) =>
         router.push(`/projects/${projectId}/board?task=${id}`)
       }
+      // TITAN-FRT-047: the List view offers the same action, so it has to name
+      // it — "Open" alone would not say that the row leaves the graph entirely.
+      activateLabel="Open on the board"
       accented={path}
       spotlight={spotlight}
       groupOf={milestoneGroup}

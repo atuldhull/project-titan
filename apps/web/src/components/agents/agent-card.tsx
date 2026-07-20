@@ -106,7 +106,15 @@ export function AgentCard({ view }: { view: AgentView }) {
         {model.model ? (
           <Badge
             variant="outline"
-            className="font-mono"
+            // §8/TITAN-FRT-041: no horizontal body scroll at 375px. This is the
+            // one unbounded string on the card — a fully-qualified binding like
+            // `anthropic/claude-sonnet-4-5-20250929 (configured)` is ~45 mono
+            // chars, wider than the 311px content box of a 1-column card, and a
+            // Badge is `inline-flex` with no wrapping, so it would push the grid
+            // out. `max-w-full` is what bounds it: `min-w-0` cannot, because
+            // `badgeVariants` also sets `shrink-0`, so this item never shrinks
+            // below its content no matter what its min-width says.
+            className="max-w-full font-mono"
             // §6.5 wants "model+provider IN USE". When nothing has run, all we
             // have is the CONFIGURED binding, and the two really can differ —
             // so the card says which one it is showing rather than implying.
@@ -116,9 +124,16 @@ export function AgentCard({ view }: { view: AgentView }) {
                 : "This agent's configured binding — it has not run yet"
             }
           >
-            {model.provider ? `${model.provider}/` : ""}
-            {model.model}
-            {model.actual ? "" : " (configured)"}
+            {/* The ellipsis has to live on an inner block box. `text-overflow`
+                applies to BLOCK CONTAINERS, and a Badge is `inline-flex`, so
+                `truncate` on the Badge itself clips the binding mid-character
+                with no "…" to say it did. This span is a (blockified) flex
+                item, so it both shrinks and renders the ellipsis. */}
+            <span className="truncate">
+              {model.provider ? `${model.provider}/` : ""}
+              {model.model}
+              {model.actual ? "" : " (configured)"}
+            </span>
           </Badge>
         ) : null}
         {throughput ? (

@@ -1,18 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { Search } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConsentDialog } from "@/components/plugins/consent-dialog";
 import { McpServersTab } from "@/components/plugins/mcp-tab";
 import { PluginConfigDialog } from "@/components/plugins/config-dialog";
 import { useCan } from "@/lib/auth";
+import { usePrimarySearch } from "@/lib/shortcuts/primary-search";
 import {
   availableFrom,
+  matchesQuery,
   toRow,
   type HealthLevel,
   type PluginRow,
@@ -50,10 +54,38 @@ export function PluginsScreen() {
   const [configTarget, setConfigTarget] = useState<string | null>(null);
   const lifecycle = usePluginLifecycle();
 
-  const rows = (installs.data ?? [])
+  // §10: `/` focuses "the screen's primary search/filter". This screen had no
+  // filter at all, so `/` opened the palette instead — and a plugin directory
+  // with a few dozen entries is exactly where a filter earns its place.
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  usePrimarySearch(searchRef);
+
+  const allRows = (installs.data ?? [])
     .filter((install) => install.state !== "removed")
     .map(toRow);
-  const available = availableFrom(catalogue.data ?? [], installs.data ?? []);
+  const allAvailable = availableFrom(catalogue.data ?? [], installs.data ?? []);
+
+  // Filtered for display; the UNFILTERED counts stay out of the tab labels
+  // below, because a tab reading "Installed (0)" while three plugins are merely
+  // filtered out says the wrong thing about the deployment.
+  const rows = allRows.filter((row) =>
+    matchesQuery(
+      { id: row.pluginId, name: row.name, description: row.description },
+      query,
+    ),
+  );
+  const available = allAvailable.filter((plugin) =>
+    matchesQuery(
+      {
+        id: plugin.plugin_id,
+        name: plugin.name,
+        description: plugin.description ?? "",
+      },
+      query,
+    ),
+  );
+  const filtering = query.trim() !== "";
 
   if (installs.isLoading) {
     return (
@@ -93,11 +125,31 @@ export function PluginsScreen() {
 
   return (
     <div className="space-y-6 p-6">
-      <header>
-        <h1 className="text-xl font-semibold">Plugins</h1>
-        <p className="text-xs text-muted-foreground">
-          Connectors, MCP servers and the tools they contribute.
-        </p>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">Plugins</h1>
+          <p className="text-xs text-muted-foreground">
+            Connectors, MCP servers and the tools they contribute.
+          </p>
+        </div>
+        {/* One filter across all three tabs, so `/` has a single unambiguous
+            target however the user got here. `w-full sm:w-64`: at 375px a
+            fixed-width input beside a heading is the thing that overflows. */}
+        <div className="relative w-full sm:w-64">
+          <Search
+            className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            ref={searchRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Filter plugins…"
+            aria-label="Filter plugins"
+            // §8's 44px touch minimum below md.
+            className="h-11 pl-7 text-xs md:h-9"
+          />
+        </div>
       </header>
 
       {runtimeOff ? (
@@ -117,7 +169,7 @@ export function PluginsScreen() {
       <Tabs defaultValue="installed">
         <TabsList>
           <TabsTrigger value="installed">
-            Installed {rows.length > 0 ? `(${rows.length})` : ""}
+            Installed {allRows.length > 0 ? `(${allRows.length})` : ""}
           </TabsTrigger>
           <TabsTrigger value="catalog">Catalog</TabsTrigger>
           <TabsTrigger value="mcp">MCP Servers</TabsTrigger>
@@ -138,8 +190,14 @@ export function PluginsScreen() {
               </button>
             </p>
           ) : rows.length === 0 ? (
+            // "Nothing matched your filter" and "nothing is installed" are
+            // different facts about the deployment, and showing the second when
+            // the first is true is the same mistake the `loadFailed` branch
+            // above exists to avoid.
             <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-              No plugins installed — browse the catalog.
+              {filtering && allRows.length > 0
+                ? `No installed plugin matches “${query.trim()}”.`
+                : "No plugins installed — browse the catalog."}
             </p>
           ) : (
             rows.map((row) => (
@@ -176,8 +234,14 @@ export function PluginsScreen() {
             </p>
           ) : available.length === 0 ? (
             <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-              Everything discovered is already installed. The catalog is the
-              host’s plugins directory — TITAN has no remote registry.
+              {filtering && allAvailable.length > 0 ? (
+                `No catalog entry matches “${query.trim()}”.`
+              ) : (
+                <>
+                  Everything discovered is already installed. The catalog is the
+                  host’s plugins directory — TITAN has no remote registry.
+                </>
+              )}
             </p>
           ) : (
             available.map((plugin) => (
@@ -195,6 +259,7 @@ export function PluginsScreen() {
           <McpServersTab
             rows={rows.filter((row) => row.isMcp)}
             canAdmin={canAdmin}
+            filtering={filtering}
           />
         </TabsContent>
       </Tabs>

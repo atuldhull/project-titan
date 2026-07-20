@@ -77,7 +77,57 @@ export function resolveMove(
 
 /** Every status a card in `fromStatus` can be dragged to. */
 export function legalTargets(index: MoveIndex, fromStatus: string): string[] {
-  return [...(index.get(fromStatus)?.keys() ?? [])];
+  return [...(index.get(fromStatus)?.keys() ?? [])].filter(
+    (to) => to !== fromStatus,
+  );
+}
+
+/**
+ * from-status → every status THIS user may move a card there to, in column
+ * order.
+ *
+ * Keyed by from-status rather than computed for one card, because §8's "Move
+ * to…" menu has to answer for a card with no drag in progress; the board then
+ * narrows it to the dragged card's row for drop-target highlighting, so the menu
+ * and the drag cannot disagree about what is legal.
+ *
+ * Three rules, and each of them is a bug that has a shape:
+ *
+ * - **`to === from` is dropped**, exactly as `resolveMove` drops it. The index is
+ *   the raw (from, to) table, so a self-edge — an action whose `from_status` and
+ *   `to_status` are equal, which the backend's machine is free to grow — would
+ *   otherwise put a card's OWN column in its move menu (a dead item that
+ *   silently no-ops, because `attemptMove` re-resolves it to null) and light the
+ *   source column up as a legal drop target that then refuses the drop.
+ * - **Built from the index, not from `states`.** A card can sit in a status the
+ *   states list does not mention (`boardColumns` renders those as extra
+ *   columns), and such a card must still be movable.
+ * - **`order` only ORDERS.** The menu reads down the board the way the columns
+ *   do; anything the machine allows that is not a listed column is appended
+ *   rather than dropped.
+ */
+export function permittedTargets(
+  index: MoveIndex | null,
+  can: (permission: string) => boolean,
+  order: readonly string[],
+): ReadonlyMap<string, readonly string[]> {
+  const out = new Map<string, readonly string[]>();
+  if (!index) {
+    return out;
+  }
+  for (const [from, row] of index) {
+    const allowed = new Set<string>();
+    for (const [to, transition] of row) {
+      if (to !== from && can(transition.required_permission)) {
+        allowed.add(to);
+      }
+    }
+    out.set(from, [
+      ...order.filter((status) => allowed.has(status)),
+      ...[...allowed].filter((status) => !order.includes(status)),
+    ]);
+  }
+  return out;
 }
 
 /**

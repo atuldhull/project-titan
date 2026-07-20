@@ -14,6 +14,23 @@
 
 import { statusLabel } from "@/lib/kanban/workflow";
 
+/**
+ * What dnd-kit reads out when a card first receives focus (TITAN-FRT-043).
+ *
+ * dnd-kit ships a default for this and the default is WRONG on this board. It
+ * says "press space or enter to start dragging", because those are the sensor's
+ * default start codes — but §10 gives Enter a different job here (it opens the
+ * task), so the board narrows `keyboardCodes` to Space alone. Shipping the
+ * default therefore tells every screen-reader user to press a key that does the
+ * opposite of what they were told, which is worse than saying nothing: it is the
+ * instructions themselves that are the trap.
+ *
+ * It also names the menu. §8's "Move to…" fallback is useless if the only place
+ * it is announced is a button several tab stops away.
+ */
+export const BOARD_DRAG_INSTRUCTIONS =
+  "To pick up a task, press space. Use the arrow keys to choose a column, space again to drop it there, and escape to cancel. Press enter instead to open the task, or use its move menu to change column without dragging.";
+
 export interface AnnouncementContext {
   /** Title of the card being dragged. */
   readonly title: string;

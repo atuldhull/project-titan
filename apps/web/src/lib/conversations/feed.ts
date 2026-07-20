@@ -14,6 +14,13 @@ import type { MessageOut } from "@titan/api-client";
 /**
  * Whether this screen is currently covered by a modal.
  *
+ * NO LONGER USED IN PRODUCTION as of Phase 65. Its only caller was the
+ * hand-rolled `window` keydown in `conversations-screen`, which now registers
+ * with the global shortcut engine — and the engine makes this exact check
+ * itself, in `lib/shortcuts/keys.isBehindOverlay`. Kept (with its test) rather
+ * than deleted only because other screens are being migrated concurrently and a
+ * removal would race them; it is safe to delete once nothing imports it.
+ *
  * A screen-scoped shortcut on a `window` listener still hears keys aimed at an
  * open dialog, sheet or dropdown — Phase 60 shipped exactly that bug — so a
  * handler that navigates MUST first ask whether the page is really the user's
@@ -108,6 +115,57 @@ export function filterByKind(
   return kinds.size === 0
     ? [...messages]
     : messages.filter((m) => kinds.has(m.kind));
+}
+
+/**
+ * What a polite live region should say about newly-arrived messages
+ * (TITAN-FRT-043: "activity feed `aria-live="polite"`").
+ *
+ * Pure, and returning the id it consumed, for three reasons that a naive
+ * `aria-live` on the feed container gets wrong:
+ *
+ * 1. **Only ARRIVALS.** The container also changes when history is PREPENDED
+ *    (scroll-up paging) and when the kind filter is toggled — announcing either
+ *    would read a screenful of old messages aloud for an action the reader
+ *    already knows the outcome of. Anchoring on the id of the last message the
+ *    region has already spoken makes both invisible: a prepend does not change
+ *    the newest message, and a filter change that reveals nothing newer does
+ *    not either.
+ * 2. **Not the first paint.** Seeding (`lastSpokenId === null`) returns null, so
+ *    landing on a channel with 200 messages announces nothing. The caller
+ *    re-seeds on channel change for the same reason.
+ * 3. **Bursts collapse.** An agent standup lands several messages in one commit.
+ *    Announcing each would queue five utterances the reader cannot interrupt, so
+ *    the count leads and only the newest is described.
+ *
+ * Returns null when there is nothing new to say.
+ */
+export function announceArrivals(
+  messages: readonly MessageOut[],
+  lastSpokenId: string | null,
+  describe: (message: MessageOut) => string,
+): { readonly text: string; readonly lastId: string } | null {
+  const newest = messages[messages.length - 1];
+  if (!newest) {
+    return null;
+  }
+  if (lastSpokenId === null || newest.id === lastSpokenId) {
+    // Seed, or nothing newer than what was already spoken.
+    return { text: "", lastId: newest.id };
+  }
+  const previous = messages.findIndex((m) => m.id === lastSpokenId);
+  // -1 when the previously-spoken message has been filtered away or evicted.
+  // Treat that as "one arrival": the alternative, `messages.length`, would
+  // announce "203 new messages" the moment a filter chip is switched.
+  const count = previous === -1 ? 1 : messages.length - 1 - previous;
+  const summary = describe(newest);
+  return {
+    text:
+      count > 1
+        ? `${count} new messages. Latest: ${summary}`
+        : `New message: ${summary}`,
+    lastId: newest.id,
+  };
 }
 
 /**

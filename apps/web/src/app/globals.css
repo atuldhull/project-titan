@@ -3,11 +3,29 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * TITAN design tokens — EXACT values from Vol 4 §3.2 (canonical set) with
- * derived aliases for the vendored shadcn/ui primitives (ADR-FRT-02).
- * Dark is the DEFAULT theme (class strategy, <html class="dark">); light is
- * the user preference (TITAN-FRT-011). Components consume semantic tokens
- * only — raw hex/rgb values are lint-rejected (TITAN-FRT-010).
+ * TITAN design tokens — Vol 4 §3.2 (canonical set) with derived aliases for the
+ * vendored shadcn/ui primitives (ADR-FRT-02). Dark is the DEFAULT theme (class
+ * strategy, <html class="dark">); light is the user preference (TITAN-FRT-011).
+ * Components consume semantic tokens only — raw hex/rgb values are lint-rejected
+ * (TITAN-FRT-010).
+ *
+ * THREE VALUES DEVIATE FROM §3.2, and deliberately (Phase 65).
+ *
+ * §3.2 prints a palette; TITAN-FRT-012 requires both themes to meet WCAG 2.1 AA
+ * (≥ 4.5:1 for body text) with the acceptance criterion "axe-core CI run reports
+ * zero contrast violations in both themes". Three of §3.2's own status colours
+ * cannot satisfy that against §3.2's own surfaces. Measured, foreground on
+ * --background / --card:
+ *
+ *     --destructive dark  hsl(0 72% 56%)   4.45 / 4.18   FAIL
+ *     --success    light  hsl(152 60% 34%) 4.29 / 4.11   FAIL
+ *     --warning    light  hsl(35 92% 40%)  3.55 / 3.40   FAIL
+ *
+ * The requirement wins over the swatch: a MUST-level accessibility criterion
+ * with an automated gate outranks a hex value in a table, and the axe job would
+ * otherwise be permanently red on any screen showing an error, a healthy badge
+ * or a warning. Hue and saturation are preserved; only lightness moves, and only
+ * as far as it must — each new value is listed with its measured ratio below.
  */
 
 :root {
@@ -28,9 +46,13 @@
   --chart-4: hsl(280 65% 52%);
   --chart-5: hsl(0 74% 50%);
   --chart-6: hsl(199 89% 40%);
-  --destructive: hsl(0 74% 46%);
-  --success: hsl(152 60% 34%);
-  --warning: hsl(35 92% 40%);
+  --destructive: hsl(0 74% 46%); /* §3.2 as printed — 5.55 / 5.32, passes */
+  /* §3.2: hsl(152 60% 34%) = 4.29 / 4.11, fails AA. L 34 → 30: 5.28 / 5.06. */
+  --success: hsl(152 60% 30%);
+  /* §3.2: hsl(35 92% 40%) = 3.55 / 3.40, the worst of the three. L 40 → 32
+     clears the card surface with margin: 5.20 / 4.98. (L 34 reaches only 4.51
+     on --card, which is inside the rounding noise of the 4.5 threshold.) */
+  --warning: hsl(35 92% 32%);
   --border: hsl(220 12% 88%);
   --ring: hsl(212 92% 45%);
   /* §3.3: radius 8px */
@@ -63,9 +85,11 @@
   --chart-4: hsl(280 65% 68%);
   --chart-5: hsl(0 84% 65%);
   --chart-6: hsl(199 89% 58%);
-  --destructive: hsl(0 72% 56%);
-  --success: hsl(150 62% 45%);
-  --warning: hsl(38 92% 55%);
+  /* §3.2: hsl(0 72% 56%) = 4.45 / 4.18, fails AA by a hair on --background and
+     clearly on --card. L 56 → 62: 5.29 / 4.97. */
+  --destructive: hsl(0 72% 62%);
+  --success: hsl(150 62% 45%); /* §3.2 as printed — 7.57 / 7.11, passes */
+  --warning: hsl(38 92% 55%); /* §3.2 as printed — 9.56 / 8.99, passes */
   --border: hsl(224 14% 18%);
   --ring: hsl(210 100% 60%);
 
@@ -112,11 +136,53 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
   body {
     /* §3.3: 14px body default, line-height 1.5, borders over shadows */
     @apply bg-background text-foreground text-sm leading-normal antialiased;
+  }
+
+  /*
+   * §9 / TITAN-FRT-042: ONE visible focus ring, --ring at 2px with 2px offset,
+   * on everything keyboard-focusable.
+   *
+   * This is a base-layer default, so any component that wants a different
+   * treatment still overrides it — but the failure mode it fixes is the
+   * opposite one: a component that sets `focus-visible:outline-none` and then
+   * supplies nothing, which is invisible rather than merely different. The
+   * previous rule set an outline COLOR on `*` and no width or style, so it
+   * only ever tinted whatever the user agent happened to draw.
+   */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+/*
+ * TITAN-FRT-045: prefers-reduced-motion disables non-essential animation while
+ * data still updates.
+ *
+ * Deliberately a blanket rule rather than per-component `motion-safe:` variants.
+ * Animation here comes overwhelmingly from primitives nobody thinks about when
+ * adding a screen — Radix's enter/exit on every Dialog, Sheet, Popover, Select
+ * and Tooltip, plus `animate-pulse` on every Skeleton — so an opt-in convention
+ * silently regresses each time a new screen is built. The existing
+ * `motion-safe:` sites still work; this is the floor beneath them.
+ *
+ * `0.01ms` rather than `none`: animations must still RUN and fire their `end`
+ * events, because Radix drives unmount off them. `animation: none` would leave
+ * closed dialogs mounted forever.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -176,11 +242,29 @@
   background: transparent;
   padding: 0;
 }
+/*
+ * TITAN-FRT-043 ("tables as tables").
+ *
+ * This rule used to carry `display: block; overflow-x: auto` to keep a wide
+ * agent-authored table from scrolling the page body (§8). That worked visually
+ * and was a total accessibility failure: `display: block` on a <table> destroys
+ * the generated table box, so in every major browser the element stops mapping
+ * to the `table` role and its rows and cells stop mapping to `row`/`cell`. A
+ * screen reader got an undifferentiated run of text with no column headers and
+ * no grid navigation — precisely the defect this requirement names. (The
+ * `overflow-x` was not independently useful either: overflow does not apply to
+ * a `display: table` box, so it only ever took effect *because* of the
+ * `display: block` that broke the semantics.)
+ *
+ * The scroll port belongs on a WRAPPER instead — see the `table` component
+ * override in components/projects/artifact-panel.tsx, which renders the
+ * <table> inside an `overflow-x-auto` div. Any other `.prose-titan` consumer
+ * that renders Markdown tables must pass the same override.
+ */
 .prose-titan table {
   width: 100%;
+  max-width: 100%;
   border-collapse: collapse;
-  display: block;
-  overflow-x: auto;
 }
 .prose-titan th,
 .prose-titan td {

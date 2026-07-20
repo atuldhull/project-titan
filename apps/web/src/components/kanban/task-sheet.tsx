@@ -84,7 +84,46 @@ export function TaskSheet({
 
   return (
     <Sheet open={taskId !== null} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
+      {/*
+       * §8: "detail panels → bottom Sheets" from 1024 down. A right slide-over
+       * at 375 px is a full-width panel that slides in sideways and covers the
+       * board completely, with its close button in the far corner — the pattern
+       * exists because a bottom sheet keeps the reading position and puts the
+       * dismiss gesture under the thumb.
+       *
+       * Done in CSS on the content rather than by switching `side`, because
+       * `side` is a JS prop and this app has no `matchMedia` (and adding one
+       * unmocked would break the vitest suite). So the sheet stays `side="right"`
+       * — the default — and the `max-lg:` utilities re-anchor it: release the
+       * top so `inset-y-0`'s bottom:0 is the only edge that binds, cap the
+       * height, round the leading corners, move the border to the top edge, and
+       * swap the slide direction so it does not enter sideways onto a bottom
+       * edge. Those all beat their unvariant counterparts because Tailwind emits
+       * media-query variants after plain utilities.
+       *
+       * **The width is done the other way round, and must be.** The obvious
+       * `max-lg:max-w-none` does NOT work: Tailwind v4 emits `max-*` variants
+       * BEFORE `min-*` ones, so `SheetContent`'s own `sm:max-w-sm` (and any
+       * `sm:` cap we passed) lands later in the stylesheet and wins wherever
+       * both match — which is 640–1023, i.e. most of the band this whole change
+       * exists to fix. Verified against the compiled stylesheet, not assumed.
+       * So the cap is expressed as min-width steps instead: cleared at `sm` (to
+       * displace the component's own, via tailwind-merge) and re-applied at `lg`,
+       * where the sheet really is a right-hand slide-over again.
+       *
+       * The breakpoint is `lg` (1024), matching §8's table: bottom sheet at
+       * 768–1023 and below, right slide-over at 1024 and up.
+       *
+       * One caveat, found while checking the above and reported rather than
+       * worked around: the `slide-*`/`animate-*` utilities `ui/sheet.tsx` uses
+       * (and the pair added here to match them) come from `tailwindcss-animate`,
+       * which this app does not install and `globals.css` does not import — so
+       * Tailwind emits no rule for any of them and the sheet does not currently
+       * animate in from ANY direction. The classes are kept in step with the
+       * component's so that adding the plugin makes both correct at once,
+       * instead of making the bottom sheet slide in from the right.
+       */}
+      <SheetContent className="w-full overflow-y-auto sm:max-w-none lg:max-w-lg max-lg:inset-x-0 max-lg:top-auto max-lg:h-auto max-lg:max-h-[85vh] max-lg:rounded-t-xl max-lg:border-t max-lg:border-l-0 max-lg:data-[state=closed]:slide-out-to-bottom max-lg:data-[state=open]:slide-in-from-bottom">
         {task.isLoading ? (
           <div className="space-y-2 p-4">
             <Skeleton className="h-5 w-2/3" />
@@ -100,10 +139,15 @@ export function TaskSheet({
                   : "The task could not be fetched."}
               </SheetDescription>
             </SheetHeader>
+            {/* §8: ≥44 px touch targets under `md`. This was bare underlined
+                text — roughly 16 px tall — and it is the only control on a
+                sheet that has failed to load, so it is the last thing that
+                should need a precise tap. `inline-flex` because `min-h` has no
+                effect on an inline box. */}
             <button
               type="button"
               onClick={() => void task.refetch()}
-              className="mt-3 text-sm underline"
+              className="mt-3 inline-flex items-center text-sm underline max-md:min-h-11"
             >
               Retry
             </button>

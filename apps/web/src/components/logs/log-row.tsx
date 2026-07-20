@@ -20,6 +20,7 @@ import {
 import type { LogLine } from "@titan/api-client";
 
 import { cn } from "@/lib/utils";
+import { FOCUS_RING, TOUCH_TARGET_PSEUDO } from "@/components/ui/focus-ring";
 import { formatClock } from "@/lib/logs/export";
 import { highlightRanges, segment, type LogFilters } from "@/lib/logs/filters";
 
@@ -35,12 +36,12 @@ const LEVEL_STYLE: Record<
   debug: { icon: Bug, className: "text-muted-foreground", label: "DEBUG" },
   info: {
     icon: Info,
-    className: "text-sky-600 dark:text-sky-400",
+    className: "text-primary",
     label: "INFO",
   },
   warning: {
     icon: AlertTriangle,
-    className: "text-amber-600 dark:text-amber-400",
+    className: "text-warning",
     label: "WARN",
   },
   error: { icon: CircleAlert, className: "text-destructive", label: "ERROR" },
@@ -96,7 +97,17 @@ function LogRowImpl({
         <button
           type="button"
           onClick={() => onToggle(line.id)}
-          className="mt-0.5 shrink-0 rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          /* The 12px chevron IS the design — growing its painted box would
+             wreck a dense log line, and this is the most-repeated control on
+             the screen §8 names explicitly for the <768 band. So the box stays
+             and an invisible 44px hit area is projected around it instead.
+             FOCUS_RING also replaces the hand-rolled 1px ring with §9's
+             2px/2px (TITAN-FRT-042). */
+          className={cn(
+            "mt-0.5 shrink-0 rounded text-muted-foreground hover:text-foreground",
+            TOUCH_TARGET_PSEUDO,
+            FOCUS_RING,
+          )}
           aria-expanded={expanded}
           aria-label={expanded ? "Collapse line" : "Expand line"}
         >
@@ -108,51 +119,74 @@ function LogRowImpl({
           />
         </button>
 
-        <time
-          className="shrink-0 text-muted-foreground tabular-nums"
-          dateTime={line.ts_ns}
-        >
-          {formatClock(line.ts_ns)}
-        </time>
+        {/*
+         * §8: "Logs keeps virtualized list with simplified filters" — and must
+         * be legible at 375px. The old shape was one flex row of four fixed
+         * `shrink-0` columns plus the message: timestamp (12 mono chars) + level
+         * (w-16) + service (w-20) ate ~230px of a 343px content box, leaving the
+         * message a truncated sliver — the only column anyone reads.
+         *
+         * So the metadata and the message stack under md and sit side-by-side at
+         * md+. `flex-col md:flex-row` rather than wrapping the outer row: the
+         * chevron and the context button must stay on the FIRST line at every
+         * width, and `flex-wrap` cannot promise that.
+         *
+         * Height: this makes a narrow row ~2 lines instead of 1. The virtualizer
+         * does not care — `logs-screen` passes `ref={virtualizer.measureElement}`
+         * on every item, so heights are measured, not assumed, and mixed heights
+         * are already load-bearing there (a GapMarker is several lines tall and
+         * has always ridden the same path). `ROW_HEIGHT` remains the pre-measure
+         * estimate only; see its comment.
+         */}
+        <div className="flex min-w-0 flex-1 flex-col gap-x-2 md:flex-row md:items-start">
+          <div className="flex shrink-0 items-center gap-2">
+            <time
+              className="shrink-0 text-muted-foreground tabular-nums"
+              dateTime={line.ts_ns}
+            >
+              {formatClock(line.ts_ns)}
+            </time>
 
-        <span
-          className={cn(
-            "flex shrink-0 items-center gap-1 w-16",
-            style.className,
-          )}
-        >
-          <Icon className="h-3 w-3 shrink-0" aria-hidden />
-          {style.label}
-        </span>
+            <span
+              className={cn(
+                "flex w-16 shrink-0 items-center gap-1",
+                style.className,
+              )}
+            >
+              <Icon className="h-3 w-3 shrink-0" aria-hidden />
+              {style.label}
+            </span>
 
-        <span
-          className="w-20 shrink-0 truncate text-muted-foreground"
-          title={line.labels?.service}
-        >
-          {line.labels?.service ?? "—"}
-        </span>
+            <span
+              className="w-20 shrink-0 truncate text-muted-foreground"
+              title={line.labels?.service}
+            >
+              {line.labels?.service ?? "—"}
+            </span>
+          </div>
 
-        <span
-          className={cn(
-            "min-w-0 flex-1",
-            wrap ? "whitespace-pre-wrap break-all" : "truncate",
-          )}
-        >
-          {segments.map((seg, i) =>
-            seg.match ? (
-              <mark
-                key={i}
-                className="rounded-sm bg-amber-300/60 text-inherit dark:bg-amber-500/40"
-              >
-                {seg.text}
-              </mark>
-            ) : (
-              // The event text is the readable summary; the raw line is what is
-              // shown, because that is what greps and what Loki holds.
-              <span key={i}>{seg.text}</span>
-            ),
-          )}
-        </span>
+          <span
+            className={cn(
+              "min-w-0 md:flex-1",
+              wrap ? "whitespace-pre-wrap break-all" : "truncate",
+            )}
+          >
+            {segments.map((seg, i) =>
+              seg.match ? (
+                <mark
+                  key={i}
+                  className="rounded-sm bg-amber-300/60 text-inherit dark:bg-amber-500/40"
+                >
+                  {seg.text}
+                </mark>
+              ) : (
+                // The event text is the readable summary; the raw line is what
+                // is shown, because that is what greps and what Loki holds.
+                <span key={i}>{seg.text}</span>
+              ),
+            )}
+          </span>
+        </div>
 
         {(line.level === "error" || line.level === "critical") && (
           <button
@@ -160,7 +194,18 @@ function LogRowImpl({
             onClick={() => onOpenContext(line)}
             // Opacity-only reveal would make this unreachable by keyboard, so
             // focus-within brings it back and it stays in the tab order.
-            className="shrink-0 rounded px-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
+            //
+            // `opacity-0` also puts it out of reach on touch, where there is no
+            // hover at all — so under md it is simply always visible. It is one
+            // glyph; the density it costs is worth an action that would
+            // otherwise be unreachable on the band §8 cares most about.
+            className={cn(
+              "shrink-0 rounded px-1 text-muted-foreground transition-opacity hover:text-foreground focus:opacity-100 md:opacity-0 md:group-hover:opacity-100",
+              // 20x20 painted; the hit area is projected out to 44px rather
+              // than inflating a glyph in a dense mono row (§8).
+              TOUCH_TARGET_PSEUDO,
+              FOCUS_RING,
+            )}
             title="Show surrounding lines"
           >
             ⧉

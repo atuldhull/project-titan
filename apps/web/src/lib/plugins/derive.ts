@@ -133,6 +133,35 @@ export function availableFrom(
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Does this plugin match the screen's filter box (Vol 4 §10's `/` target)?
+ *
+ * Pure and here rather than inline in the component so the two things that are
+ * easy to get wrong are tested: an empty or whitespace-only query matches
+ * EVERYTHING (a filter that hides the whole list when you clear it is a bug that
+ * reads as "the catalogue is empty"), and the match is case-insensitive across
+ * all three fields a user might type — the display name, the id they saw in a
+ * manifest, and the description.
+ *
+ * Takes the fields rather than a `PluginRow`, because the Catalog tab holds
+ * `PluginOut` and the Installed tab holds `PluginRow`, and they name the id
+ * differently. One predicate over both beats two that can disagree.
+ */
+export function matchesQuery(
+  fields: {
+    readonly id: string;
+    readonly name: string;
+    readonly description?: string;
+  },
+  query: string,
+): boolean {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") return true;
+  return [fields.id, fields.name, fields.description ?? ""].some((field) =>
+    field.toLowerCase().includes(needle),
+  );
+}
+
 export interface RequestedPermission {
   readonly kind: string;
   readonly values: readonly string[];

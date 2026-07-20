@@ -14,6 +14,7 @@ import {
   enableBlockers,
   grantsNothing,
   healthOf,
+  matchesQuery,
   requestedPermissions,
   toRow,
 } from "@/lib/plugins/derive";
@@ -183,5 +184,58 @@ describe("enableBlockers", () => {
     expect(
       enableBlockers([{ name: "A", resolved: true, env_var: "X" }]),
     ).toEqual([]);
+  });
+});
+
+describe("matchesQuery", () => {
+  const slack = {
+    id: "titan.slack",
+    name: "Slack Connector",
+    description: "Posts task events into a channel.",
+  };
+
+  it("matches everything for an empty or whitespace-only query", () => {
+    // The bug this guards is the one a user actually hits: clearing the filter
+    // box must restore the list, not empty it. `"   "` is the same state as
+    // `""` — the box looks cleared and must behave cleared.
+    expect(matchesQuery(slack, "")).toBe(true);
+    expect(matchesQuery(slack, "   ")).toBe(true);
+  });
+
+  it("matches on the id, the name and the description", () => {
+    // Three fields because a user types whichever one they last saw: the id
+    // from a manifest, the display name from this screen, or a word from the
+    // description.
+    expect(matchesQuery(slack, "titan.sl")).toBe(true);
+    expect(matchesQuery(slack, "Connector")).toBe(true);
+    expect(matchesQuery(slack, "channel")).toBe(true);
+  });
+
+  it("is case-insensitive in both directions", () => {
+    // The id is deliberately NOT `titan.slack` here. With it, both assertions
+    // pass against an implementation that lowercases only the QUERY — the
+    // already-lowercase id matches and masks the missing `field.toLowerCase()`.
+    // Verified by mutation: dropping it must fail this test, and with the
+    // realistic id it did not.
+    const mixed = { id: "acme.connector", name: "Slack", description: "" };
+    expect(matchesQuery(mixed, "SLACK")).toBe(true); // upper query, mixed field
+    expect(matchesQuery({ ...mixed, name: "SLACK" }, "slack")).toBe(true); // and the reverse
+  });
+
+  it("trims the query before matching", () => {
+    // A trailing space is what a paste or an autocorrect leaves behind, and
+    // matching it literally would find nothing for no visible reason.
+    expect(matchesQuery(slack, "  slack  ")).toBe(true);
+  });
+
+  it("rejects a non-match", () => {
+    expect(matchesQuery(slack, "github")).toBe(false);
+  });
+
+  it("tolerates a missing description", () => {
+    // `PluginOut.description` is optional in the generated types; a catalogue
+    // entry without one must still be filterable rather than throwing.
+    expect(matchesQuery({ id: "a.b", name: "Thing" }, "thing")).toBe(true);
+    expect(matchesQuery({ id: "a.b", name: "Thing" }, "zzz")).toBe(false);
   });
 });

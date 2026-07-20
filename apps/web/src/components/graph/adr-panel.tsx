@@ -76,7 +76,10 @@ export function AdrPanel({
               <button
                 type="button"
                 onClick={() => setOpen(record)}
-                className="w-full rounded-md border p-2 text-left text-sm hover:bg-muted"
+                // §8: ≥44 px touch targets under `md`. This is the only way into
+                // a decision record, and at 375 px the whole panel is a stacked
+                // list of them — a 30 px row here is a row that gets mis-tapped.
+                className="w-full rounded-md border p-2 text-left text-sm hover:bg-muted max-md:min-h-11"
               >
                 <span className="flex items-center gap-1">
                   <Badge

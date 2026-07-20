@@ -51,7 +51,7 @@ const HEALTH: Record<
 > = {
   green: {
     icon: "●",
-    className: "text-emerald-600 dark:text-emerald-400",
+    className: "text-success",
     label: "healthy",
   },
   red: { icon: "✖", className: "text-destructive", label: "unhealthy" },
@@ -59,8 +59,8 @@ const HEALTH: Record<
 };
 
 const STATUS: Record<string, string> = {
-  running: "text-emerald-600 dark:text-emerald-400",
-  pending: "text-amber-600 dark:text-amber-400",
+  running: "text-success",
+  pending: "text-warning",
   failed: "text-destructive",
   stopped: "text-muted-foreground",
 };
@@ -125,7 +125,12 @@ export function DeploymentsScreen({
             return (
               <li key={d.id} className="rounded-lg border bg-card p-3">
                 <div className="flex flex-wrap items-center gap-3">
-                  <span className="font-mono text-sm font-medium">
+                  {/* §8, 375px: a stack name is server-generated and can be one
+                      long token. `min-w-0 break-all` keeps it inside the card
+                      rather than widening the flex line past the viewport —
+                      `flex-wrap` moves items to a new LINE, it does not make an
+                      unbreakable one narrower. */}
+                  <span className="min-w-0 font-mono text-sm font-medium break-all">
                     {d.name}
                   </span>
                   <span
@@ -148,7 +153,7 @@ export function DeploymentsScreen({
                       href={d.url}
                       target="_blank"
                       rel="noreferrer noopener"
-                      className="flex items-center gap-1 text-xs text-sky-600 hover:underline dark:text-sky-400"
+                      className="flex min-w-0 items-center gap-1 text-xs break-all text-primary hover:underline"
                     >
                       {d.url}
                       <ExternalLink className="h-3 w-3" aria-hidden />
@@ -172,7 +177,14 @@ export function DeploymentsScreen({
                         and the Storybook story, where they are real. */}
                     {gate.allowed ? (
                       <span
-                        className="inline-flex h-7 cursor-not-allowed items-center gap-1 rounded-md border px-2 text-xs text-muted-foreground opacity-60"
+                        /* No `opacity-60` here: --muted-foreground is already
+                           the dimmest text token, and 60 % of it measured
+                           3.1:1 against --card — a TITAN-FRT-012 failure. This
+                           is a <span>, not a disabled control, so WCAG's
+                           disabled-element exemption does not cover it. The
+                           border and the not-allowed cursor already carry the
+                           "unavailable" reading. */
+                        className="inline-flex h-7 cursor-not-allowed items-center gap-1 rounded-md border px-2 text-xs text-muted-foreground"
                         title="No teardown endpoint exists: the deploy tool runs inside an agent turn, against a DinD sidecar the API container cannot reach."
                       >
                         <RotateCcw className="h-3 w-3" aria-hidden />
@@ -182,13 +194,20 @@ export function DeploymentsScreen({
                   </div>
                 </div>
 
+                {/* §8, verified at 375px: this is a <dl> GRID, not a table, so
+                    it stacks label/value on two tracks and never needs its own
+                    scroll port. The only thing that can break it is a value with
+                    no line-break opportunity, so each `1fr` cell is explicitly
+                    allowed to shrink (`min-w-0`) or to break mid-token. */}
                 <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
                   <dt className="text-muted-foreground">services</dt>
-                  <dd className="font-mono">
+                  <dd className="min-w-0 font-mono break-all">
                     {d.services.length > 0 ? d.services.join(", ") : "—"}
                   </dd>
                   <dt className="text-muted-foreground">compose file</dt>
-                  <dd className="truncate font-mono">{d.compose_file}</dd>
+                  <dd className="min-w-0 truncate font-mono">
+                    {d.compose_file}
+                  </dd>
                   <dt className="text-muted-foreground">last change</dt>
                   <dd>{new Date(d.updated_at).toLocaleString()}</dd>
                   {d.detail ? (
@@ -196,7 +215,9 @@ export function DeploymentsScreen({
                       {/* §6.9's "rollback causes" — the nearest real thing:
                           the last status change's reason. */}
                       <dt className="text-muted-foreground">detail</dt>
-                      <dd className="text-destructive">{d.detail}</dd>
+                      <dd className="min-w-0 break-words text-destructive">
+                        {d.detail}
+                      </dd>
                     </>
                   ) : null}
                 </dl>

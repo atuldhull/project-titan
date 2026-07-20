@@ -3,13 +3,14 @@
 /**
  * The filter bar (§6.7). Every control writes to the URL; the screen owns that.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Download, Pause, Play, Search, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LEVELS, type Level, type LogFilters } from "@/lib/logs/filters";
+import { cn } from "@/lib/utils";
 
 /**
  * The Compose services that emit Titan's structured JSON. Only four of the
@@ -42,8 +43,26 @@ export interface LogFilterBarProps {
   readonly shown: number;
   readonly regexError: string | null;
   readonly disabled?: boolean;
+  /** §10's `/` target — see `usePrimarySearch` in `logs-screen`. */
+  readonly searchRef?: RefObject<HTMLInputElement | null>;
 }
 
+/**
+ * §8, under 768: "Logs keeps virtualized list with **simplified filters**".
+ *
+ * Simplified means fewer controls on screen, not fewer controls available. Four
+ * services + five levels + two text boxes + three buttons is eleven rows of
+ * wrapped chrome at 375px, above a list that is the entire point of the screen.
+ *
+ * The split below keeps what a phone actually filters with — free-text search,
+ * level, and the tail toggle — and folds away Service, the regex box and Export.
+ *
+ * Folding is conditional on the filter being EMPTY, which is the part a plain
+ * `hidden md:flex` gets wrong: `/logs?service=worker` is a shareable link, and
+ * hiding the control that set it would leave a filter the reader can see the
+ * effect of, cannot see the cause of, and cannot clear without editing the URL.
+ * An ACTIVE fold-away filter therefore stays on screen at every width.
+ */
 export function LogFilterBar({
   filters,
   onChange,
@@ -55,16 +74,28 @@ export function LogFilterBar({
   shown,
   regexError,
   disabled,
+  searchRef,
 }: LogFilterBarProps) {
+  const serviceActive = filters.services.length > 0;
+  // `regexError` counts as active: a rejected pattern is exactly when the box
+  // must be reachable, and the pattern that produced it may have come from a
+  // link rather than from typing.
+  const regexActive = Boolean(filters.regex) || regexError !== null;
+
   return (
     <div className="flex flex-wrap items-center gap-2 border-b p-2">
-      <MultiSelect
-        label="Service"
-        options={[...SERVICES]}
-        selected={filters.services}
-        onChange={(services) => onChange({ ...filters, services })}
+      <DebouncedInput
+        inputRef={searchRef}
+        value={filters.search}
+        onCommit={(search) => onChange({ ...filters, search })}
+        placeholder="Search (case-sensitive)"
+        icon
         disabled={disabled}
+        // Full width under md so it is not competing with the level chips for a
+        // 375px line; the fixed desktop width comes back at md+.
+        containerClassName="w-full md:w-44"
       />
+
       <MultiSelect
         label="Level"
         options={[...LEVELS]}
@@ -74,15 +105,16 @@ export function LogFilterBar({
         }
         disabled={disabled}
       />
-
-      <DebouncedInput
-        value={filters.search}
-        onCommit={(search) => onChange({ ...filters, search })}
-        placeholder="Search (case-sensitive)"
-        icon
+      <MultiSelect
+        label="Service"
+        options={[...SERVICES]}
+        selected={filters.services}
+        onChange={(services) => onChange({ ...filters, services })}
         disabled={disabled}
+        className={cn(!serviceActive && "hidden md:flex")}
       />
-      <div className="flex flex-col">
+
+      <div className={cn("flex flex-col", !regexActive && "hidden md:flex")}>
         <DebouncedInput
           value={filters.regex}
           onCommit={(regex) => onChange({ ...filters, regex })}
@@ -119,6 +151,8 @@ export function LogFilterBar({
           )}
           {tailing ? "Tailing" : "Paused"}
         </Button>
+        {/* Wrap survives the fold precisely BECAUSE the screen is narrow: it is
+            the control that turns a truncated line into a readable one. */}
         <Button
           type="button"
           size="sm"
@@ -133,7 +167,7 @@ export function LogFilterBar({
           size="sm"
           variant="outline"
           onClick={onExport}
-          className="gap-1"
+          className="hidden gap-1 md:inline-flex"
         >
           <Download className="h-3 w-3" aria-hidden />
           Export
@@ -149,16 +183,33 @@ function MultiSelect({
   selected,
   onChange,
   disabled,
+  className,
 }: {
   label: string;
   options: string[];
   selected: readonly string[];
   onChange: (next: string[]) => void;
   disabled?: boolean;
+  className?: string;
 }) {
   return (
-    <div className="flex items-center gap-1">
-      <span className="text-xs text-muted-foreground">{label}</span>
+    // Scrolls in its own container under md rather than wrapping (§8: "no
+    // horizontal body scroll ever; wide content scrolls in its own container").
+    // `service` in particular holds `titan-egress-gateway`, which alone is wider
+    // than half a 375px screen.
+    //
+    // `max-md:-my-1 max-md:py-1` is the focus ring's room, not spacing: an
+    // `overflow-x` that is not `visible` makes the unset `overflow-y` compute to
+    // `auto` too, and this box is exactly as tall as its 44px chips — so every
+    // chip's ring would be clipped flat top and bottom (TITAN-FRT-042). The
+    // negative margin hands the padding back so no layout moves.
+    <div
+      className={cn(
+        "-mx-1 flex max-w-full items-center gap-1 overflow-x-auto px-1 max-md:-my-1 max-md:py-1 md:mx-0 md:overflow-x-visible md:px-0",
+        className,
+      )}
+    >
+      <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
       {options.map((option) => {
         const active = selected.includes(option);
         return (
@@ -169,7 +220,11 @@ function MultiSelect({
             variant={active ? "secondary" : "ghost"}
             disabled={disabled}
             aria-pressed={active}
-            className="h-6 px-2 text-[11px]"
+            // `Button` already contributes `max-md:min-h-11` (§8), so only the
+            // WIDTH needs help: `api` is ~22px of text and `px-2` leaves it a
+            // 38px-wide target. `max-md:px-3` clears 44 without touching the
+            // dense ≥md chip.
+            className="h-6 shrink-0 px-2 text-[11px] max-md:px-3"
             onClick={() =>
               onChange(
                 active
@@ -203,6 +258,8 @@ function DebouncedInput({
   icon,
   invalid,
   disabled,
+  containerClassName,
+  inputRef,
 }: {
   value: string | null;
   onCommit: (next: string | null) => void;
@@ -210,6 +267,8 @@ function DebouncedInput({
   icon?: boolean;
   invalid?: boolean;
   disabled?: boolean;
+  containerClassName?: string;
+  inputRef?: RefObject<HTMLInputElement | null>;
 }) {
   const [draft, setDraft] = useState(value ?? "");
 
@@ -239,7 +298,7 @@ function DebouncedInput({
   }, [draft, value]);
 
   return (
-    <div className="relative">
+    <div className={cn("relative w-44", containerClassName)}>
       {icon ? (
         <Search
           className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground"
@@ -247,22 +306,32 @@ function DebouncedInput({
         />
       ) : null}
       <Input
+        ref={inputRef}
         value={draft}
         disabled={disabled}
         onChange={(e) => setDraft(e.target.value)}
         placeholder={placeholder}
         aria-label={placeholder}
         aria-invalid={invalid}
-        className={`h-7 w-44 font-mono text-xs ${icon ? "pl-7" : "pl-2"} ${
-          invalid ? "border-destructive" : ""
-        }`}
+        // Width now comes from the container, so `containerClassName` can make
+        // this full-bleed under md without a second class to keep in sync. The
+        // 44px touch height is NOT set here: `Input` already carries
+        // `TOUCH_TARGET` (`max-md:min-h-11`), which lifts this `h-7` under md
+        // on its own. Restating it would just fight tailwind-merge.
+        className={cn(
+          "h-7 w-full font-mono text-xs",
+          icon ? "pl-7" : "pl-2",
+          invalid && "border-destructive",
+        )}
       />
       {draft ? (
         <button
           type="button"
           onClick={() => setDraft("")}
           aria-label={`Clear ${placeholder}`}
-          className="absolute right-1 top-1/2 -translate-y-1/2 rounded text-muted-foreground hover:text-foreground"
+          // A raw <button>, so it gets none of the primitives' touch sizing:
+          // an 12px ✕ is a 12px tap target. Squared off to 44 under md (§8).
+          className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:text-foreground max-md:size-11"
         >
           <X className="h-3 w-3" />
         </button>

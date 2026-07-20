@@ -16,12 +16,19 @@ export default function SettingsLayout({
   readonly children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-6 p-6 lg:flex-row">
+    // `p-6` on top of the shell's own padding double-pads; the shell already
+    // pads <main>, and at 375px 48px of it is 13% of the viewport.
+    <div className="flex flex-col gap-6 lg:flex-row">
       <SettingsNav />
-      {/* min-w-0 so a wide table inside a sub-page scrolls in its OWN
+      {/* A <div>, NOT a <main>: the dashboard shell already renders the page's
+          <main> landmark, and nesting a second one gave every /settings/* route
+          two — so "skip to main content" and landmark navigation both became
+          ambiguous (TITAN-FRT-043).
+
+          min-w-0 so a wide table inside a sub-page scrolls in its OWN
           container rather than stretching the flex row and giving the page
           body a horizontal scrollbar (§8: no horizontal body scroll, ever). */}
-      <main className="min-w-0 flex-1">{children}</main>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }

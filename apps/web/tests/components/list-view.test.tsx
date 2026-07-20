@@ -107,6 +107,64 @@ describe("ListView", () => {
     );
   });
 
+  it("offers the activate action with no label supplied — TITAN-FRT-047", async () => {
+    // The regression this pins down. The row used to render its activate button
+    // only when BOTH `onActivate` and `activateLabel` were set, and the only
+    // caller passed a label while CLUSTERED. So on an ordinary (unclustered)
+    // task graph the canvas had a double-click that opened the task on the board
+    // and the list had no equivalent whatsoever — which is exactly the half of
+    // -047 that says the list exposes the same DATA AND ACTIONS, missed on the
+    // common path and satisfied only on the rare one.
+    //
+    // The label is a name for the action, never a switch for it: an action that
+    // exists is offered, and falls back to "Open" if nobody named it.
+    const user = userEvent.setup();
+    const onActivate = vi.fn();
+    render(
+      <ListView
+        model={MODEL}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onActivate={onActivate}
+        emptyLabel="none"
+      />,
+    );
+    await user.click(screen.getAllByRole("button", { name: "Open" })[1]);
+    expect(onActivate).toHaveBeenCalledWith("b");
+  });
+
+  it("names the activate action when the screen supplies a label", () => {
+    render(
+      <ListView
+        model={MODEL}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onActivate={vi.fn()}
+        activateLabel="Open on the board"
+        emptyLabel="none"
+      />,
+    );
+    expect(
+      screen.getAllByRole("button", { name: "Open on the board" }),
+    ).toHaveLength(3);
+    expect(screen.queryByRole("button", { name: "Open" })).toBeNull();
+  });
+
+  it("offers no activate button when the screen has no such action", () => {
+    // A dead "Open" that does nothing is worse than no button: it reads to a
+    // screen reader as an available action and then silently is not one.
+    render(
+      <ListView
+        model={MODEL}
+        selectedId={null}
+        onSelect={vi.fn()}
+        activateLabel="Open on the board"
+        emptyLabel="none"
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /open/i })).toBeNull();
+  });
+
   it("renders the empty state instead of a bare table", () => {
     render(
       <ListView

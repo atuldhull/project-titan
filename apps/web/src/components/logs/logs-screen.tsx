@@ -80,11 +80,27 @@ import {
   prependLines,
   type Ring,
 } from "@/lib/logs/ring";
+import { spaceOutcome } from "@/lib/logs/activation";
 import { parseFilters, writeFilters } from "@/lib/logs/url";
+import { isBehindOverlay } from "@/lib/shortcuts/keys";
+import { usePrimarySearch } from "@/lib/shortcuts/primary-search";
+import { useShortcuts } from "@/lib/shortcuts/provider";
 import { browserApi } from "@/lib/query/browser-client";
 import { unwrap } from "@titan/api-client";
 
-/** Row height for the virtualizer's estimate. Rows are a single 20px line. */
+/**
+ * The virtualizer's PRE-MEASUREMENT estimate only — one 20px line, the ≥md row.
+ *
+ * It is not the authority on row height and never was: every item below is
+ * rendered with `ref={virtualizer.measureElement}`, so real heights replace this
+ * as soon as a row is on screen. That path is already load-bearing — a
+ * `GapMarker` is several lines tall and an expanded row is taller still, and
+ * both have always ridden it — which is what makes the two-line narrow layout in
+ * `log-row` (§8, legible at 375px) safe: it is one more measured height, not a
+ * new class of problem. A width-aware estimate would need `matchMedia`, which
+ * this app deliberately does not have; the cost of not having one is a slightly
+ * jumpy scrollbar while fast-scrolling unseen rows on a phone, not overlap.
+ */
 const ROW_HEIGHT = 20;
 /** How close to the bottom still counts as "at the bottom". */
 const AT_BOTTOM_PX = 24;
@@ -107,6 +123,14 @@ export function LogsScreen() {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [context, setContext] = useState<LogLine | null>(null);
   const [tailError, setTailError] = useState<string | null>(null);
+
+  // §10: `/` focuses the screen's primary search/filter. The free-text search is
+  // the one this screen has — the regex box is a power tool and the chips are
+  // not text. Registered unconditionally, above the loading/error early returns:
+  // hooks cannot be conditional, and `usePrimarySearch` no-ops while the ref is
+  // still null, so `/` correctly falls through to the palette during load.
+  const searchRef = useRef<HTMLInputElement>(null);
+  usePrimarySearch(searchRef);
 
   const history = useLogHistory(filters);
 
@@ -321,42 +345,6 @@ export function LogsScreen() {
 
   // --- keyboard (§10: Logs — Space pauses tail, `e` next ERROR) ------------
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      // §10's own rule: shortcuts are disabled inside text inputs. Without this
-      // a space in the regex box would pause the tail instead of typing.
-      // Buttons and links belong here too, and for a stronger reason: Space and
-      // Enter ARE the native activation keys for a focused button, so a window
-      // listener that preventDefault()s Space silently breaks every button on
-      // the screen — Export, Wrap, the level chips, each gap's [load] — for
-      // anyone driving it from the keyboard.
-      if (
-        target?.closest(
-          "input, textarea, select, button, a, [contenteditable='true'], [role='button']",
-        )
-      ) {
-        return;
-      }
-      // A window listener still hears keys aimed at an open dialog. Test our
-      // OWN element against a documented contract rather than a library's
-      // internal data-attribute, which changes on upgrade.
-      if (parentRef.current?.closest('[aria-hidden="true"]')) return;
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-
-      if (event.key === " ") {
-        event.preventDefault(); // Space would otherwise page-scroll the list
-        setTailing((t) => !t);
-      } else if (event.key === "e") {
-        event.preventDefault();
-        jumpToNextError();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows]);
-
   /**
    * The last error `e` landed on, held by its line ID rather than its row
    * index.
@@ -390,6 +378,70 @@ export function LogsScreen() {
     setTailing(false); // jumping and then being yanked back to the tail is useless
     virtualizer.scrollToIndex(target, { align: "center" });
   }, [rows, virtualizer]);
+
+  // Registered with the global engine instead of a `window` listener. The engine
+  // owns text-entry suppression (a Space typed into the regex box no longer
+  // pauses the tail) and `preventDefault`, so those two checks this screen used
+  // to hand-roll are gone.
+  //
+  // Declared HERE rather than beside the other effects because the array is
+  // built during render and closes over `jumpToNextError`: reading it above its
+  // own `const` is a temporal-dead-zone throw, not a stale closure.
+  //
+  // TWO of the old guards do NOT survive the move, and both are re-made here:
+  //
+  //  - the button/link one — see `lib/logs/activation` for why the engine cannot
+  //    make it for us yet and why "do nothing" would be a worse fallback;
+  //  - the OVERLAY one. The engine's `isBehindOverlay` tests the EVENT TARGET,
+  //    which answers "is the thing the user is aiming at hidden?" — and while
+  //    the context drawer is open the answer is NO, because Radix hides the rest
+  //    of the page and puts focus inside the drawer. A screen-scoped binding
+  //    needs the other question, "is MY screen the one the user can see?", which
+  //    is this screen's own element against the same `aria-hidden` contract —
+  //    exactly what the deleted `window` listener asked. Without it `e` scrolls
+  //    the list the drawer is covering and `Space` silently toggles the tail
+  //    instead of scrolling the drawer.
+  const screenHidden = () => isBehindOverlay(parentRef.current);
+
+  useShortcuts([
+    {
+      id: "logs-pause",
+      keys: "Space",
+      label: "Pause / resume tail",
+      group: "Logs",
+      run: () => {
+        const focused = document.activeElement;
+        switch (spaceOutcome(focused)) {
+          case "activate":
+            // Replaying the click needs no overlay guard: the control is the
+            // FOCUSED one, so it belongs to whatever is on top, not to us.
+            if (focused instanceof HTMLElement) {
+              focused.click();
+            }
+            return;
+          case "ignore":
+            return;
+          default:
+            if (screenHidden()) {
+              return;
+            }
+            setTailing((t) => !t);
+        }
+      },
+    },
+    {
+      id: "logs-next-error",
+      keys: "e",
+      label: "Jump to next ERROR",
+      group: "Logs",
+      run: () => {
+        if (screenHidden()) {
+          return;
+        }
+        jumpToNextError();
+      },
+    },
+  ]);
 
   // --- gap fill ------------------------------------------------------------
 
@@ -549,10 +601,24 @@ export function LogsScreen() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col">
+    // `h-full`, not `h-[calc(100vh-4rem)]`. The old arithmetic subtracted a
+    // guess at the topbar from `100vh` — which on mobile is the LARGE viewport
+    // (the shell uses `h-dvh` precisely because `vh` ignores retracting browser
+    // chrome) and budgeted nothing for the `< 768` bottom tab bar, so the last
+    // rows of the list sat underneath it. `<main>` is already the right box and
+    // already carries the bar's clearance; `min-h-0` lets the list shrink below
+    // its content so it scrolls internally instead of scrolling the body (§8).
+    <div className="flex h-full min-h-0 flex-col">
+      {/* A filter bar over a virtualized list, with no visible title — and so,
+          until Phase 65, no heading at all. A screen with no <h1> leaves a
+          screen-reader user nothing to orient by on arrival and nothing to
+          find when navigating by heading (§9, TITAN-FRT-043). `sr-only` keeps
+          the wireframe exactly as designed. */}
+      <h1 className="sr-only">Logs</h1>
       <LogFilterBar
         filters={filters}
         onChange={setFilters}
+        searchRef={searchRef}
         tailing={tailing}
         onToggleTail={() => setTailing((t) => !t)}
         wrap={wrap}
@@ -617,7 +683,11 @@ export function LogsScreen() {
         <div
           ref={parentRef}
           onScroll={onScroll}
-          className="flex-1 overflow-auto"
+          // `min-h-0`: a flex item's default `min-height: auto` refuses to
+          // shrink below its content, so the virtualizer's multi-thousand-pixel
+          // spacer would push the container past the viewport and scroll the
+          // BODY instead of this box — §8's one absolute rule.
+          className="min-h-0 flex-1 overflow-auto"
         >
           {loadingOlder ? (
             <p

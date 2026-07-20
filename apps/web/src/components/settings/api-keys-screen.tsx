@@ -26,13 +26,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  ResponsiveTable,
+  type ResponsiveColumn,
+} from "@/components/settings/responsive-table";
 import { useZodForm } from "@/lib/forms/use-zod-form";
 import { errorMessage } from "@/lib/settings/errors";
 import {
@@ -92,6 +88,77 @@ export function ApiKeysScreen() {
       return Date.parse(b.created_at) - Date.parse(a.created_at);
     });
   }, [keys.data]);
+
+  // Declared once; `ResponsiveTable` renders it as a table at md+ and as cards
+  // below (§8). `name` is the card title because it is the only thing an
+  // operator has to recognise a key by — the prefix is the machine's handle,
+  // not the human's.
+  const columns: readonly ResponsiveColumn<ApiKeyOut>[] = [
+    {
+      key: "name",
+      header: "Name",
+      primary: true,
+      cell: (key) => <span className="font-medium">{key.name}</span>,
+    },
+    {
+      key: "prefix",
+      header: "Prefix",
+      cell: (key) => <span className="font-mono text-xs">{key.prefix}</span>,
+    },
+    {
+      key: "created",
+      header: "Created",
+      cell: (key) => (
+        <span className="text-xs text-muted-foreground">
+          {new Date(key.created_at).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: "last-used",
+      header: "Last used",
+      cell: (key) => (
+        <span className="text-xs text-muted-foreground">
+          {key.last_used_at ? (
+            new Date(key.last_used_at).toLocaleString()
+          ) : (
+            <span className="italic">never</span>
+          )}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (key) =>
+        key.revoked_at ? (
+          <Badge variant="outline">Revoked</Badge>
+        ) : (
+          <Badge variant="secondary">Active</Badge>
+        ),
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      align: "right",
+      cell: (key) =>
+        key.revoked_at ? (
+          <span className="text-xs text-muted-foreground">—</span>
+        ) : (
+          // `min-h-11` under md only: §8's 44px touch minimum. The default
+          // `size="sm"` button is 32px, which is a miss on the one control in
+          // this screen that destroys something.
+          <Button
+            size="sm"
+            variant="outline"
+            className="min-h-11 md:min-h-0"
+            onClick={() => setTarget(key)}
+          >
+            Revoke
+          </Button>
+        ),
+    },
+  ];
 
   if (keys.isLoading) {
     return (
@@ -185,66 +252,18 @@ export function ApiKeysScreen() {
               browser session.
             </p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Prefix</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Last used</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((key) => {
-                  const revoked = Boolean(key.revoked_at);
-                  return (
-                    <TableRow
-                      key={key.id}
-                      className={revoked ? "opacity-60" : undefined}
-                    >
-                      <TableCell className="font-medium">{key.name}</TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {key.prefix}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {new Date(key.created_at).toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {key.last_used_at ? (
-                          new Date(key.last_used_at).toLocaleString()
-                        ) : (
-                          <span className="italic">never</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {revoked ? (
-                          <Badge variant="outline">Revoked</Badge>
-                        ) : (
-                          <Badge variant="secondary">Active</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {revoked ? (
-                          <span className="text-xs text-muted-foreground">
-                            —
-                          </span>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setTarget(key)}
-                          >
-                            Revoke
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <ResponsiveTable
+              rows={rows}
+              rowKey={(key) => key.id}
+              columns={columns}
+              caption="Your API keys, active first"
+              // Applies to the card as well as the row: a revoked key must read
+              // as revoked in BOTH layouts, and the Status badge alone is one
+              // signal where this is two (TITAN-FRT-044 in the small).
+              rowClassName={(key) =>
+                key.revoked_at ? "opacity-60" : undefined
+              }
+            />
           )}
         </CardContent>
       </Card>

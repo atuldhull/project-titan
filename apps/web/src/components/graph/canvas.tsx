@@ -22,14 +22,24 @@
 import dynamic from "next/dynamic";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { CANVAS_FRAME_CLASS } from "@/lib/graph/canvas-frame";
+import { cn } from "@/lib/utils";
 
-/** §6.4/§6.8's loading state: a skeleton canvas that says what it is doing. */
+/**
+ * §6.4/§6.8's loading state: a skeleton canvas that says what it is doing.
+ *
+ * Its frame comes from the same constant the real canvas uses. These two swap
+ * places the instant the dynamic import resolves, so any disagreement about the
+ * box is a visible page jump at exactly that moment (§8: no layout that shifts
+ * under the reader) — the two `h-[70vh]` literals this replaces stayed equal
+ * only by nobody having touched one of them.
+ */
 export function CanvasSkeleton() {
   return (
     <div
       aria-busy="true"
       aria-label="Computing layout"
-      className="flex h-[70vh] w-full items-center justify-center rounded-lg border"
+      className={cn(CANVAS_FRAME_CLASS, "flex items-center justify-center")}
     >
       <div className="w-full max-w-md space-y-3 p-6 text-center">
         <Skeleton className="mx-auto h-3 w-32" />

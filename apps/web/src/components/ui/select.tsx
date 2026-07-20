@@ -5,6 +5,7 @@ import { Select as SelectPrimitive } from "radix-ui";
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { FOCUS_RING, TOUCH_TARGET } from "./focus-ring";
 
 function Select({
   ...props
@@ -37,10 +38,20 @@ function SelectTrigger({
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        "flex w-fit items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-sm whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none",
+        // `max-w-full`/`min-w-0` plus a truncating value: `w-fit` with
+        // `whitespace-nowrap` sizes the trigger to its LONGEST OPTION, so a
+        // select whose choices are sentences ("Pause — hold the budget and
+        // fail the turn") grew to 315px inside a 293px form and pushed the
+        // page sideways (§8). It now caps at its container and ellipsises.
+        "flex w-fit max-w-full min-w-0 items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-sm whitespace-nowrap shadow-xs transition-[color,box-shadow]",
+        "*:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:truncate",
+        // §8: both sizes (36/32 px) are under the 44 px touch minimum below md.
+        // One TOUCH_TARGET covers both — a per-size fix would miss `sm`, which
+        // is the one filter bars actually use.
         "data-[size=default]:h-9 data-[size=sm]:h-8",
+        TOUCH_TARGET,
         "data-[placeholder]:text-muted-foreground",
-        "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        FOCUS_RING,
         "disabled:cursor-not-allowed disabled:opacity-50",
         "aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40",
         "*:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2",
@@ -116,7 +127,13 @@ function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
+        // §8: a ~32 px row in an open dropdown is a touch target like any
+        // other. `outline-hidden` stays: this is a roving-focus listbox item,
+        // so the visible indicator is the `focus:bg-accent` fill Radix drives —
+        // an outline here would double up with the fill, not replace a missing
+        // one.
         "relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none",
+        TOUCH_TARGET,
         "focus:bg-accent focus:text-accent-foreground",
         "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
         "*:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",

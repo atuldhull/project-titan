@@ -63,12 +63,25 @@ function Shell({
       <div
         className={cn(
           "w-[180px] rounded-md border bg-card px-2 py-1.5 text-xs shadow-xs transition-opacity",
-          data.muted && "opacity-25",
+          // TITAN-FRT-044: dimming is an opacity change, which survives neither
+          // a grayscale audit nor a screen reader — on its own it says nothing
+          // at all. The border turns DOTTED as well (a shape difference, not a
+          // colour one, and distinct from the dashed border `ClusterNode` uses
+          // for "this is a collapsed group"), and the state is stated in words
+          // for anyone not reading pixels. `sr-only` rather than a visible glyph
+          // because when a spotlight is on, MOST nodes are muted: a badge on
+          // each of 300 boxes would bury the handful that are not.
+          data.muted && "border-dotted opacity-25",
           data.accented && "ring-2 ring-primary",
           data.selected && "border-primary",
           className,
         )}
       >
+        {data.muted ? (
+          <span className="sr-only">
+            Not connected to the current selection.
+          </span>
+        ) : null}
         {children}
       </div>
       <Handle type="source" position={Position.Right} isConnectable={false} />
@@ -87,9 +100,11 @@ export function TaskNode({ data }: NodeProps) {
         <span className="truncate font-medium">{render.label}</span>
       </div>
       <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-        <span className="font-mono">
-          {String(render.kind === "task" ? "" : "")}
-        </span>
+        {/* There was a `<span className="font-mono">{String(kind === "task" ?
+            "" : "")}</span>` here — an empty string either way, rendering an
+            empty element. Removed; the node's id has never been shown on the
+            canvas (it is a UUID, see `shortTaskId`) and the inspector bar and
+            List view both carry it. */}
         <span>{task.status.replace(/_/g, " ")}</span>
         {task.blockedBy > 0 ? (
           <Badge

@@ -4,6 +4,7 @@ import * as React from "react";
 import { Tabs as TabsPrimitive } from "radix-ui";
 
 import { cn } from "@/lib/utils";
+import { FOCUS_RING, TOUCH_TARGET } from "./focus-ring";
 
 function Tabs({
   className,
@@ -26,7 +27,13 @@ function TabsList({
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
-        "inline-flex w-fit items-center justify-center gap-1 overflow-x-auto rounded-md bg-muted p-1",
+        // `max-w-full` is what makes the neighbouring `overflow-x-auto` do
+        // anything at all. `w-fit` sizes the box to its CONTENT, so the
+        // seven-tab project-detail list simply became 601px wide inside a
+        // 343px parent and scrolled the PAGE — the overflow rule never
+        // engaged, because there was no constrained width to overflow.
+        // §8: wide content scrolls in its own container, never the body.
+        "inline-flex w-fit max-w-full items-center justify-center gap-1 overflow-x-auto rounded-md bg-muted p-1",
         className,
       )}
       {...props}
@@ -42,7 +49,12 @@ function TabsTrigger({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        "inline-flex items-center justify-center gap-1.5 rounded-sm px-3 py-1 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-xs",
+        // §8: `py-1` on 14 px text is a ~28 px trigger — the smallest touch
+        // target in the app, and project detail puts SEVEN of them in a row.
+        // Below md it becomes 44 px tall; at ≥ md the tab strip is unchanged.
+        "inline-flex items-center justify-center gap-1.5 rounded-sm px-3 py-1 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-xs",
+        TOUCH_TARGET,
+        FOCUS_RING,
         className,
       )}
       {...props}

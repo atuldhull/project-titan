@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 
+import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip,
@@ -70,7 +71,14 @@ export function KpiCard({
   );
 
   return href && state === "ready" ? (
-    <Link href={href} className="block focus-visible:outline-none">
+    // TITAN-FRT-042: this used to be `focus-visible:outline-none` with NOTHING
+    // in its place — the `hover:border-ring` on the card inside fires on hover
+    // only, so a keyboard user tabbing the Overview's four primary deep-links
+    // saw no indication whatsoever of where they were. FOCUS_RING is the §9
+    // treatment (--ring, 2 px, 2 px offset) shared with every ui/ primitive.
+    // `rounded-lg` matches the card it wraps so the outline traces the card's
+    // corners rather than cutting across them.
+    <Link href={href} className={cn("block rounded-lg", FOCUS_RING)}>
       {card}
     </Link>
   ) : (

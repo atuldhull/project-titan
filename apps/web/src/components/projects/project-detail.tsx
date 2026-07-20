@@ -123,7 +123,11 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
               </span>
             ) : null}
             <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-              <Progress value={stats.progressPct} className="w-24" />
+              <Progress
+                label="Task completion"
+                value={stats.progressPct}
+                className="w-24"
+              />
               {stats.progressPct === null ? "—" : `${stats.progressPct}%`}
             </span>
           </div>

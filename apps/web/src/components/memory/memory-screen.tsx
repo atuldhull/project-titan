@@ -21,14 +21,15 @@
  *   list is refreshed by the user, which §6.11 wanted anyway ("refresh on
  *   demand, never mutate the list under a reading user").
  */
-import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Search } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MemoryDetail } from "@/components/memory/memory-detail";
+import { usePrimarySearch } from "@/lib/shortcuts/primary-search";
 import {
   useMemoryFacets,
   useMemoryRecords,
@@ -42,6 +43,29 @@ export function MemoryScreen() {
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
+
+  // §10: `/` focuses "the screen's primary search/filter". Without this the key
+  // fell through to the palette, which searches something else entirely.
+  const searchRef = useRef<HTMLInputElement>(null);
+  usePrimarySearch(searchRef);
+
+  // Below xl, opening a record hides the results list — INCLUDING the button
+  // that was just activated, which is where focus is sitting. A focused element
+  // that becomes `display: none` does not pass focus to anything; the browser
+  // drops it to <body>, so the next Tab restarts from the top of the document
+  // and a screen reader announces nothing at all. Silent for a mouse, and a
+  // dead end for everyone else.
+  //
+  // Moving focus to "Back to results" is the fix and it needs no breakpoint
+  // test to be correct: at xl that button's wrapper is `xl:hidden`, a
+  // display:none element is not focusable, and `.focus()` on one is a no-op —
+  // so focus stays put on the result button exactly where both panes are still
+  // visible and nothing was taken away.
+  const backRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (selected === null) return;
+    backRef.current?.focus();
+  }, [selected]);
 
   const facets = useMemoryFacets();
   const tiers = buildTiers(facets.data);
@@ -60,7 +84,17 @@ export function MemoryScreen() {
   const hits = search.data?.hits ?? [];
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col">
+    /*
+     * `h-full`, not viewport arithmetic. `h-[calc(100vh-4rem)]` assumed the only
+     * chrome above this screen was a 4rem bar; the topbar is h-14 (56px) and
+     * `<main>` adds `p-4 pb-20` under md and `p-6` at md+, so the subtraction was
+     * wrong at BOTH breakpoints — it overshot by 40px at ≥md and pushed a
+     * scrollbar onto a screen that manages its own panes. `<main>` is a flex
+     * child with a definite height, so `h-full` resolves against it and is
+     * correct at every breakpoint without knowing what the shell is made of.
+     * `min-h-0` lets the panes below actually shrink and scroll themselves.
+     */
+    <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-center gap-3 border-b p-3">
         <h1 className="text-sm font-semibold">Memory Explorer</h1>
         <form
@@ -79,11 +113,12 @@ export function MemoryScreen() {
             aria-hidden
           />
           <Input
+            ref={searchRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder="semantic search: “auth token refresh”"
             aria-label="Semantic search"
-            className="h-8 pl-7 text-xs"
+            className="h-11 pl-7 text-xs md:h-8"
           />
         </form>
         {searching ? (
@@ -100,13 +135,39 @@ export function MemoryScreen() {
         ) : null}
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      {/*
+       * §8, "< 768: one panel at a time". At 375px the available width is 343px
+       * and this screen used to demand 672px of RIGID chrome (a 224px tier rail
+       * plus a 448px detail pane) before the results column got a single pixel —
+       * a ~329px overflow of the content region, which §8 forbids outright.
+       *
+       * The fix is a column below md and a row at md+, plus the panel swap on
+       * the aside below. It is all CSS: there is no `matchMedia` anywhere in
+       * this app and no jsdom mock for one, so a JS breakpoint here would break
+       * the vitest suite in exchange for something the cascade already knows.
+       */}
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <nav
-          className="w-56 shrink-0 space-y-1 border-r p-2"
+          /*
+           * Vertical rail at md+, horizontal chip strip below — deliberately NOT
+           * folded into the app hamburger: these are FILTERS over this screen,
+           * not app navigation, and burying a filter in the global nav is how a
+           * user ends up believing the memory store is empty.
+           *
+           * `gap-1` rather than `space-y-1` at both breakpoints: `space-y-*` is
+           * a vertical-margin utility and would put its gaps in the wrong axis
+           * once the strip is a row.
+           *
+           * `md:overflow-y-auto` with no `overflow-x-visible` counterpart: CSS
+           * computes `visible` back to `auto` the moment the other axis is
+           * non-visible, so the reset would be a class that reads as meaningful
+           * and does nothing.
+           */
+          className="flex shrink-0 gap-1 overflow-x-auto border-b p-2 md:w-56 md:flex-col md:overflow-y-auto md:border-r md:border-b-0"
           aria-label="Memory tiers"
         >
           {facets.isLoading ? (
-            <Skeleton className="h-24" />
+            <Skeleton className="h-11 w-full md:h-24" />
           ) : (
             tiers.map((t) => (
               <button
@@ -120,7 +181,12 @@ export function MemoryScreen() {
                   setSelected(null);
                 }}
                 className={cn(
-                  "flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs",
+                  // `shrink-0` + `whitespace-nowrap`: in the strip these are
+                  // flex ROW children, and without it every chip compresses to
+                  // fit rather than scrolling. `min-h-11` is §8's 44px touch
+                  // minimum, dropped at md+ where the rail is pointer-driven.
+                  "flex min-h-11 shrink-0 items-center justify-between gap-2 rounded px-2 text-left text-xs whitespace-nowrap",
+                  "md:min-h-0 md:w-full md:py-1",
                   tier?.id === t.id
                     ? "bg-secondary font-medium"
                     : "hover:bg-muted",
@@ -141,7 +207,14 @@ export function MemoryScreen() {
         </nav>
 
         <section
-          className="min-w-0 flex-1 overflow-auto p-2"
+          className={cn(
+            "min-w-0 flex-1 overflow-auto p-2",
+            // One panel at a time: below xl, opening a record REPLACES the
+            // results list rather than squeezing alongside it. At xl both are
+            // inline, which is §8's "two-panel screens keep both panels" with
+            // the inspector as the third thing that has to give way first.
+            selected !== null && "hidden xl:block",
+          )}
           aria-label="Results"
         >
           {searching ? (
@@ -232,9 +305,59 @@ export function MemoryScreen() {
         </section>
 
         <aside
-          className="w-[28rem] shrink-0 overflow-auto border-l"
+          className={cn(
+            "min-w-0 overflow-auto",
+            // Inline third pane only at xl. §8 puts Memory's inspector behind
+            // an overlay below 1280, and 448px of fixed detail beside a 224px
+            // rail leaves the results column unusable long before 768.
+            "xl:block xl:w-[28rem] xl:shrink-0 xl:border-l",
+            // ONE mount, whose visibility is all that changes: rendering a
+            // second copy in a Sheet would double every detail query and —
+            // worse — a Radix Sheet keeps its focus trap and body-scroll lock
+            // whatever CSS says about it, so at xl the inline pane would be
+            // visible while a trap held focus somewhere else entirely.
+            //
+            // `flex-1` is what makes this pane FILL the space the hidden
+            // results list vacated below xl — in the column layout under md and
+            // in the row layout between md and xl alike. It has to be undone at
+            // xl, though, and `xl:shrink-0` is not enough to do it: Tailwind's
+            // `flex-1` compiles to the `flex: 1` SHORTHAND, which also sets
+            // `flex-basis: 0%`, and a 0% basis with `flex-grow: 1` beats
+            // `width: 28rem` outright. The results <section> beside it is also
+            // `flex-1`, so the two would have split the row 50/50 and the fixed
+            // 448px inspector would have silently stopped being fixed. `flex:
+            // none` (0 0 auto) restores `width` as the used width.
+            selected === null ? "hidden xl:block" : "flex-1 xl:flex-none",
+          )}
           aria-label="Detail"
         >
+          {/*
+            The way back. Below xl the results list is hidden while a record is
+            open, so without this the only exit is the browser's Back button —
+            which does not undo a selection, because the selection is state, not
+            a route. Hidden at xl, where both panes are visible and there is
+            nothing to go back FROM.
+          */}
+          {selected !== null ? (
+            <div className="border-b p-2 xl:hidden">
+              {/* `min-h-11` with no `md:` escape hatch, unlike the other 44px
+                  fixes in this sweep: this control is `xl:hidden`, so the only
+                  viewports it EXISTS at are the ones §8 calls touch. Shedding
+                  the touch target at md would shrink it across 768–1279 —
+                  tablet range, thumb-driven, and the same reasoning
+                  `settings-nav.tsx` uses to hold its own minimum until lg. */}
+              <Button
+                ref={backRef}
+                size="sm"
+                variant="ghost"
+                className="min-h-11 gap-1 text-xs"
+                onClick={() => setSelected(null)}
+              >
+                <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+                Back to results
+              </Button>
+            </div>
+          ) : null}
           <MemoryDetail recordId={selected} />
         </aside>
       </div>

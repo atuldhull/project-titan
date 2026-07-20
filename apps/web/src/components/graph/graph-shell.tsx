@@ -32,6 +32,13 @@ export interface GraphShellProps<D> {
   selectedId: string | null;
   onSelect: (id: string | null, additive: boolean) => void;
   onActivate?: (id: string) => void;
+  /**
+   * Names `onActivate` for the List view (TITAN-FRT-047: the list offers the
+   * same actions, and an action a screen reader announces as "Open" needs to say
+   * open WHAT). Ignored while clustered, where the action is always "open this
+   * group" regardless of what the screen's own activate does.
+   */
+  activateLabel?: string;
   accented?: ReadonlySet<string>;
   spotlight?: ReadonlySet<string> | null;
   alsoSelected?: ReadonlySet<string>;
@@ -52,6 +59,7 @@ export function GraphShell<D>({
   selectedId,
   onSelect,
   onActivate,
+  activateLabel = "Open",
   accented,
   spotlight,
   alsoSelected,
@@ -209,12 +217,20 @@ export function GraphShell<D>({
           model={shown}
           selectedId={selectedId}
           onSelect={(id) => onSelect(id, false)}
-          // TITAN-FRT-047 says the list exposes the same ACTIONS. Past the
-          // clustering guard the canvas's action is "open this group" — without
-          // it the list would strand a keyboard user on cluster rows with no way
-          // to reach a real node.
-          onActivate={onCanvasActivate}
-          activateLabel={clustered ? "Open group" : undefined}
+          // TITAN-FRT-047 says the list exposes the same ACTIONS — every one the
+          // canvas has, not just the clustered one.
+          //
+          // Clustered, `onCanvasActivate` drills into a group, and it does that
+          // whether or not the screen supplied an `onActivate`; unclustered it
+          // is exactly the screen's own action, so if the screen has none there
+          // is nothing to offer and the button must not appear (a dead "Open"
+          // is worse than no button). Hence the condition is about whether an
+          // action EXISTS, which is what the previous `activateLabel` test got
+          // wrong — it gated the action on the clustered case alone, so the task
+          // graph's "open on the board" was reachable by double-click on the
+          // canvas and by nothing at all in the list.
+          onActivate={clustered || onActivate ? onCanvasActivate : undefined}
+          activateLabel={clustered ? "Open group" : activateLabel}
           emptyLabel={emptyLabel}
         />
       ) : shown.nodes.length === 0 ? (

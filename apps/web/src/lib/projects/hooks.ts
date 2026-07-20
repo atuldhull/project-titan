@@ -20,10 +20,13 @@ export function useProjects(
   options: {
     status?: string;
     sort?: ProjectSort;
+    /** For the shell-mounted command palette: fetch only while it is open. */
+    enabled?: boolean;
   } = {},
 ) {
-  const { status, sort = "-created_at" } = options;
+  const { status, sort = "-created_at", enabled = true } = options;
   return useQuery({
+    enabled,
     queryKey: [...queryKeys.projects(), { status: status ?? null, sort }],
     queryFn: async () =>
       unwrap(
@@ -36,6 +39,9 @@ export function useProjects(
 
 export function useProject(pid: string) {
   return useQuery({
+    // The shell's project switcher renders on every screen and passes "" when
+    // no project is in the URL; without this it would fire `GET /projects/`.
+    enabled: pid !== "",
     queryKey: queryKeys.project(pid),
     queryFn: async () =>
       unwrap(
