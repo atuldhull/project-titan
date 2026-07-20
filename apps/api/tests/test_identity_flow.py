@@ -76,13 +76,11 @@ def client(
 
 
 def _login(client: TestClient) -> dict[str, Any]:
-    response = client.post(
-        "/api/v1/auth/token",
-        json={"grant_type": "password", "email": EMAIL, "password": PASSWORD},
-    )
-    assert response.status_code == 200, response.text
-    body: dict[str, Any] = response.json()
-    return body
+    # User login is the Authorization Code + PKCE flow now (TITAN-SEC-010); the
+    # password grant is rejected. `oauth_helpers.login` drives both legs.
+    from tests.oauth_helpers import login
+
+    return login(client, EMAIL, PASSWORD)
 
 
 def test_login_me_round_trip_offline(client: TestClient) -> None:
@@ -98,10 +96,9 @@ def test_login_me_round_trip_offline(client: TestClient) -> None:
 
 
 def test_wrong_password_is_401_problem(client: TestClient) -> None:
-    response = client.post(
-        "/api/v1/auth/token",
-        json={"grant_type": "password", "email": EMAIL, "password": "wrong"},
-    )
+    from tests.oauth_helpers import authorize
+
+    response = authorize(client, EMAIL, "wrong")
     assert response.status_code == 401
     assert response.headers["content-type"].startswith("application/problem+json")
     assert response.headers.get("WWW-Authenticate") == "Bearer"
@@ -154,21 +151,44 @@ def test_logout_durably_kills_the_refresh_family(client: TestClient) -> None:
 
 def test_stale_credential_does_not_block_public_endpoints(client: TestClient) -> None:
     """A garbage/stale bearer must pass through on public paths (audit #2):
-    /healthz, /auth/token, and /auth/refresh must still work."""
+    /healthz, /oauth/authorize, /oauth/token and /auth/refresh must still work
+    with a junk Authorization header attached."""
+    from tests.oauth_helpers import make_pkce
+
     junk = {"Authorization": "Bearer not-a-real-jwt"}
     assert client.get("/healthz", headers=junk).status_code == 200
 
-    login = client.post(
-        "/api/v1/auth/token",
-        json={"grant_type": "password", "email": EMAIL, "password": PASSWORD},
+    verifier, challenge = make_pkce()
+    authz = client.post(
+        "/api/v1/oauth/authorize",
+        json={
+            "email": EMAIL,
+            "password": PASSWORD,
+            "response_type": "code",
+            "redirect_uri": "http://localhost:3000/api/auth/callback",
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+        },
         headers=junk,
     )
-    assert login.status_code == 200
+    assert authz.status_code == 200, authz.text
+
+    exchanged = client.post(
+        "/api/v1/oauth/token",
+        json={
+            "grant_type": "authorization_code",
+            "code": authz.json()["code"],
+            "code_verifier": verifier,
+            "redirect_uri": "http://localhost:3000/api/auth/callback",
+        },
+        headers=junk,
+    )
+    assert exchanged.status_code == 200
 
     # The classic footgun: a stale access token attached to the refresh call.
     rotated = client.post(
         "/api/v1/auth/refresh",
-        json={"refresh_token": login.json()["refresh_token"]},
+        json={"refresh_token": exchanged.json()["refresh_token"]},
         headers=junk,
     )
     assert rotated.status_code == 200

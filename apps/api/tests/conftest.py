@@ -106,6 +106,39 @@ def migrated_engine(schema_url: str) -> Iterator[AsyncEngine]:
 _ROLES = ("owner", "admin", "maintainer", "operator", "viewer")
 
 
+@pytest.fixture(autouse=True)
+def _reset_auth_policy(request: pytest.FixtureRequest) -> "Iterator[None]":
+    """Clear the Phase-67 GLOBAL auth policy before every schema test.
+
+    `org_security_policy` is a persistent org-wide setting, so a test that turns
+    `mfa_required` on would force-enroll every owner/admin login in a LATER test
+    on the session-scoped engine — a Phase-8 login test with no MFA awareness
+    would suddenly fail because a neighbouring OAuth test left the policy on.
+    This ran green alone and red in-suite until this reset existed (the
+    session-scoped-DB trap, again). The MFA credential tables are cleared too so
+    a reused test email can never inherit a stale enrollment.
+
+    Autouse and function-scoped, but a no-op for non-schema tests (which have no
+    database), so it never forces the engine up for a pure-unit test.
+    """
+    if request.node.get_closest_marker("schema") is None:
+        yield
+        return
+    engine = request.getfixturevalue("migrated_engine")
+
+    async def clear() -> None:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "TRUNCATE org_security_policy, mfa_recovery_codes, "
+                    "mfa_credentials RESTART IDENTITY CASCADE"
+                )
+            )
+
+    run_async(clear)
+    yield
+
+
 @lru_cache(maxsize=1)
 def _test_jwt_key_b64() -> str:
     """A stable RSA keypair for the test session so a token minted by one app

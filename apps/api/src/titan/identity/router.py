@@ -13,7 +13,15 @@ from starlette.responses import Response
 from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import Requires, RequiresAuth, mark_public
 from titan.identity import accounts, service
-from titan.identity.service import AuthenticationFailed, Principal, TokenInvalid, TokenPair
+from titan.identity.oauth_router import mount_oauth
+from titan.identity.oidc import OAuthError
+from titan.identity.service import (
+    AuthenticationFailed,
+    MfaEnrollmentRequired,
+    Principal,
+    TokenInvalid,
+    TokenPair,
+)
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -65,6 +73,19 @@ def _unauthorized(detail: str) -> ProblemException:
     )
 
 
+def _mfa_enrollment_required(detail: str) -> ProblemException:
+    """401 telling the caller a privileged account must enroll MFA before it can
+    continue (TITAN-SEC-015). Same problem type the authorize path uses for the
+    forced-enrollment case, so the BFF branches on it identically."""
+    return ProblemException(
+        status=401,
+        title="MFA required",
+        detail=detail,
+        problem_type=problem_type("mfa-enrollment-required"),
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 def current_principal(request: Request) -> Principal:
     principal: Principal | None = getattr(request.state, "principal", None)
     if principal is None:
@@ -76,16 +97,29 @@ def current_principal(request: Request) -> Principal:
 @mark_public  # pre-auth: minting tokens cannot require an existing token
 async def token(request: Request, grant: PasswordGrant | ApiKeyGrant) -> TokenPair:
     app = request.app
-    async with app.state.engine.begin() as conn:
-        try:
-            if isinstance(grant, PasswordGrant):
-                return await service.login_local(
-                    conn, app.state.keyring, grant.email, grant.password
+    if isinstance(grant, ApiKeyGrant):
+        # High-entropy service credential — not a user password. This is the one
+        # non-interactive grant the token endpoint still serves.
+        async with app.state.engine.begin() as conn:
+            try:
+                pair, _ = await service.exchange_api_key(
+                    conn, app.state.keyring, grant.api_key
                 )
-            pair, _ = await service.exchange_api_key(conn, app.state.keyring, grant.api_key)
-            return pair
-        except AuthenticationFailed as exc:
-            raise _unauthorized(str(exc)) from exc
+                return pair
+            except AuthenticationFailed as exc:
+                raise _unauthorized(str(exc)) from exc
+
+    # grant_type=password is the OAuth Resource Owner Password Credentials grant
+    # (RFC 6749 §4.3) that TITAN-SEC-010 disables. It is rejected HERE, at the
+    # endpoint, with an OAuth error — not merely unimplemented — so that a
+    # convenience password login can never be re-added without tripping this.
+    # User login goes through the first-party /oauth/authorize + PKCE flow (see
+    # oauth_router and docs/authentication-grants.md).
+    raise OAuthError(
+        "unsupported_grant_type",
+        "The password grant is disabled (TITAN-SEC-010). Use the Authorization "
+        "Code + PKCE flow at /api/v1/oauth/authorize.",
+    )
 
 
 @router.post("/refresh", response_model=TokenPair)
@@ -98,6 +132,11 @@ async def refresh(request: Request, body: RefreshRequest) -> TokenPair:
         return await service.rotate_refresh(
             app.state.engine, app.state.redis, app.state.keyring, body.refresh_token
         )
+    except MfaEnrollmentRequired as exc:
+        # A privileged account under org MFA policy cannot refresh its way past
+        # the enrollment gate (TITAN-SEC-015). Distinct problem type so the BFF
+        # sends the user to enroll rather than treating it as a dead session.
+        raise _mfa_enrollment_required(str(exc)) from exc
     except AuthenticationFailed as exc:
         raise _unauthorized(str(exc)) from exc
 
@@ -334,4 +373,5 @@ def mount(app: FastAPI) -> None:
     """Attach identity to the app: routers + keyring + auth slot strategy."""
     app.include_router(router)
     app.include_router(members_router)
+    mount_oauth(app)  # Phase 67: /oauth/* + /auth/mfa/* + the OAuthError handler
     app.state.auth_strategy = auth_strategy

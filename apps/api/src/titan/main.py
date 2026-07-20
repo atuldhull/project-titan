@@ -360,6 +360,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.rbac_strategy = None
     app.state.rate_limit_strategy = None
     app.state.keyring = KeyRing(active_settings)
+    # Phase 67: the login path resolves the client IP from `trusted_proxies`,
+    # and the throttle/MFA services read auth settings off request.app.state.
+    app.state.settings = active_settings
 
     # §9.1 middleware order, outermost first:
     #   RED metrics (observability, transparent)

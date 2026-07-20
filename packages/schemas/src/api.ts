@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/.well-known/openid-configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Openid Configuration */
+        get: operations["openid_configuration__well_known_openid_configuration_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent-definitions": {
         parameters: {
             query?: never;
@@ -153,6 +170,64 @@ export interface paths {
         /** Me */
         get: operations["me_api_v1_auth_me_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/mfa/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm
+         * @description Confirm enrollment with a code; returns the one-time recovery codes.
+         */
+        post: operations["confirm_api_v1_auth_mfa_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/mfa/enroll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enroll
+         * @description Begin TOTP enrollment for the CALLER's own account.
+         */
+        post: operations["enroll_api_v1_auth_mfa_enroll_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/mfa/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Policy */
+        get: operations["get_policy_api_v1_auth_mfa_policy_get"];
+        /** Set Policy */
+        put: operations["set_policy_api_v1_auth_mfa_policy_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1012,6 +1087,66 @@ export interface paths {
         put?: never;
         /** Mark All Read */
         post: operations["mark_all_read_api_v1_notifications_mark_all_read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Authorize
+         * @description First-party login → one-time authorization code (TITAN-SEC-010).
+         */
+        post: operations["authorize_api_v1_oauth_authorize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/jwks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Jwks
+         * @description The signing public key set (RFC 7517; TITAN-SEC-011).
+         */
+        get: operations["jwks_api_v1_oauth_jwks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Oauth Token
+         * @description Authorization-code exchange, or refresh. Every other grant is rejected.
+         */
+        post: operations["oauth_token_api_v1_oauth_token_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2963,6 +3098,49 @@ export interface components {
              */
             veto: boolean;
         };
+        /** AuthorizeRequest */
+        AuthorizeRequest: {
+            /** Code Challenge */
+            code_challenge: string;
+            /**
+             * Code Challenge Method
+             * @default S256
+             */
+            code_challenge_method: string;
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+            /** Redirect Uri */
+            redirect_uri: string;
+            /**
+             * Response Type
+             * @default code
+             */
+            response_type: string;
+            /**
+             * Scope
+             * @default user
+             */
+            scope: string;
+            /** State */
+            state?: string | null;
+            /** Totp Code */
+            totp_code?: string | null;
+        };
+        /**
+         * AuthorizeResponse
+         * @description The redirect the BFF follows, returned as JSON so the server-side BFF can
+         *     read `code`/`state` directly rather than intercepting a 302.
+         */
+        AuthorizeResponse: {
+            /** Code */
+            code: string;
+            /** Redirect Uri */
+            redirect_uri: string;
+            /** State */
+            state?: string | null;
+        };
         /** BlockerSweepResult */
         BlockerSweepResult: {
             /** Advanced */
@@ -3236,6 +3414,16 @@ export interface components {
             config?: {
                 [key: string]: unknown;
             };
+        };
+        /** ConfirmRequest */
+        ConfirmRequest: {
+            /** Code */
+            code: string;
+        };
+        /** ConfirmResponse */
+        ConfirmResponse: {
+            /** Recovery Codes */
+            recovery_codes: string[];
         };
         /** ConstitutionHistory */
         ConstitutionHistory: {
@@ -3562,6 +3750,15 @@ export interface components {
             /** Provider */
             provider: string;
             usage: components["schemas"]["Usage"];
+        };
+        /** EnrollResponse */
+        EnrollResponse: {
+            /** Provisioning Uri */
+            provisioning_uri: string;
+            /** Qr Png Data Url */
+            qr_png_data_url: string;
+            /** Secret */
+            secret: string;
         };
         /**
          * Escalation
@@ -4809,6 +5006,11 @@ export interface components {
             to_agent: string | null;
             /** Version */
             version: number;
+        };
+        /** MfaPolicy */
+        MfaPolicy: {
+            /** Mfa Required */
+            mfa_required: boolean;
         };
         /** MilestoneCreate */
         MilestoneCreate: {
@@ -6220,6 +6422,19 @@ export interface components {
              */
             type: "text";
         };
+        /** TokenExchangeRequest */
+        TokenExchangeRequest: {
+            /** Code */
+            code?: string | null;
+            /** Code Verifier */
+            code_verifier?: string | null;
+            /** Grant Type */
+            grant_type: string;
+            /** Redirect Uri */
+            redirect_uri?: string | null;
+            /** Refresh Token */
+            refresh_token?: string | null;
+        };
         /**
          * TokenPair
          * @description Delivery shape for the token endpoints. The future Next.js BFF stores
@@ -6593,6 +6808,28 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    openid_configuration__well_known_openid_configuration_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     list_agent_definitions_api_v1_agent_definitions_get: {
         parameters: {
             query?: never;
@@ -6939,6 +7176,112 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+        };
+    };
+    confirm_api_v1_auth_mfa_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfirmResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    enroll_api_v1_auth_mfa_enroll_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollResponse"];
+                };
+            };
+        };
+    };
+    get_policy_api_v1_auth_mfa_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MfaPolicy"];
+                };
+            };
+        };
+    };
+    set_policy_api_v1_auth_mfa_policy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaPolicy"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MfaPolicy"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
@@ -8211,6 +8554,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarkAllReadResult"];
+                };
+            };
+        };
+    };
+    authorize_api_v1_oauth_authorize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthorizeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    jwks_api_v1_oauth_jwks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    oauth_token_api_v1_oauth_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TokenExchangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };

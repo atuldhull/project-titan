@@ -3520,18 +3520,54 @@ Build PHASE 67 — auth hardening:
    implicit-flow attempt returns an OAuth error (TITAN-SEC-010). Production
    federation to any external OIDC IdP (Keycloak/Google/GitHub/Okta) stays a
    config-only switch behind the same interface.
-2. Argon2id for all embedded-IdP password hashes (migrate existing Phase-8
-   hashes on next login), plus login-failure throttling: per-account AND
-   per-IP exponential backoff after 5 failures, with audit events
-   (TITAN-SEC-017).
+2. Argon2id password hardening + login-failure throttling (TITAN-SEC-017).
+   CORRECTED after scouting Phase 8: Argon2id is ALREADY the implementation
+   (argon2-cffi, PHC strings in `local_credentials.password_hash`), so there
+   are no legacy hashes and "migrate existing Phase-8 hashes" is a no-op. The
+   real work underneath that clause: add `check_needs_rehash` on the verify
+   path (nothing today would ever apply a parameter bump to an existing hash),
+   catch `InvalidHashError` so a malformed hash is a 401 rather than an
+   unhandled 500, and close the user-enumeration timing oracle in
+   `login_local` — Python's `or` short-circuits before Argon2 runs, so an
+   unknown email answers in ~0 ms against ~50-100 ms for a real account.
+   Then throttling: per-account AND per-IP backoff after 5 failures, with
+   audit events.
+   BLOCKER, verified: the API cannot see the client IP AT ALL. No
+   X-Forwarded-For handling exists anywhere, the BFF builds a fresh
+   `Headers()` from a five-name allowlist carrying no IP header, and uvicorn's
+   default ProxyHeaders trust list (127.0.0.1) does not match the web
+   container's bridge address. Per-IP throttling shipped before that path
+   exists throttles every browser user as one entity. Note too that
+   `TestClient`'s peer address is a constructor argument, so a per-IP test is
+   VACUOUS until the trusted-proxy path is real.
+   There is also no general security-audit facility to emit these events to —
+   the only ledger is the project-scoped `tool_audit` (project_id NOT NULL),
+   walled off from `titan.identity` by the import-linter independence
+   contract — so this needs a new table or a service facade.
 3. TOTP MFA in the embedded IdP: enrollment (QR + recovery codes), verification
    at login, and an org security policy flag that REQUIRES MFA for Admin/Owner
    roles — enforced at the next privileged login after the policy toggles
    (TITAN-SEC-015).
-4. Verify the Phase-57 BFF flow end-to-end against this real OIDC path: PKCE
+4. Rework the Phase-57 BFF onto this OIDC path and verify it end-to-end: PKCE
    redirect → code exchange at the BFF → httpOnly, Secure, SameSite=Lax
    session cookies, tokens never in localStorage or client JS (TITAN-SEC-013,
    ADR-SEC-01).
+   CORRECTED: "verify" understated this. There is no OIDC path on EITHER side
+   to verify — zero PKCE/authorize/oidc code in `apps/web`, and the identity
+   router exposes only /token, /refresh, /me, /revoke, /api-keys, /profile,
+   /sessions. Both halves must be built first.
+   Worse, the shipped BFF login is itself a TITAN-SEC-010 VIOLATION: `POST
+   /api/auth/login` calls FastAPI with `grant_type: "password"` — the Resource
+   Owner Password Credentials grant the requirement disables. It survived
+   every gate because SEC-010's acceptance criterion is "implicit-flow attempt
+   returns error" and no implicit flow existed to attempt. `AUTH_MODE` is dead
+   config besides: declared `Literal["local","oidc"]` in settings.py and never
+   read, so setting it to `oidc` changes nothing.
+   Two BFF details that will bite the rework: the login route's
+   `sec-fetch-site` guard would REJECT a genuine cross-site OIDC callback, so
+   the callback route must not reuse it; and `sessionCookieOptions()` is wrong
+   for a PKCE verifier on both SameSite (breaks form_post) and maxAge (7 days
+   for a value that should live seconds).
 
 This EXTENDS the Phase-8 identity stack — do not build a second token issuer.
 TITAN still mints its own RS256 JWTs after the OIDC exchange, and
@@ -3539,7 +3575,25 @@ AUTH_MODE=local (direct password login for laptop-only use) is retained.
 Record the reconciliation of TITAN-SEC-010 ("password grant disabled") with
 TITAN-BCK-020 ("local password mode") as an ADR in the repo: the local mode is
 a first-party login form on the embedded IdP, not an OAuth password grant,
-which stays disabled.
+which stays disabled. DONE — `docs/authentication-grants.md`, the repo's first
+ADR (no docs/adr/ existed; it follows docs/authorization.md's shape).
+
+Two further corrections. Vol 8 specifies NO IdP endpoints at all — no
+/authorize, /token, /jwks, /userinfo, no discovery document, no route paths;
+the only route-shaped string in the volume is "GET /login" inside a §3.1 ASCII
+diagram, so route design is unconstrained rather than prescribed. And MFA
+parameters are entirely silent: no algorithm, digits, period, skew, secret
+length or otpauth URI, and recovery codes appear ONLY in this phase prompt,
+not in the spec. TITAN-SEC-015 is also the single SHOULD in the SEC-010..017
+block; everything else there is a MUST.
+
+Note that TITAN-BCK-020's own acceptance criterion — "full login round-trip
+against dockerized Keycloak in the integration suite" — is unreachable today:
+there is no keycloak service in docker-compose.yml (only a header comment
+saying it "joins the core in later phases") and the infra/keycloak realm
+directory that infra/README.md references does not exist. Federation is
+therefore proven by interface and configuration here, not against a live
+Keycloak, unless that service is stood up as part of this phase.
 
 Definition of done: an integration test round-trips the full Authorization
 Code + PKCE flow through the BFF; requests using implicit or password grant

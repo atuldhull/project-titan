@@ -82,6 +82,15 @@ PLUGIN_TABLES = {"plugins", "plugin_installs"}
 # half has been on notifications since 0003). Sparse: a row exists only
 # where a user has overridden a §7.1 default.
 PREFERENCES_TABLES = {"notification_preferences"}
+# …plus the auth-hardening tables added in Phase 67 (migration 0034): the
+# security audit ledger, TOTP MFA secret + recovery codes, and the per-org MFA
+# policy (TITAN-SEC-015/017).
+AUTH_HARDENING_TABLES = {
+    "security_events",
+    "mfa_credentials",
+    "mfa_recovery_codes",
+    "org_security_policy",
+}
 # NOTE: the Memory/KB/KG tables (Phases 33–39, migrations 0014–0018) live in the
 # ``brain`` schema, which inspect().get_table_names() does not enumerate by
 # default — so they are intentionally absent from this public-schema census.
@@ -103,6 +112,7 @@ EXPECTED_TABLES = (
     | ARTIFACTS_TABLES
     | PLUGIN_TABLES
     | PREFERENCES_TABLES
+    | AUTH_HARDENING_TABLES
 )
 
 EXPECTED_INDEXES = {

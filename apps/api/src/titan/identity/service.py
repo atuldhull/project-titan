@@ -13,6 +13,7 @@ import datetime as dt
 import hashlib
 import secrets
 import uuid
+from dataclasses import dataclass
 from typing import Literal
 
 import structlog
@@ -22,7 +23,7 @@ from sqlalchemy import insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from titan.db import uuid7
-from titan.identity import passwords, tokens
+from titan.identity import mfa, passwords, tokens
 from titan.identity.models import ApiKey, LocalCredential, RefreshToken, User
 from titan.identity.tokens import ACCESS_TTL_SECONDS, KeyRing, TokenInvalid
 
@@ -38,6 +39,14 @@ REFRESH_PREFIX = "titan_rt_"
 
 class AuthenticationFailed(Exception):
     """Bad credentials, expired/revoked/reused token — always maps to 401."""
+
+
+class MfaEnrollmentRequired(AuthenticationFailed):
+    """A privileged account under an mfa_required org must enroll before it can
+    proceed (TITAN-SEC-015). Subclasses AuthenticationFailed so every existing
+    ``except AuthenticationFailed`` on the refresh path blocks the bypass with a
+    401 by default; callers that want the nicer ``mfa-enrollment-required``
+    problem type can catch this more specific type first."""
 
 
 class Principal(BaseModel):
@@ -82,10 +91,34 @@ async def _org_roles(conn: AsyncConnection, user_id: uuid.UUID) -> list[str]:
     return sorted(row[0] for row in rows)
 
 
-async def login_local(
-    conn: AsyncConnection, keyring: KeyRing, email: str, password: str
-) -> TokenPair:
-    """AUTH_MODE=local password login (ADR-010) — fully offline."""
+@dataclass(frozen=True)
+class AuthenticatedUser:
+    """A verified-but-not-yet-minted user (Phase 67).
+
+    `Principal` models a minted/verified token (it carries a `jti`), so it is
+    the wrong carrier for the moment between "password checked" and "token
+    issued" in the OAuth flow. This is that moment: identity and roles, no jti.
+    """
+
+    user_id: uuid.UUID
+    roles: list[str]
+
+
+async def authenticate_local(
+    conn: AsyncConnection, email: str, password: str
+) -> AuthenticatedUser:
+    """Verify a local password and return the user — mint NOTHING.
+
+    The credential-check half of a login, split out in Phase 67 so the OAuth
+    Authorization Code flow can authenticate at ``/oauth/authorize`` and defer
+    token minting to the ``/oauth/token`` code exchange. `login_local` is now a
+    thin wrapper that mints on top of this.
+
+    Enumeration-resistant and rehash-aware (TITAN-SEC-017): a verify always runs
+    (against a dummy hash for an unknown email, so timing does not leak
+    existence), and a successful login with weaker-than-current parameters is
+    transparently upgraded — the one moment the plaintext is in hand.
+    """
     row = (
         await conn.execute(
             select(User.id, User.is_active, LocalCredential.password_hash)
@@ -93,18 +126,51 @@ async def login_local(
             .where(User.email == email)
         )
     ).first()
-    if (
-        row is None
-        or not row.is_active
-        or not passwords.verify_password(row.password_hash, password)
-    ):
+
+    stored_hash = row.password_hash if row is not None else passwords.DUMMY_HASH
+    password_ok = passwords.verify_password(stored_hash, password)
+    if row is None or not row.is_active or not password_ok:
         raise AuthenticationFailed("invalid credentials")
 
-    family_id = uuid7()
-    refresh = await _issue_refresh(conn, row.id, family_id)
+    if passwords.needs_rehash(stored_hash):
+        await set_local_password(conn, row.id, password)
+
     roles = await _org_roles(conn, row.id)
-    access, _ = keyring.mint(sub=str(row.id), roles=roles, scope="user", family_id=str(family_id))
-    logger.info("auth.login", user_id=str(row.id))
+    return AuthenticatedUser(user_id=row.id, roles=roles)
+
+
+async def issue_refresh_for(
+    conn: AsyncConnection, user_id: uuid.UUID
+) -> tuple[str, uuid.UUID]:
+    """A fresh refresh token in a NEW rotation family, and that family's id.
+
+    The OAuth token exchange calls this after redeeming a code, and MUST stamp
+    the returned family id into the access token's `fam` claim — otherwise
+    `revoke` (which kills the family named on the presented token) has nothing
+    to revoke, and logout would not durably kill the session. A test caught
+    exactly that regression.
+    """
+    family_id = uuid7()
+    refresh = await _issue_refresh(conn, user_id, family_id)
+    return refresh, family_id
+
+
+async def login_local(
+    conn: AsyncConnection, keyring: KeyRing, email: str, password: str
+) -> TokenPair:
+    """AUTH_MODE=local password login (ADR-010) — fully offline.
+
+    Retained for the api-key/refresh surfaces and existing callers; user login
+    proper now flows through the OAuth Authorization Code + PKCE path
+    (`oauth_router`). This mints directly on top of `authenticate_local`.
+    """
+    user = await authenticate_local(conn, email, password)
+    family_id = uuid7()
+    refresh = await _issue_refresh(conn, user.user_id, family_id)
+    access, _ = keyring.mint(
+        sub=str(user.user_id), roles=user.roles, scope="user", family_id=str(family_id)
+    )
+    logger.info("auth.login", user_id=str(user.user_id))
     return TokenPair(access_token=access, refresh_token=refresh)
 
 
@@ -149,8 +215,25 @@ async def rotate_refresh(
             reuse = result.rowcount != 1
 
         if not reuse:
-            new_refresh = await _issue_refresh(conn, row.user_id, row.family_id)
             roles = await _org_roles(conn, row.user_id)
+            # Forced-MFA also gates REFRESH (TITAN-SEC-015). Without this a
+            # privileged account that the org policy requires to enroll — but
+            # hasn't — could keep a pre-policy session alive indefinitely by
+            # rotating its refresh token, never passing the interactive
+            # enrollment gate. This is the enrollment check, NOT a per-refresh
+            # code prompt: it only fires for an owner/admin under an mfa_required
+            # org with no confirmed credential, which is one small policy lookup
+            # for everyone else. The token is left CONSUMED (rotation already
+            # happened) so the presented token cannot be retried; the account
+            # must re-login and enroll.
+            required = await mfa.mfa_required_for_login(
+                conn, row.user_id, keyring.org, roles
+            )
+            if required and not await mfa.is_mfa_enabled(conn, row.user_id):
+                raise MfaEnrollmentRequired(
+                    "MFA enrollment is required before this account can continue."
+                )
+            new_refresh = await _issue_refresh(conn, row.user_id, row.family_id)
             access, _ = keyring.mint(
                 sub=str(row.user_id), roles=roles, scope="user", family_id=str(row.family_id)
             )

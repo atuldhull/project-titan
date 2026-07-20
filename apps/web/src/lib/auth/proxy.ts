@@ -67,7 +67,59 @@ function upstreamHeaders(requestHeaders: Headers, token?: string): Headers {
   if (token) {
     headers.set("authorization", `Bearer ${token}`);
   }
+  // The client's address, APPENDED to any inbound chain (Phase 67,
+  // TITAN-SEC-017).
+  //
+  // Every browser request reaches FastAPI through this proxy, so without this
+  // the API sees THIS process's address for every user in the deployment —
+  // and per-IP login throttling keyed on that would lock out everyone at once
+  // the first time one attacker tried five bad passwords.
+  //
+  // Appended, never passed through as-is: whatever the browser sent in
+  // `x-forwarded-for` is attacker-controlled, so it is preserved for an
+  // operator's benefit but our own observation goes last. The API walks the
+  // chain right-to-left and only past hops it is configured to trust
+  // (`TITAN_TRUSTED_PROXIES`, `gateway/client_ip.py`), so a forged prefix
+  // cannot displace the address vouched for here.
+  const clientIp = observedClientIp(requestHeaders);
+  if (clientIp) {
+    const inbound = requestHeaders.get("x-forwarded-for");
+    headers.set(
+      "x-forwarded-for",
+      inbound ? `${inbound}, ${clientIp}` : clientIp,
+    );
+  }
   return headers;
+}
+
+/**
+ * This process's own view of who is calling it.
+ *
+ * Next.js does not expose the socket peer to route handlers, so the platform's
+ * forwarding headers are the only source. `x-real-ip` is preferred because it
+ * is single-valued: `x-forwarded-for` is a list whose LEFTMOST entry — the one
+ * it is tempting to read — is whatever the original client sent, which is to
+ * say whatever an attacker typed. The rightmost entry is the one the nearest
+ * proxy actually observed.
+ *
+ * Returns null when nothing fronts this process (a plain `next start` on a
+ * laptop). That is honest rather than unfortunate: no header is added, and the
+ * API falls back to the socket peer it can see for itself.
+ */
+function observedClientIp(requestHeaders: Headers): string | null {
+  const real = requestHeaders.get("x-real-ip")?.trim();
+  if (real) {
+    return real;
+  }
+  const forwarded = requestHeaders.get("x-forwarded-for");
+  if (!forwarded) {
+    return null;
+  }
+  const hops = forwarded
+    .split(",")
+    .map((hop) => hop.trim())
+    .filter(Boolean);
+  return hops.length > 0 ? (hops[hops.length - 1] ?? null) : null;
 }
 
 export async function proxyToApi(options: {

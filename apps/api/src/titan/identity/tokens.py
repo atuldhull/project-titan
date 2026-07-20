@@ -50,6 +50,62 @@ class KeyRing:
             serialization.Encoding.PEM,
             serialization.PublicFormat.SubjectPublicKeyInfo,
         )
+        # RS256 by construction (ALGORITHM); the loader only ever yields RSA, so
+        # narrow the key-type union for the JWK numbers below.
+        assert isinstance(public_key, rsa.RSAPublicKey)
+        self._public_numbers = public_key.public_numbers()
+        # RFC 7638 JWK thumbprint as the key id. Deriving it from the key
+        # material (not a random id) means the same key always presents the same
+        # `kid`, so the published JWKS and a minted token's header agree with no
+        # extra bookkeeping.
+        self._kid = self._compute_kid()
+
+    @staticmethod
+    def _b64url_uint(value: int) -> str:
+        raw = value.to_bytes((value.bit_length() + 7) // 8 or 1, "big")
+        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+    def _compute_kid(self) -> str:
+        import hashlib
+        import json
+
+        # Thumbprint over the REQUIRED members only, lexicographically ordered,
+        # no whitespace (RFC 7638 §3.2).
+        canonical = json.dumps(
+            {
+                "e": self._b64url_uint(self._public_numbers.e),
+                "kty": "RSA",
+                "n": self._b64url_uint(self._public_numbers.n),
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        digest = hashlib.sha256(canonical.encode("ascii")).digest()
+        return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+    @property
+    def kid(self) -> str:
+        return self._kid
+
+    def public_jwks(self) -> dict[str, Any]:
+        """The public key as a JWK Set (TITAN-SEC-011; OIDC discovery).
+
+        What a verifier — an external OIDC relying party, or TITAN's own WS
+        auth — fetches to check an RS256 signature. Only the public numbers are
+        exposed; the private key never leaves this object.
+        """
+        return {
+            "keys": [
+                {
+                    "kty": "RSA",
+                    "use": "sig",
+                    "alg": ALGORITHM,
+                    "kid": self._kid,
+                    "n": self._b64url_uint(self._public_numbers.n),
+                    "e": self._b64url_uint(self._public_numbers.e),
+                }
+            ]
+        }
 
     def mint(
         self,
@@ -78,7 +134,16 @@ class KeyRing:
             claims["fam"] = family_id
         if agent_id:
             claims["agent_id"] = agent_id
-        return jwt.encode(claims, self._private_pem, algorithm=ALGORITHM), jti
+        # `kid` in the header so a JWKS consumer can select the right key.
+        return (
+            jwt.encode(
+                claims,
+                self._private_pem,
+                algorithm=ALGORITHM,
+                headers={"kid": self._kid},
+            ),
+            jti,
+        )
 
     def verify(self, token: str) -> dict[str, Any]:
         """Static verification (signature + claims). Raises TokenInvalid.

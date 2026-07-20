@@ -61,9 +61,18 @@ afterEach(() => {
 });
 
 describe("POST /api/auth/login", () => {
-  it("exchanges credentials, sets httpOnly cookies, returns the session", async () => {
+  it("runs the PKCE flow, sets httpOnly cookies, returns the session", async () => {
+    // Two legs now (TITAN-SEC-010): authorize → token. The verifier the BFF
+    // generates never leaves this process, so the test only sees the code.
     stubFetch((url) => {
-      expect(url).toContain("/api/v1/auth/token");
+      if (url.includes("/api/v1/oauth/authorize")) {
+        return json({
+          redirect_uri: "titan-bff:/auth/callback",
+          code: "auth-code-1",
+          state: null,
+        });
+      }
+      expect(url).toContain("/api/v1/oauth/token");
       return json({
         access_token: validAccess(),
         refresh_token: "refresh-1",
@@ -84,6 +93,75 @@ describe("POST /api/auth/login", () => {
     expect(response.cookies.get("titan_rt")?.value).toBe("refresh-1");
     const body = (await response.json()) as { session: { sub: string } | null };
     expect(body.session?.sub).toBe("user-1");
+  });
+
+  it("forwards the client IP to the authorize leg for per-IP throttling", async () => {
+    // Without this the API keys its per-IP login throttle on the BFF's address
+    // for every user, so one attacker's failures lock out everyone
+    // (TITAN-SEC-017). The BFF must forward the client IP a trusted proxy set.
+    let seenXff = "";
+    // openapi-fetch builds a Request object, so the forwarded header rides on
+    // the input (not init) — read both to be robust to either call shape.
+    vi.stubGlobal(
+      "fetch",
+      (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const req = input instanceof Request ? input : null;
+        const url = req ? req.url : String(input);
+        const headers = new Headers(req ? req.headers : init?.headers);
+        if (url.includes("/api/v1/oauth/authorize")) {
+          seenXff = headers.get("x-forwarded-for") ?? "";
+          return Promise.resolve(
+            json({
+              redirect_uri: "titan-bff:/auth/callback",
+              code: "c",
+              state: null,
+            }),
+          );
+        }
+        return Promise.resolve(
+          json({
+            access_token: validAccess(),
+            refresh_token: "r",
+            token_type: "Bearer",
+            expires_in: 900,
+          }),
+        );
+      },
+    );
+    const request = new NextRequest("http://localhost/api/auth/login", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-forwarded-for": "203.0.113.9",
+      },
+      body: JSON.stringify({ email: "admin@titan.local", password: "pw" }),
+    });
+    const response = await loginPost(request);
+    expect(response.status).toBe(200);
+    expect(seenXff).toBe("203.0.113.9");
+  });
+
+  it("surfaces an MFA-required response from the authorize leg", async () => {
+    stubFetch((url) => {
+      expect(url).toContain("/api/v1/oauth/authorize");
+      return json(
+        {
+          type: "https://titan.dev/problems/mfa-required",
+          title: "MFA required",
+          status: 401,
+        },
+        401,
+      );
+    });
+    const request = new NextRequest("http://localhost/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "admin@titan.local", password: "pw" }),
+    });
+    const response = await loginPost(request);
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as { type?: string };
+    expect(body.type).toContain("mfa-required");
   });
 
   it("rejects a missing password with 400", async () => {

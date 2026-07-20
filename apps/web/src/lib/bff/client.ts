@@ -24,23 +24,46 @@ export interface LoginResult {
   ok: boolean;
   session: Session | null;
   error?: string;
+  /**
+   * Set when the password was correct but a second factor is needed
+   * (TITAN-SEC-015). "code" → the account has MFA and must supply a TOTP or
+   * recovery code; "enroll" → a privileged account under org policy must enroll
+   * MFA before it can sign in. The form branches on this instead of showing the
+   * generic error.
+   */
+  mfa?: "code" | "enroll";
 }
 
 export async function login(
   email: string,
   password: string,
+  totpCode?: string,
 ): Promise<LoginResult> {
-  const response = await postJson("/api/auth/login", { email, password });
+  const response = await postJson("/api/auth/login", {
+    email,
+    password,
+    ...(totpCode ? { totp_code: totpCode } : {}),
+  });
   if (!response.ok) {
     let error = "Sign in failed";
+    let type = "";
     try {
       const body = (await response.json()) as {
         detail?: string;
         title?: string;
+        type?: string;
       };
       error = body.detail ?? body.title ?? error;
+      type = body.type ?? "";
     } catch {
       // keep the default message
+    }
+    // The problem `type` URI is how the BFF passed the MFA signal through.
+    if (type.endsWith("/mfa-required")) {
+      return { ok: false, session: null, error, mfa: "code" };
+    }
+    if (type.endsWith("/mfa-enrollment-required")) {
+      return { ok: false, session: null, error, mfa: "enroll" };
     }
     return { ok: false, session: null, error };
   }

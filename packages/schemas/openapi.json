@@ -736,6 +736,107 @@
         "title": "Authority",
         "type": "object"
       },
+      "AuthorizeRequest": {
+        "properties": {
+          "code_challenge": {
+            "minLength": 1,
+            "title": "Code Challenge",
+            "type": "string"
+          },
+          "code_challenge_method": {
+            "default": "S256",
+            "title": "Code Challenge Method",
+            "type": "string"
+          },
+          "email": {
+            "maxLength": 320,
+            "minLength": 1,
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "redirect_uri": {
+            "minLength": 1,
+            "title": "Redirect Uri",
+            "type": "string"
+          },
+          "response_type": {
+            "default": "code",
+            "title": "Response Type",
+            "type": "string"
+          },
+          "scope": {
+            "default": "user",
+            "title": "Scope",
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "totp_code": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Totp Code"
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "redirect_uri",
+          "code_challenge"
+        ],
+        "title": "AuthorizeRequest",
+        "type": "object"
+      },
+      "AuthorizeResponse": {
+        "description": "The redirect the BFF follows, returned as JSON so the server-side BFF can\nread `code`/`state` directly rather than intercepting a 302.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "redirect_uri": {
+            "title": "Redirect Uri",
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          }
+        },
+        "required": [
+          "redirect_uri",
+          "code"
+        ],
+        "title": "AuthorizeResponse",
+        "type": "object"
+      },
       "BlockerSweepResult": {
         "properties": {
           "advanced": {
@@ -1433,6 +1534,37 @@
           }
         },
         "title": "ConfigIn",
+        "type": "object"
+      },
+      "ConfirmRequest": {
+        "properties": {
+          "code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "ConfirmRequest",
+        "type": "object"
+      },
+      "ConfirmResponse": {
+        "properties": {
+          "recovery_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recovery Codes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "recovery_codes"
+        ],
+        "title": "ConfirmResponse",
         "type": "object"
       },
       "ConstitutionHistory": {
@@ -2177,6 +2309,29 @@
           "latency_ms"
         ],
         "title": "EmbeddingsResponse",
+        "type": "object"
+      },
+      "EnrollResponse": {
+        "properties": {
+          "provisioning_uri": {
+            "title": "Provisioning Uri",
+            "type": "string"
+          },
+          "qr_png_data_url": {
+            "title": "Qr Png Data Url",
+            "type": "string"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret",
+          "provisioning_uri",
+          "qr_png_data_url"
+        ],
+        "title": "EnrollResponse",
         "type": "object"
       },
       "Escalation": {
@@ -5221,6 +5376,19 @@
           "version"
         ],
         "title": "MessageOut",
+        "type": "object"
+      },
+      "MfaPolicy": {
+        "properties": {
+          "mfa_required": {
+            "title": "Mfa Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mfa_required"
+        ],
+        "title": "MfaPolicy",
         "type": "object"
       },
       "MilestoneCreate": {
@@ -8695,6 +8863,63 @@
         "title": "TextPart",
         "type": "object"
       },
+      "TokenExchangeRequest": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "code_verifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Verifier"
+          },
+          "grant_type": {
+            "title": "Grant Type",
+            "type": "string"
+          },
+          "redirect_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redirect Uri"
+          },
+          "refresh_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refresh Token"
+          }
+        },
+        "required": [
+          "grant_type"
+        ],
+        "title": "TokenExchangeRequest",
+        "type": "object"
+      },
       "TokenPair": {
         "description": "Delivery shape for the token endpoints. The future Next.js BFF stores\nthese in httpOnly/Secure/SameSite=Lax cookies (TITAN-SEC-013) \u2014 browser\nJS must never see them; this JSON body is for the BFF/CLI only.",
         "properties": {
@@ -9431,6 +9656,29 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/.well-known/openid-configuration": {
+      "get": {
+        "operationId": "openid_configuration__well_known_openid_configuration_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Openid Configuration  Well Known Openid Configuration Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Openid Configuration",
+        "tags": [
+          "oauth"
+        ]
+      }
+    },
     "/api/v1/agent-definitions": {
       "get": {
         "operationId": "list_agent_definitions_api_v1_agent_definitions_get",
@@ -9935,6 +10183,130 @@
         "summary": "Me",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/mfa/confirm": {
+      "post": {
+        "description": "Confirm enrollment with a code; returns the one-time recovery codes.",
+        "operationId": "confirm_api_v1_auth_mfa_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm",
+        "tags": [
+          "mfa"
+        ]
+      }
+    },
+    "/api/v1/auth/mfa/enroll": {
+      "post": {
+        "description": "Begin TOTP enrollment for the CALLER's own account.",
+        "operationId": "enroll_api_v1_auth_mfa_enroll_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Enroll",
+        "tags": [
+          "mfa"
+        ]
+      }
+    },
+    "/api/v1/auth/mfa/policy": {
+      "get": {
+        "operationId": "get_policy_api_v1_auth_mfa_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Policy",
+        "tags": [
+          "mfa"
+        ]
+      },
+      "put": {
+        "operationId": "set_policy_api_v1_auth_mfa_policy_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaPolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Policy",
+        "tags": [
+          "mfa"
         ]
       }
     },
@@ -11991,6 +12363,114 @@
         "summary": "Mark All Read",
         "tags": [
           "messaging"
+        ]
+      }
+    },
+    "/api/v1/oauth/authorize": {
+      "post": {
+        "description": "First-party login \u2192 one-time authorization code (TITAN-SEC-010).",
+        "operationId": "authorize_api_v1_oauth_authorize_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthorizeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Authorize",
+        "tags": [
+          "oauth"
+        ]
+      }
+    },
+    "/api/v1/oauth/jwks": {
+      "get": {
+        "description": "The signing public key set (RFC 7517; TITAN-SEC-011).",
+        "operationId": "jwks_api_v1_oauth_jwks_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Jwks Api V1 Oauth Jwks Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Jwks",
+        "tags": [
+          "oauth"
+        ]
+      }
+    },
+    "/api/v1/oauth/token": {
+      "post": {
+        "description": "Authorization-code exchange, or refresh. Every other grant is rejected.",
+        "operationId": "oauth_token_api_v1_oauth_token_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Oauth Token",
+        "tags": [
+          "oauth"
         ]
       }
     },

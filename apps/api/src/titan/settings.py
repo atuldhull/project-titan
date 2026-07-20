@@ -4,6 +4,7 @@ All service configuration flows through environment variables (TITAN-BCK-026);
 the checked-in ``.env.example`` at the repo root documents them.
 """
 
+import ipaddress
 import json
 from functools import lru_cache
 from typing import Annotated, Literal
@@ -255,6 +256,18 @@ class Settings(BaseSettings):
     # Base64-encoded RSA private key PEM; empty = ephemeral dev keypair.
     jwt_private_key_b64: str = ""
 
+    # Proxies whose `X-Forwarded-For` we believe (Phase 67; TITAN-SEC-017).
+    # CIDRs or bare addresses, comma-separated or a JSON list.
+    #
+    # EMPTY IS THE SAFE DEFAULT and means "trust no forwarding header" — the
+    # socket peer is used instead. Correct for a direct-to-API deployment, and
+    # deliberately wrong-but-safe for a proxied one: per-IP throttling degrades
+    # to per-proxy (everyone shares one bucket) rather than silently honouring
+    # a header any client can forge to bypass the throttle entirely, or to
+    # forge someone else's address and get THEM throttled. Set this to the
+    # BFF's address range wherever browsers reach the API through the proxy.
+    trusted_proxies: Annotated[list[str], NoDecode] = []
+
     # CORS allowlist (§9.1; dev default per spec). Env: comma-separated or
     # JSON list in TITAN_CORS_ORIGINS. NoDecode: the validator below owns
     # parsing (pydantic-settings would otherwise demand JSON and crash on
@@ -262,7 +275,11 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
 
     @field_validator(
-        "cors_origins", "dind_preloaded_images", "sandbox_egress_git_hosts", mode="before"
+        "cors_origins",
+        "dind_preloaded_images",
+        "sandbox_egress_git_hosts",
+        "trusted_proxies",
+        mode="before",
     )
     @classmethod
     def _parse_str_list(cls, value: object) -> object:
@@ -270,6 +287,28 @@ class Settings(BaseSettings):
             if value.lstrip().startswith("["):
                 return json.loads(value)
             return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("trusted_proxies")
+    @classmethod
+    def _validate_cidrs(cls, value: list[str]) -> list[str]:
+        """Reject a malformed CIDR at startup rather than at request time.
+
+        A typo here fails OPEN in the worst way: the resolver skips entries it
+        cannot parse, so ``10.0.0.0/33`` would silently mean "this proxy is not
+        trusted", every forwarded header would be ignored, and per-IP throttling
+        would quietly collapse to per-proxy — the exact failure this setting
+        exists to prevent, arriving with no error anywhere. Refusing to boot is
+        the only reading that cannot be mistaken for working.
+        """
+        for entry in value:
+            try:
+                ipaddress.ip_network(entry, strict=False)
+            except ValueError as error:
+                raise ValueError(
+                    f"TITAN_TRUSTED_PROXIES entry {entry!r} is not a valid IP "
+                    f"address or CIDR block: {error}"
+                ) from error
         return value
 
 
