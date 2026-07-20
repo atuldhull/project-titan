@@ -257,6 +257,7 @@ export function ApiKeysScreen() {
               rowKey={(key) => key.id}
               columns={columns}
               caption="Your API keys, active first"
+              empty="No API keys yet. Create one above to call the TITAN API without a browser session."
               // Applies to the card as well as the row: a revoked key must read
               // as revoked in BOTH layouts, and the Status badge alone is one
               // signal where this is two (TITAN-FRT-044 in the small).

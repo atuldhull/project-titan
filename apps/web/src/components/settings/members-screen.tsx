@@ -231,6 +231,7 @@ export function MembersScreen() {
               rowKey={(member) => member.user_id}
               columns={columns}
               caption="Org members and their roles"
+              empty="No members. That normally means the database has not been seeded."
             />
           )}
 

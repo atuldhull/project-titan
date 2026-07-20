@@ -391,6 +391,7 @@ export function ProvidersScreen() {
             rowKey={(provider) => provider.name}
             columns={providerColumns}
             caption="Configured LLM providers and whether their key resolves"
+            empty="No providers are configured. Add one to config/models.yaml and restart the API."
           />
           <p className="mt-3 text-xs text-muted-foreground">
             To add or rotate a key, set its environment variable and restart the
@@ -415,6 +416,7 @@ export function ProvidersScreen() {
             rowKey={(alias) => alias.alias}
             columns={aliasColumns}
             caption="Model aliases and their live test result"
+            empty="No model aliases are defined. Agents resolve models by alias, so routing has nothing to point at until one exists."
           />
         </CardContent>
       </Card>

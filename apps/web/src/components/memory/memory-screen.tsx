@@ -168,6 +168,20 @@ export function MemoryScreen() {
         >
           {facets.isLoading ? (
             <Skeleton className="h-11 w-full md:h-24" />
+          ) : facets.isError ? (
+            // Without this the rail rendered every tier at "n/a" — which is the
+            // same thing it shows for a tier that genuinely holds nothing, so a
+            // failed facets fetch was indistinguishable from an empty memory.
+            // The results pane has its own error branch; this one is the rail's.
+            <p role="status" className="p-2 text-xs text-destructive">
+              Tier counts unavailable.{" "}
+              <button
+                className="underline"
+                onClick={() => void facets.refetch()}
+              >
+                Retry
+              </button>
+            </p>
           ) : (
             tiers.map((t) => (
               <button

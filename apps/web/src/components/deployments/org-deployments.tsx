@@ -15,6 +15,7 @@ import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { errorMessage } from "@/lib/settings/errors";
 import { useProjects } from "@/lib/projects/hooks";
 import { useProjectDeployments } from "@/lib/deployments/hooks";
 
@@ -40,7 +41,23 @@ export function OrgDeployments() {
         </p>
       </header>
 
-      {items.length === 0 ? (
+      {/* A failed project fetch is NOT "no projects". Until Phase 66 this
+          screen had no `isError` branch at all, so `data?.items ?? []` turned a
+          403 or a dropped connection into "No projects yet." — a failure to
+          find out, rendered as a fact about the deployment. Same defect the
+          plugins screen documents guarding against, and the reason
+          TITAN-FRT-002 names error and empty as SEPARATE required states. */}
+      {projects.isError ? (
+        <p
+          role="status"
+          className="rounded-lg border bg-card p-6 text-sm text-destructive"
+        >
+          Couldn’t load projects. {errorMessage(projects.error)}{" "}
+          <button className="underline" onClick={() => void projects.refetch()}>
+            Retry
+          </button>
+        </p>
+      ) : items.length === 0 ? (
         <p className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
           No projects yet.
         </p>

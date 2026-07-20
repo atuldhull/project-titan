@@ -196,6 +196,7 @@ export function NotificationsScreen() {
                 rowKey={(category) => category.category}
                 columns={columns}
                 caption="Which channels carry each event category"
+                empty="No notification categories are configured on this deployment, so there is nothing to route."
               />
 
               <div className="flex flex-wrap items-center gap-2">

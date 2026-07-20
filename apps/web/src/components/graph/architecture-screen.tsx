@@ -163,6 +163,18 @@ export function ArchitectureScreen({ projectId }: { projectId: string }) {
   if (current.isLoading) {
     return <CanvasSkeleton />;
   }
+  // The version LIST loading is not the same as the version's ARTIFACT loading,
+  // and until Phase 66 only the first had an error branch. When the list
+  // resolved and the selected version's body failed, `parsePackage(undefined)`
+  // returned null, `architectureModel(null)` returned zero nodes, and the
+  // populated branch rendered §6.8's empty copy — "This version has no
+  // components." A fetch that failed, presented as an architecture that is
+  // empty. Retry refetches the ARTIFACT only: reaching this branch already means
+  // the version list resolved, so the artifact is both what failed and all that
+  // needs asking for again.
+  if (current.isError) {
+    return <BoardError onRetry={() => void current.refetch()} />;
+  }
 
   const selected = selectedId
     ? model.nodes.find((n) => n.id === selectedId)

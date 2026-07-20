@@ -10,7 +10,7 @@ SCHEMAS_DIR := packages/schemas
 .PHONY: dev test test-web test-schema test-llm-live lint lint-style boundaries route-guards \
         agent-purity typecheck migrate seed generate-types check-types-drift \
         lint-openapi secret-scan eval-retrieval eval-baseline bench-memory \
-        budget-web e2e-web
+        budget-web e2e-web stories-web visual-web visual-web-update
 
 ## dev: run the API (uvicorn, reload) and the web app (next dev) together.
 ## Docker Compose is the primary dev loop from Phase 2 onward.
@@ -44,6 +44,36 @@ budget-web:
 e2e-web:
 	cd $(WEB_DIR) && npx playwright install --with-deps chromium
 	cd $(WEB_DIR) && npm run e2e
+
+# TITAN-FRT-002 clause 1: every one of the 13 §6 screens has a story for each of
+# loading / empty / error / populated. Reads the BUILT Storybook index, so a
+# story that fails to load counts as missing rather than as present.
+stories-web:
+	cd $(WEB_DIR) && npm run build-storybook
+	cd $(WEB_DIR) && npm run stories:coverage
+
+# TITAN-FRT-002 clause 2: the visual regression suite that snapshots all four
+# states — and, just as importantly, the only thing that proves those 52 stories
+# RENDER. Coverage reads an index; a story lands in it whether or not it throws.
+#
+# Runs inside the pinned Playwright image on BOTH sides of the comparison. The
+# baselines in e2e-storybook/__snapshots__ are Linux, produced by this exact
+# image, and the tolerance is zero — so a host-native run WILL differ on font
+# rasterisation and is not how this suite is invoked. `visual-web-update` is how
+# you re-record after an intended visual change; commit what it writes.
+#
+# The named volume shadows apps/web/node_modules so a Linux `npm ci` inside the
+# container cannot overwrite a developer's host install with Linux binaries.
+PLAYWRIGHT_IMAGE := mcr.microsoft.com/playwright:v1.61.1-noble
+VISUAL_DOCKER := docker run --rm -v "$(CURDIR):/work" -v titan-web-nm:/work/$(WEB_DIR)/node_modules -w /work/$(WEB_DIR) $(PLAYWRIGHT_IMAGE)
+
+visual-web:
+	cd $(WEB_DIR) && npm run build-storybook
+	$(VISUAL_DOCKER) bash -c "npm ci --no-audit --no-fund && npm run visual"
+
+visual-web-update:
+	cd $(WEB_DIR) && npm run build-storybook
+	$(VISUAL_DOCKER) bash -c "npm ci --no-audit --no-fund && npm run visual:update"
 
 # Style + formatting gates (ruff incl. ASYNC + ADR-007 banned imports, eslint, prettier)
 lint-style:

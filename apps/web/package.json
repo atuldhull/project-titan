@@ -8,8 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "format:check": "prettier --check src e2e playwright.config.ts",
-    "format": "prettier --write src e2e playwright.config.ts",
+    "format:check": "prettier --check src e2e e2e-storybook scripts .storybook playwright.config.ts playwright.storybook.config.ts",
+    "format": "prettier --write src e2e e2e-storybook scripts .storybook playwright.config.ts playwright.storybook.config.ts",
     "lint:proofs": "node scripts/assert-lint-rules-fail.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -17,7 +17,10 @@
     "e2e:report": "playwright show-report",
     "budget:org": "node scripts/check-bundle-budget.mjs",
     "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "build-storybook": "storybook build",
+    "stories:coverage": "node scripts/check-story-coverage.mjs",
+    "visual": "playwright test -c playwright.storybook.config.ts",
+    "visual:update": "playwright test -c playwright.storybook.config.ts --update-snapshots"
   },
   "dependencies": {
     "@dnd-kit/accessibility": "3.1.1",

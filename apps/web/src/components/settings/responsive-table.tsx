@@ -58,6 +58,7 @@ export function ResponsiveTable<T>({
   rowKey,
   columns,
   caption,
+  empty,
   rowClassName,
 }: {
   readonly rows: readonly T[];
@@ -69,11 +70,38 @@ export function ResponsiveTable<T>({
    * would be noise.
    */
   readonly caption: string;
+  /**
+   * What zero rows MEANS here (§6: "all empty states include a one-line
+   * explanation"). Required, and deliberately so.
+   *
+   * Both renderers used to `rows.map` straight over an empty array, so no rows
+   * produced a headers-only table at ≥768 and a bare `<ul>` below it —
+   * TITAN-FRT-002's empty state silently absent on any screen whose author
+   * forgot to guard the call site. /settings/providers had exactly that: an
+   * empty provider list rendered as column headings and nothing else.
+   *
+   * Making this REQUIRED rather than just fixing that one call site is the
+   * point. A screen that forgets its empty state now fails `tsc`, not review.
+   * Call sites that already branch on `rows.length === 0` before rendering
+   * still pass one; it is the fallback for the path they do not take.
+   */
+  readonly empty: ReactNode;
   /** Per-row styling that applies to both layouts (e.g. dimming a revoked key). */
   readonly rowClassName?: (row: T) => string | undefined;
 }) {
   const primary = columns.find((column) => column.primary);
   const secondary = columns.filter((column) => !column.primary);
+
+  if (rows.length === 0) {
+    return (
+      <p
+        role="status"
+        className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
+      >
+        {empty}
+      </p>
+    );
+  }
 
   return (
     <>

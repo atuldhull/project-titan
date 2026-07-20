@@ -43,11 +43,25 @@ const eslintConfig = [
     // `e2e/**` is the Playwright suite (Phase 65): it mints its own session and
     // reads computed styles, so it needs the same latitude. Without this entry
     // it silently inherits the app's full rule set, ad-hoc-fetch ban included.
+    // `e2e-storybook/**` is the Phase-66 visual suite; `src/lib/stories/**` is
+    // the harness that stubs `fetch` to drive a screen into one of its four
+    // states, which the app's ad-hoc-fetch ban would otherwise reject.
+    // `.storybook/**` belongs here for the same reason and no more: Phase 66
+    // turned `preview.tsx` into real JSX that mounts the harness, so it is
+    // test-harness code — but it also writes token classNames on the wrapper it
+    // puts around every story, and this block still enforces TITAN-FRT-010. It
+    // was in `ignores` until then, from when it was a config stub; leaving it
+    // there once it rendered markup exempted the one file every screen story is
+    // wrapped in from the token rule.
     files: [
       "tests/**/*.{ts,tsx}",
       "src/**/*.test.{ts,tsx}",
       "e2e/**/*.{ts,tsx}",
+      "e2e-storybook/**/*.{ts,tsx}",
+      "src/lib/stories/**/*.{ts,tsx}",
+      ".storybook/**/*.{ts,tsx}",
       "playwright.config.ts",
+      "playwright.storybook.config.ts",
     ],
     rules: {
       ...restrictedSyntax(TOKEN_SELECTORS),
@@ -65,7 +79,6 @@ const eslintConfig = [
       "build/**",
       "next-env.d.ts",
       "lint-fixtures/**",
-      ".storybook/**",
       "storybook-static/**",
       ".playwright/**",
       "playwright-report/**",

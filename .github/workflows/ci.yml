@@ -129,8 +129,12 @@ jobs:
           path: apps/web/.playwright/results
           retention-days: 7
 
-  # TITAN-FRT-005: the /org First Load JS budget (<= 300 kB gzipped) — the build
-  # fails CI when a heavy import lands on the Overview route.
+  # TITAN-FRT-005, both clauses: the /org First Load JS budget (<= 300 kB
+  # gzipped, counted in the same SI kB `next build` prints) AND the assertion
+  # that no heavy visualization is in ANY route's first load. The second clause
+  # is what catches a static import of React Flow or dagre on a route the budget
+  # never looks at — which is how dagre sat in /graph and /architecture at
+  # 30.8 kB gzipped each until Phase 66.
   web-bundle-budget:
     needs: typecheck
     runs-on: ubuntu-latest
@@ -144,6 +148,48 @@ jobs:
       - run: cd apps/web && npm ci
       - run: cd packages/api-client && npm ci
       - run: make budget-web
+
+  # TITAN-FRT-002 clause 1: four-state story coverage. A new screen cannot merge
+  # without stories for loading, empty, error and populated — deleting any one
+  # of the 52 fails this job.
+  web-story-coverage:
+    needs: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: cd apps/web && npm ci
+      - run: cd packages/api-client && npm ci
+      - run: make stories-web
+
+  # TITAN-FRT-002 clause 2: the visual regression suite over all 52 stories.
+  #
+  # Runs INSIDE the same Playwright image the baselines were recorded in, which
+  # is what makes a zero-tolerance pixel comparison possible at all — a
+  # host-rendered baseline and a runner-rendered comparison would disagree on
+  # font rasterisation and force a tolerance wide enough to hide real changes.
+  # `container:` here is the CI half of `make visual-web`; both sides pin the
+  # same digest-stable tag.
+  web-visual:
+    needs: typecheck
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright:v1.61.1-noble
+    steps:
+      - uses: actions/checkout@v4
+      - run: cd apps/web && npm ci
+      - run: cd packages/api-client && npm ci
+      - run: cd apps/web && npm run build-storybook
+      - run: cd apps/web && npm run visual
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: visual-diffs
+          path: apps/web/.playwright/storybook-results
+          retention-days: 7
 
   # TITAN-BRN-011: the retrieval quality gate — seeds the versioned golden
   # dataset, reports recall@10 + nDCG@10 in all three reranker modes, and
