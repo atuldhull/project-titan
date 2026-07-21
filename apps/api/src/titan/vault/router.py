@@ -18,14 +18,17 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
+import structlog
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from pydantic import BaseModel, Field, SecretStr
 
 from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import Requires, RequiresAuth
 from titan.identity.service import Principal
-from titan.vault import service
+from titan.vault import inventory, service
 from titan.vault.provider import DEFAULT_ROTATION_DAYS, SecretMetadata, SecretScope, SecretsStore
+
+logger = structlog.get_logger("titan.vault.router")
 
 router = APIRouter(prefix="/api/v1", tags=["secrets"])
 
@@ -101,6 +104,21 @@ def _owner_id(principal: Principal) -> uuid.UUID | None:
         return None
 
 
+async def _refresh_redactor(request: Request) -> None:
+    """Refresh the redaction inventory inline after a vault write (SEC-054):
+    a just-created value should be redactable immediately in THIS process, not
+    after the next maintenance tick. Best-effort — the periodic loop is the
+    backstop, so a refresh hiccup must not fail a successful write."""
+    try:
+        await inventory.refresh_default_engine(
+            request.app.state.engine,
+            request.app.state.vault_provider,
+            getattr(request.app.state, "vault_store", None),
+        )
+    except Exception:
+        logger.warning("redaction.inline_refresh_failed", exc_info=True)
+
+
 @router.post("/secrets", response_model=SecretMetadataOut, status_code=201)
 async def create_secret(
     request: Request, principal: _ManageSecret, body: CreateSecretIn
@@ -137,6 +155,7 @@ async def create_secret(
                 detail=f"A secret named {body.name!r} already exists; rotate it instead.",
                 problem_type=problem_type("secret-exists"),
             ) from exc
+    await _refresh_redactor(request)
     return SecretMetadataOut.of(meta, now=now)
 
 
@@ -161,6 +180,7 @@ async def rotate_secret(
             raise _not_found(name) from exc
         except service.SecretNotFound as exc:
             raise _not_found(name) from exc
+    await _refresh_redactor(request)
     return SecretMetadataOut.of(meta, now=now)
 
 
@@ -175,6 +195,7 @@ async def delete_secret(request: Request, principal: _ManageSecret, name: str) -
             raise _not_found(name) from exc
         except service.SecretNotFound as exc:
             raise _not_found(name) from exc
+    await _refresh_redactor(request)
     return Response(status_code=204)
 
 

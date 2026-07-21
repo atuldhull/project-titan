@@ -15,6 +15,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from titan.redaction import is_secret_path
 from titan.tools.constraints import workspace_path
 from titan.tools.errors import ToolError
 from titan.tools.registry import ExecutionOutcome, ToolExecutionContext, ToolSpec
@@ -31,6 +32,17 @@ def _require_workspace(ctx: ToolExecutionContext) -> Workspace:
     if ctx.workspace is None:
         raise ToolError("TOOL_UNAVAILABLE", "no workspace is provisioned for this task")
     return ctx.workspace
+
+
+def _deny_secret_file(rel: str) -> ToolError:
+    # READS are blocked, writes are not: generated apps legitimately WRITE
+    # .env files (Vol 8 §6.1 class 3), but their content must never come back
+    # into agent context through this tool family (TITAN-SEC-055).
+    return ToolError(
+        "PERMISSION_DENIED",
+        f"'{rel}' matches a secret-bearing file pattern and is excluded from "
+        "context assembly (TITAN-SEC-055)",
+    )
 
 
 def _workspace_size(root: Path) -> int:
@@ -55,6 +67,8 @@ async def _read(args: dict[str, Any], ctx: ToolExecutionContext) -> ExecutionOut
     target = ws.resolve(args["path"], must_exist=True)
     if target.is_dir():
         raise ToolError("SCHEMA_INVALID", f"at '/path': {args['path']} is a directory")
+    if is_secret_path(ws.relative(target)):
+        raise _deny_secret_file(ws.relative(target))
     data = target.read_bytes()
     truncated = len(data) > _MAX_READ_BYTES
     text = data[:_MAX_READ_BYTES].decode("utf-8", "replace")
@@ -92,6 +106,8 @@ async def _list(args: dict[str, Any], ctx: ToolExecutionContext) -> ExecutionOut
         raise ToolError("SCHEMA_INVALID", f"at '/path': {args.get('path', '.')} is not a directory")
     entries: list[dict[str, Any]] = []
     for child in sorted(target.iterdir(), key=lambda p: p.name):
+        if is_secret_path(ws.relative(child)):
+            continue  # never surfaces in listings (TITAN-SEC-055)
         kind = "dir" if child.is_dir() else ("symlink" if child.is_symlink() else "file")
         size = child.stat().st_size if kind == "file" else None
         entries.append({"name": child.name, "type": kind, "size": size})
@@ -111,6 +127,8 @@ async def _glob(args: dict[str, Any], ctx: ToolExecutionContext) -> ExecutionOut
             resolved = ws.resolve(match.relative_to(ws.root).as_posix())
         except ToolError:
             continue  # a symlinked match pointing outside — skip it
+        if is_secret_path(ws.relative(resolved)):
+            continue  # never surfaces in listings (TITAN-SEC-055)
         if resolved.exists():
             matches.append(ws.relative(resolved))
         if len(matches) >= _MAX_LIST_ENTRIES:
@@ -135,6 +153,8 @@ async def _grep(args: dict[str, Any], ctx: ToolExecutionContext) -> ExecutionOut
             ws.resolve(fp.relative_to(ws.root).as_posix(), must_exist=True)
         except ToolError:
             continue
+        if is_secret_path(ws.relative(fp)):
+            continue  # content never reaches match lines (TITAN-SEC-055)
         try:
             text = fp.read_text("utf-8", "replace")
         except OSError:

@@ -504,7 +504,8 @@ def test_artifact_paths_pass_through_the_redactor(
     result = _invoke(bus, _call(caller, "test.artifact_leak", {"text": "x"}), caller)
     assert result.status == "ok"
     assert "sk-" not in result.artifacts[0].path
-    assert "[REDACTED]" in result.artifacts[0].path
+    # Phase 69: value shapes carry the SEC-054 marker grammar [REDACTED:<class>:<hash8>].
+    assert "[REDACTED:" in result.artifacts[0].path
 
 
 def test_pre_dispatch_crash_is_audited_not_raised(
@@ -588,7 +589,8 @@ def test_result_redacted_before_return(
     result = _invoke(bus, _call(caller, "test.leaky", {"text": "x"}), caller)
     assert result.status == "ok"
     assert "sk-" not in result.result["note"]
-    assert "[REDACTED]" in result.result["note"]
+    # Phase 69: value shapes carry the SEC-054 marker grammar [REDACTED:<class>:<hash8>].
+    assert "[REDACTED:" in result.result["note"]
 
 
 # --- immutability + hash chain (TITAN-INT-023/024) -----------------------------

@@ -31,6 +31,8 @@ from titan.observability.logging import configure_logging
 from titan.orchestrator import service as orchestrator
 from titan.planning import service as planning
 from titan.realtime import service as realtime
+from titan.redaction import RedactionReporter
+from titan.redaction import runtime as redaction_runtime
 from titan.runs.coordinator import (
     run_execute_reaper,
     run_executor_loop,
@@ -44,6 +46,7 @@ from titan.runtime.service import build_runtime
 from titan.settings import get_settings
 from titan.vault import alerts as vault_alerts
 from titan.vault import bootstrap as vault_bootstrap
+from titan.vault import inventory as vault_inventory
 from titan.vault import service as vault_service
 
 logger = structlog.get_logger("titan.worker")
@@ -170,6 +173,14 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
     # (with the SAME key the API publishes with) is what actually enforces it.
     signer = vault_bootstrap.build_envelope_signer(settings)
 
+    # Phase 69 (SEC-054): the worker runs its own inventory refresh + audit
+    # flush — its global engine redacts every log line, tool envelope, and
+    # gateway call made from THIS process, and until Phase 69 the worker held
+    # no secret backend at all.
+    vault_store, vault_provider = vault_bootstrap.build_secret_backend(settings)
+    redaction_reporter = RedactionReporter()
+    redaction_runtime.default_engine().set_reporter(redaction_reporter.record)
+
     async def _audit_invalid_envelope(rejection: events.InvalidEnvelope) -> None:
         await vault_service.record_envelope_rejection(
             engine,
@@ -269,6 +280,16 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
         asyncio.create_task(run_blocker_sweeper(engine, stop=stop)),
         asyncio.create_task(run_artifact_reconciler(engine, stop=stop)),
         asyncio.create_task(run_secret_expiry_monitor(engine, stop=stop)),
+        asyncio.create_task(
+            vault_inventory.run_redaction_maintenance(
+                engine,
+                vault_provider,
+                vault_store,
+                redaction_reporter,
+                service="titan-worker",
+                stop=stop,
+            )
+        ),
     ]
     try:
         # return_exceptions: a loop that somehow escapes its own guard cannot

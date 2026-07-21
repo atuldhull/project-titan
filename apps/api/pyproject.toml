@@ -236,6 +236,7 @@ source_modules = [
     "titan.events",
     "titan.observability",
     "titan.vault",
+    "titan.redaction",
 ]
 forbidden_modules = ["anthropic", "openai", "google", "ollama"]
 
@@ -288,9 +289,55 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+# Phase 69: the redaction engine runs INSIDE the logging pipeline of every
+# process, below everything that logs. Any titan or framework import here
+# could recurse through the log path (module X logs → processor imports X)
+# and would break the leaf status titan.observability depends on. Unlike
+# titan.vault (a leaf by convention only), this one is enforced.
+name = "The redaction engine is a strict leaf: stdlib only (TITAN-SEC-054, Phase 69)"
+type = "forbidden"
+source_modules = ["titan.redaction"]
+forbidden_modules = [
+    "titan.main",
+    "titan.worker",
+    "titan.cli",
+    "titan.settings",
+    "titan.clients",
+    "titan.db",
+    "titan.schema",
+    "titan.gateway",
+    "titan.identity",
+    "titan.projects",
+    "titan.orchestrator",
+    "titan.agents",
+    "titan.runs",
+    "titan.messaging",
+    "titan.memory",
+    "titan.plugins",
+    "titan.llm",
+    "titan.tools",
+    "titan.realtime",
+    "titan.intake",
+    "titan.runtime",
+    "titan.events",
+    "titan.observability",
+    "titan.vault",
+    "titan.ci_kit",
+    "fastapi",
+    "sqlalchemy",
+    "pydantic",
+    "redis",
+    "httpx",
+    "structlog",
+    "alembic",
+]
+
+[[tool.importlinter.contracts]]
+# titan.redaction also joins the shared-library sources in Phase 69: the log
+# processor (observability) imports it, so it sits below the libraries too.
 name = "Shared libraries never import domain modules (Vol 3 §3: events/observability are libraries)"
 type = "forbidden"
-source_modules = ["titan.events", "titan.observability"]
+source_modules = ["titan.events", "titan.observability", "titan.redaction"]
 forbidden_modules = [
     "titan.identity",
     "titan.projects",

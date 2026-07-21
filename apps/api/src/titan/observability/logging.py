@@ -20,6 +20,8 @@ import structlog
 from opentelemetry import trace
 from structlog.types import EventDict, Processor
 
+from titan.redaction import default_engine, redact_structure
+
 
 def _add_trace_ids(_: Any, __: str, event_dict: EventDict) -> EventDict:
     span_context = trace.get_current_span().get_span_context()
@@ -35,6 +37,35 @@ def _add_trace_ids(_: Any, __: str, event_dict: EventDict) -> EventDict:
 def _ensure_request_id(_: Any, __: str, event_dict: EventDict) -> EventDict:
     event_dict.setdefault("request_id", None)
     return event_dict
+
+
+def _redact_event(_: Any, __: str, event_dict: EventDict) -> EventDict:
+    """Redact every string in the event before Loki ingestion (TITAN-SEC-054
+    sink b). Sits in the ProcessorFormatter slot because that is the ONLY
+    point where structlog-native events and foreign stdlib records (uvicorn,
+    alembic, sqlalchemy) both converge before JSON hits stdout for promtail.
+
+    Fail CLOSED: if the engine itself blows up on a line, the line's payload
+    is dropped and a marker event ships instead — emitting the raw line on a
+    redactor bug would be the one unacceptable outcome. The engine-generated
+    identity fields (timestamp, level) are code-authored and safe to keep.
+    """
+    try:
+        return {
+            key: redact_structure(value, engine=default_engine(), sink="log")
+            for key, value in event_dict.items()
+        }
+    except Exception:
+        return {
+            "event": "log.redaction_failed",
+            "ts": event_dict.get("ts"),
+            "level": event_dict.get("level"),
+            "service": event_dict.get("service"),
+            "request_id": None,
+            "trace_id": None,
+            "span_id": None,
+            "module": event_dict.get("module"),
+        }
 
 
 _SHARED_PROCESSORS: list[Processor] = [
@@ -73,6 +104,7 @@ def configure_logging(level: str = "INFO", service: str = "titan-api") -> None:
         foreign_pre_chain=shared,
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            _redact_event,  # LAST touch before render — every line, both record kinds
             structlog.processors.JSONRenderer(),
         ],
     )

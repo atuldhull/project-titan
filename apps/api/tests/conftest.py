@@ -144,6 +144,24 @@ def _reset_auth_policy(request: pytest.FixtureRequest) -> "Iterator[None]":
     yield
 
 
+@pytest.fixture(autouse=True)
+def _reset_redaction_engine() -> "Iterator[None]":
+    """Restore the PROCESS-GLOBAL redaction engine after every test.
+
+    Phase 69: every default-wired sink (gateway, log processor, tool bus,
+    output streams) reads `titan.redaction.runtime.default_engine()`, and the
+    composition roots mutate it in place (inventory digests, hit reporter). A
+    test that loads an inventory would otherwise redact a same-named value in
+    an unrelated LATER test — the session-global-state trap, in-process this
+    time. Cheap enough to run for every test, unit tests included.
+    """
+    from titan.redaction import reset_default_engine
+
+    reset_default_engine()
+    yield
+    reset_default_engine()
+
+
 @lru_cache(maxsize=1)
 def _test_jwt_key_b64() -> str:
     """A stable RSA keypair for the test session so a token minted by one app

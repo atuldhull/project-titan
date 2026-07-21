@@ -42,9 +42,10 @@ AGENT_ROLE = "operator"
 #
 # `logs` joins them in Phase 62. System logs are an org-wide operator surface
 # with no project tenancy (Vol 4 §6.7): they carry request/trace ids, internal
-# error text and every service's stack traces, and redaction does NOT run on
-# the logging path (Vol 9 §6.3 claims it does — `titan.tools.redaction` guards
-# audit rows and tool envelopes only). Without this entry `logs:read` would be
+# error text and every service's stack traces. Since Phase 69 the SEC-054
+# redaction processor runs on every log line before Loki (Vol 9 §6.3 is true
+# now), but redaction is best-effort pattern/inventory matching, not a tenancy
+# boundary — the carve-out stays. Without this entry `logs:read` would be
 # granted by the `*:read` that viewer AND operator — the bundle every agent
 # runs as — already hold, so minting the permission would itself have published
 # the firehose. Adding the resource here is the only thing that carves it out;

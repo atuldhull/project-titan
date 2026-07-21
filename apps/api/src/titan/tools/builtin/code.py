@@ -12,6 +12,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
+from titan.redaction import is_secret_path
 from titan.tools.errors import ToolError
 from titan.tools.registry import ExecutionOutcome, ToolExecutionContext, ToolSpec
 from titan.tools.sandbox.policy import ResourceLimits
@@ -162,6 +163,10 @@ def _read_workspace_file(session: SandboxSession, rel: str) -> str | None:
     except ToolError:
         return None
     if target.is_dir():
+        return None
+    # junit_path/coverage_path are caller-controlled strings — without this a
+    # crafted path turns the report reader into an fs.read bypass (SEC-055).
+    if is_secret_path(session.workspace.relative(target)):
         return None
     return target.read_text("utf-8", "replace")
 

@@ -63,6 +63,8 @@ from titan.plugins import service as plugins_service
 from titan.projects import router as projects_router
 from titan.realtime import router as realtime_router
 from titan.realtime import service as realtime_service
+from titan.redaction import RedactionReporter
+from titan.redaction import runtime as redaction_runtime
 from titan.runs import router as runs_router
 from titan.runtime import service as runtime_service
 from titan.settings import Settings, get_settings
@@ -71,6 +73,7 @@ from titan.tools import service as tools_service
 from titan.tools.sandbox.session import SandboxSecretResolver
 from titan.usage import router as usage_router
 from titan.vault import bootstrap as vault_bootstrap
+from titan.vault import inventory as vault_inventory
 from titan.vault import router as secrets_router
 from titan.vault import service as vault_service
 
@@ -175,6 +178,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
 
         application.state.bus_invalid_hook = _audit_invalid_envelope
+        # Phase 69: the SEC-054 redaction pipeline. The process-global engine
+        # has been redacting (patterns + entropy) since configure_logging ran;
+        # here it gains the live-inventory detector and the audit reporter.
+        # The maintenance loop refreshes digests + flushes hit audits; vault
+        # writes additionally refresh inline (see the secrets router).
+        application.state.redaction_reporter = RedactionReporter()
+        redaction_runtime.default_engine().set_reporter(application.state.redaction_reporter.record)
+        application.state.redaction_stop = asyncio.Event()
+        application.state.redaction_task = asyncio.create_task(
+            vault_inventory.run_redaction_maintenance(
+                application.state.engine,
+                vault_provider,
+                vault_store,
+                application.state.redaction_reporter,
+                service="titan-api",
+                stop=application.state.redaction_stop,
+            )
+        )
         application.state.llm_gateway = llm_service.build_gateway(
             active_settings,
             engine=application.state.engine,
@@ -391,6 +412,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await application.state.watchdog.stop()
             for task in list(application.state.intake_tasks):  # cancel in-flight CEO turns
                 task.cancel()
+            # Stop the redaction maintenance loop via its event (NOT cancel):
+            # the loop's exit path runs one final audit flush.
+            application.state.redaction_stop.set()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await asyncio.wait_for(application.state.redaction_task, timeout=10.0)
+            redaction_runtime.default_engine().set_reporter(None)
             await application.state.ws_subscriber.stop()  # stop pub/sub subscriber first
             if application.state.plugin_health_task is not None:
                 application.state.plugin_health_stop.set()

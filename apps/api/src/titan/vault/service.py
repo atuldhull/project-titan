@@ -18,12 +18,14 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from collections.abc import Sequence
 from typing import Any
 
 import structlog
 from sqlalchemy import Row
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from titan.redaction import RedactionHitRecord
 from titan.vault import repository as repo
 from titan.vault.provider import SecretMetadata, SecretScope, SecretsStore
 
@@ -36,6 +38,7 @@ EVENT_ROTATED = "secret.rotated"
 EVENT_DELETED = "secret.deleted"
 EVENT_INJECTED = "secret.injected"
 EVENT_ENVELOPE_REJECTED = "envelope.rejected"
+EVENT_REDACTED = "redaction.hit"
 
 # A secret name is a get-by-reference key that also becomes an injected tmpfs
 # filename and an env-var-style lookup — so it must be a safe identifier with no
@@ -215,11 +218,41 @@ async def record_envelope_rejection(
         )
 
 
+async def record_redaction_hits(
+    engine: AsyncEngine,
+    *,
+    service: str,
+    records: Sequence[RedactionHitRecord],
+) -> None:
+    """Audit drained redaction hits (SEC-054 'redaction hits emit audit
+    events'). Own transaction — flushers run in background loops. One row per
+    (sink, class, hash8) with an occurrence count; the hash8 correlates with
+    the ``[REDACTED:<class>:<hash8>]`` marker in the sink output and is all
+    the ledger ever learns about the value (SEC-092)."""
+    if not records:
+        return
+    async with engine.begin() as conn:
+        for record in records:
+            await repo.insert_audit(
+                conn,
+                event_type=EVENT_REDACTED,
+                actor=f"redactor:{service}",
+                secret_name=None,
+                detail={
+                    "sink": record.sink,
+                    "class": record.cls,
+                    "hash8": record.hash8,
+                    "count": record.count,
+                },
+            )
+
+
 __all__ = [
     "EVENT_CREATED",
     "EVENT_DELETED",
     "EVENT_ENVELOPE_REJECTED",
     "EVENT_INJECTED",
+    "EVENT_REDACTED",
     "EVENT_ROTATED",
     "InvalidSecretName",
     "SecretError",
@@ -232,5 +265,6 @@ __all__ = [
     "overdue_secrets",
     "record_envelope_rejection",
     "record_injection",
+    "record_redaction_hits",
     "validate_name",
 ]

@@ -44,6 +44,7 @@ import structlog
 from titan.plugins import jsonrpc
 from titan.plugins.jsonrpc import RpcError
 from titan.plugins.manifest import Permissions
+from titan.redaction import is_secret_path
 
 logger = structlog.get_logger("titan.plugins.capabilities")
 
@@ -197,6 +198,14 @@ class CapabilityBroker:
         rel = str(params.get("path", ""))
         if not filesystem_allowed(rel, self.granted.filesystem):
             raise await self._deny("filesystem", f"path '{rel}' is outside the granted globs")
+        # A manifest glob cannot opt into secret-bearing files: the exclusion
+        # is platform policy, above any per-plugin grant (TITAN-SEC-055). This
+        # raw-name check gives a clear early denial for a direct `.env` ask; the
+        # authoritative check is on the RESOLVED path below.
+        if is_secret_path(rel):
+            raise await self._deny(
+                "filesystem", f"path '{rel}' matches a secret-bearing file pattern (SEC-055)"
+            )
         if self._workspace_root is None:
             raise RpcError(jsonrpc.INTERNAL_ERROR, "no workspace configured")
         target = (self._workspace_root / rel).resolve()
@@ -205,6 +214,15 @@ class CapabilityBroker:
         # so a symlink inside the workspace pointing at a sibling dir cannot escape.
         if not target.is_relative_to(root):
             raise await self._deny("filesystem", f"path '{rel}' escapes the workspace")
+        # SEC-055 on the RESOLVED path: `.resolve()` followed the symlink, so a
+        # `report.txt -> .env` link is caught HERE where the raw-name check
+        # above (which sees only `report.txt`) cannot. Mirrors fs.py/code.py,
+        # which check is_secret_path on the resolved path (Phase-69 review).
+        if is_secret_path(target.relative_to(root).as_posix()):
+            raise await self._deny(
+                "filesystem",
+                f"resolved path for '{rel}' matches a secret-bearing file pattern (SEC-055)",
+            )
         try:
             return target.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:

@@ -47,8 +47,11 @@ from titan.llm.models import (
     Usage,
 )
 from titan.llm.pricing import PriceBook, compute_cost
+from titan.llm.redact import redact_chat_request, redact_embeddings_request
 from titan.llm.resilience import CircuitBreaker, RetryPolicy
 from titan.llm.routing import ModelRouter, ResolvedModel
+from titan.redaction import RedactionEngine
+from titan.redaction import default_engine as _default_redaction_engine
 
 _DEFAULT_PRICES = Path("config/prices.yaml")
 _TRACER = trace.get_tracer("titan.llm")
@@ -87,10 +90,16 @@ class LlmGateway:
         breaker: CircuitBreaker | None = None,
         retry: RetryPolicy | None = None,
         budget: BudgetManager | None = None,
+        redactor: RedactionEngine | None = None,
     ) -> None:
         self._loader = loader
         self._client = client
         self._engine = engine
+        # SEC-054 sink (a): every request is redacted before ANY adapter sees
+        # it. Defaults to the process-global engine (patterns + entropy always
+        # on, inventory once the vault loads) so a gateway built without
+        # explicit wiring still redacts — fail closed, the Phase-68 lesson.
+        self._redactor = redactor if redactor is not None else _default_redaction_engine()
         self._pricebook = pricebook or PriceBook(_DEFAULT_PRICES)
         self._breaker = breaker or CircuitBreaker()
         self._retry = retry or RetryPolicy()
@@ -137,6 +146,7 @@ class LlmGateway:
     # --- chat --------------------------------------------------------------
 
     async def chat(self, req: ChatRequest) -> ChatResponse:
+        req = redact_chat_request(self._redactor, req)
         config = self._loader.get()
         router = ModelRouter(config)
         primary = router.resolve_chat(model_alias=req.model_alias, agent_id=req.metadata.agent_id)
@@ -357,6 +367,7 @@ class LlmGateway:
         Streaming uses the single resolved model (no fallback chain); the primary
         route must serve it. ``run_id`` attributes the row to the caller's run.
         """
+        req = redact_chat_request(self._redactor, req)
         config = self._loader.get()
         router = ModelRouter(config)
         resolved = router.resolve_chat(model_alias=req.model_alias, agent_id=req.metadata.agent_id)
@@ -447,6 +458,7 @@ class LlmGateway:
         await self._budget.settle(config.budgets, project_id, task_id, [], Decimal(0), cost)
 
     async def embed(self, req: EmbeddingsRequest) -> EmbeddingsResponse:
+        req = redact_embeddings_request(self._redactor, req)
         config = self._loader.get()
         router = ModelRouter(config)
         resolved = router.resolve_embeddings(model_alias=req.model_alias)

@@ -338,7 +338,10 @@ class ToolBus:
         )
         # One live-output stream per call, shared by whichever session runs it
         # (terminal/git via the sandbox, docker/deploy via the DinD sidecar). It
-        # is a silent no-op when no broker is wired.
+        # is a silent no-op when no broker is wired. Chunks pass the bus's
+        # redactor before leaving the process (TITAN-SEC-046 — this pub/sub
+        # channel is the one sandbox-output surface the envelope redaction
+        # below does not cover).
         stream = ToolOutputStream(
             self._redis,
             project_id=call.project_id,
@@ -346,6 +349,7 @@ class ToolBus:
             agent_id=call.agent_id,
             tool=call.tool,
             tool_call_id=call.tool_call_id,
+            redactor=lambda text: str(self._redact(text)),
         )
         # A lightweight per-call session handle (the container is created lazily
         # only if a terminal/git/code tool actually calls `await ctx.sandbox.get()`).
@@ -395,9 +399,14 @@ class ToolBus:
         )
         started = time.monotonic()
         try:
-            outcome = await asyncio.wait_for(
-                spec.executor(call.arguments, context), timeout=spec.timeout_s
-            )
+            try:
+                outcome = await asyncio.wait_for(
+                    spec.executor(call.arguments, context), timeout=spec.timeout_s
+                )
+            finally:
+                # Release the last unterminated line the line-buffering
+                # redaction is holding — on success, timeout, and error alike.
+                await stream.flush()
             self._validate_result(spec, outcome)
             # Envelope shaping stays INSIDE the try: a malformed artifact dict
             # or non-str stderr from an ill-behaved executor must become an

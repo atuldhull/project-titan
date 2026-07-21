@@ -1,6 +1,7 @@
 """Tool Registry + allowlist + redaction units (Phase 18; Vol 7 §4.1,
 Vol 8 §4.3). No DB — the registry is in-memory."""
 
+import re
 from typing import Any
 
 import pytest
@@ -205,8 +206,11 @@ def test_redactor_masks_credential_keys_and_token_values() -> None:
     )
     assert redacted["api_key"] == MASK
     assert redacted["nested"]["Authorization"] == MASK
-    assert MASK in redacted["nested"]["note"] and "sk-" not in redacted["nested"]["note"]
-    assert redacted["list"][0] == MASK and redacted["list"][1] == 42
+    # Value shapes carry the Phase-69 SEC-054 grammar: [REDACTED:<class>:<hash8>].
+    assert "sk-" not in redacted["nested"]["note"]
+    assert re.search(r"\[REDACTED:openai-key:[0-9a-f]{8}\]", redacted["nested"]["note"])
+    assert re.fullmatch(r"\[REDACTED:github-token:[0-9a-f]{8}\]", redacted["list"][0])
+    assert redacted["list"][1] == 42
     assert redacted["ok"] == "plain text stays"
 
 

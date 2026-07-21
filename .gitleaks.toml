@@ -17,14 +17,41 @@ description = "age secret key (vault identity) — must never be committed"
 regex = '''(?i)AGE-SECRET-KEY-1[0-9A-Za-z]{50,}'''
 keywords = ["AGE-SECRET-KEY-1", "age-secret-key-1"]
 
-[allowlist]
+# Vendored/generated trees never committed, plus the ONE ciphertext vault file
+# (age binary, git-safe) — NOT a global `\.age$` suffix, which would
+# blanket-exempt any *.age file from EVERY rule and could hide a real leak
+# (Phase-68 security review). Path-only (no condition) → a match on any path
+# allowlists it.
+[[allowlists]]
+description = "Vendored/generated trees + the single ciphertext vault file"
 paths = [
     '''\.venv/''',
     '''node_modules/''',
     '''\.next/''',
     '''\.git/''',
-    # ONLY the one ciphertext vault file (age binary, git-safe) — NOT a global
-    # `\.age$` suffix, which would blanket-exempt any *.age file from EVERY rule
-    # and could hide a real leak (Phase-68 security review).
     '''config/secrets\.yaml\.age$''',
 ]
+
+# Phase 69: three pre-existing false positives (this scan has been red since the
+# fixtures landed in Phase 47 — `make secret-scan` is a Docker/CI job, not in
+# the fast per-phase gate loop). Each is AND-scoped to a path + the EXACT fake
+# string, so a genuinely new secret in the same file still trips — NOT a blanket
+# path exemption (the Phase-68 `\.age$` lesson: never suppress every rule on a
+# whole file).
+[[allowlists]]
+description = "R3 reviewer's own test corpus — a deliberately hardcoded FAKE Stripe key so the hardcoded-secret detector has something to catch"
+condition = "AND"
+paths = ['''apps/api/tests/review_fixtures\.py''']
+regexes = ['''sk-live-abcd1234efgh5678ijkl''']
+
+[[allowlists]]
+description = "Tool Bus redactor test — a FAKE api_key value asserted to be masked before the audit row / next prompt"
+condition = "AND"
+paths = ['''apps/api/tests/test_tools_bus\.py''']
+regexes = ['''sk-verysecretkey12345678''']
+
+[[allowlists]]
+description = "False positive on the Makefile's OWN secret-scan invocation: MSYS2_ARG_CONV_EXCL is a Git-Bash env-var name, not a credential"
+condition = "AND"
+paths = ['''(^|/)Makefile$''']
+regexes = ['''MSYS2_ARG_CONV_EXCL''']
