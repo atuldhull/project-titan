@@ -52,8 +52,22 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from titan.db import uuid7
 from titan.identity import audit, passwords
 from titan.identity.audit import SecurityEventType
+from titan.vault.cipher import FieldCipher
 
 logger = structlog.get_logger("titan.identity.mfa")
+
+
+def _decrypt_secret(cipher: FieldCipher, stored: str) -> str:
+    """Decrypt a stored TOTP secret (TITAN-SEC-063). Tolerates a legacy PLAINTEXT
+    base32 secret written before the Phase-68 field-encryption rollout — those
+    rows still verify, and re-enrolling re-writes them encrypted. A base32 secret
+    never matches the ``v<n>.<b64>.<b64>`` ciphertext shape, so the check is
+    unambiguous."""
+    if cipher.is_ciphertext(stored):
+        return cipher.decrypt_str(stored)
+    logger.warning("mfa.legacy_plaintext_secret")  # pre-Phase-68 row
+    return stored
+
 
 # Recovery codes: three hyphen-separated groups of four characters over an
 # unambiguous alphabet (no 0/O/1/I/L). 12 chars × log2(31) ≈ 59 bits — plenty
@@ -164,7 +178,11 @@ def _qr_png_data_url(uri: str) -> str:
 
 
 async def begin_enrollment(
-    conn: AsyncConnection, user_id: uuid.UUID, account_label: str, issuer: str
+    conn: AsyncConnection,
+    user_id: uuid.UUID,
+    account_label: str,
+    issuer: str,
+    cipher: FieldCipher,
 ) -> EnrollmentResult:
     """Start (or restart) TOTP enrollment: mint a fresh secret and UPSERT it
     unconfirmed. Refuses to touch an already CONFIRMED credential — recovery
@@ -179,16 +197,16 @@ async def begin_enrollment(
         raise MfaAlreadyEnrolled("MFA is already active; disable it before re-enrolling")
 
     secret = pyotp.random_base32()
-    # A re-enroll (existing but unconfirmed) replaces the pending secret and
-    # keeps confirmed_at NULL; the guard above ensures we never clear a
-    # confirmed_at that mattered.
+    # AES-256-GCM at rest (TITAN-SEC-063). A re-enroll (existing but unconfirmed)
+    # replaces the pending secret and keeps confirmed_at NULL; the guard above
+    # ensures we never clear a confirmed_at that mattered.
     await conn.execute(
         text(
             "INSERT INTO mfa_credentials (user_id, secret, confirmed_at) "
             "VALUES (:uid, :secret, NULL) "
             "ON CONFLICT (user_id) DO UPDATE SET secret = :secret, confirmed_at = NULL"
         ),
-        {"uid": user_id, "secret": secret},
+        {"uid": user_id, "secret": cipher.encrypt_str(secret)},
     )
     uri = pyotp.TOTP(secret).provisioning_uri(name=account_label, issuer_name=issuer)
     logger.info("mfa.enroll_begin", user_id=str(user_id))  # secret intentionally omitted
@@ -197,7 +215,9 @@ async def begin_enrollment(
     )
 
 
-async def confirm_enrollment(conn: AsyncConnection, user_id: uuid.UUID, code: str) -> list[str]:
+async def confirm_enrollment(
+    conn: AsyncConnection, user_id: uuid.UUID, code: str, cipher: FieldCipher
+) -> list[str]:
     """Verify `code` against the pending secret; on success confirm the
     credential, mint and store `RECOVERY_CODE_COUNT` Argon2id-hashed recovery
     codes, and RETURN their plaintext (shown once). Raises on a wrong code or a
@@ -213,8 +233,14 @@ async def confirm_enrollment(conn: AsyncConnection, user_id: uuid.UUID, code: st
     if row.confirmed_at is not None:
         raise MfaAlreadyEnrolled("MFA is already confirmed")
 
-    # valid_window=1 tolerates ~±30 s of clock skew between server and app.
-    if not pyotp.TOTP(row.secret).verify(code, valid_window=1):
+    # valid_window=1 tolerates ~±30 s of clock skew between server and app. An
+    # undecryptable pending secret surfaces as MfaCodeInvalid (a 4xx), never a
+    # 500 — confirmation just fails and the user re-enrolls.
+    try:
+        pending_secret = _decrypt_secret(cipher, row.secret)
+    except ValueError as exc:
+        raise MfaCodeInvalid("enrollment secret could not be read") from exc
+    if not pyotp.TOTP(pending_secret).verify(code, valid_window=1):
         raise MfaCodeInvalid("invalid TOTP code")
 
     now = dt.datetime.now(dt.UTC)
@@ -226,8 +252,7 @@ async def confirm_enrollment(conn: AsyncConnection, user_id: uuid.UUID, code: st
     for plaintext in codes:
         await conn.execute(
             text(
-                "INSERT INTO mfa_recovery_codes (id, user_id, code_hash) "
-                "VALUES (:id, :uid, :hash)"
+                "INSERT INTO mfa_recovery_codes (id, user_id, code_hash) VALUES (:id, :uid, :hash)"
             ),
             {"id": uuid7(), "uid": user_id, "hash": passwords.hash_password(plaintext)},
         )
@@ -236,7 +261,9 @@ async def confirm_enrollment(conn: AsyncConnection, user_id: uuid.UUID, code: st
     return codes
 
 
-async def verify_totp(conn: AsyncConnection, user_id: uuid.UUID, code: str) -> bool:
+async def verify_totp(
+    conn: AsyncConnection, user_id: uuid.UUID, code: str, cipher: FieldCipher
+) -> bool:
     """Verify a login second factor. Tries the confirmed TOTP secret first, then
     falls back to unused recovery codes; a matching recovery code is burned
     (``used_at``). Returns True/False (never raises) and emits the matching audit
@@ -256,9 +283,21 @@ async def verify_totp(conn: AsyncConnection, user_id: uuid.UUID, code: str) -> b
             {"uid": user_id},
         )
     ).first()
-    if secret_row is not None and pyotp.TOTP(secret_row.secret).verify(code, valid_window=1):
-        await audit.write(conn, SecurityEventType.MFA_VERIFIED, user_id=user_id)
-        return True
+    # An undecryptable secret (a rotated/misconfigured field key, or a corrupt
+    # blob) must NOT 500 and must NOT block the recovery-code fallback below —
+    # fall through as a TOTP miss so a locked-out user can still use a recovery
+    # code, and the caller returns a clean 401 rather than a server error.
+    if secret_row is not None:
+        try:
+            totp_ok = pyotp.TOTP(_decrypt_secret(cipher, secret_row.secret)).verify(
+                code, valid_window=1
+            )
+        except ValueError:
+            logger.warning("mfa.secret_undecryptable", user_id=str(user_id))
+            totp_ok = False
+        if totp_ok:
+            await audit.write(conn, SecurityEventType.MFA_VERIFIED, user_id=user_id)
+            return True
 
     candidate = _normalize_recovery(code)
     unused = (
@@ -295,10 +334,7 @@ async def is_mfa_enabled(conn: AsyncConnection, user_id: uuid.UUID) -> bool:
     """True iff the user has a CONFIRMED TOTP credential."""
     row = (
         await conn.execute(
-            text(
-                "SELECT 1 FROM mfa_credentials "
-                "WHERE user_id = :uid AND confirmed_at IS NOT NULL"
-            ),
+            text("SELECT 1 FROM mfa_credentials WHERE user_id = :uid AND confirmed_at IS NOT NULL"),
             {"uid": user_id},
         )
     ).first()

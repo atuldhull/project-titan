@@ -21,9 +21,7 @@ def make_pkce() -> tuple[str, str]:
     """(code_verifier, code_challenge) for S256."""
     verifier = base64.urlsafe_b64encode(secrets.token_bytes(48)).rstrip(b"=").decode()
     challenge = (
-        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
-        .rstrip(b"=")
-        .decode()
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     )
     return verifier, challenge
 
@@ -60,9 +58,7 @@ def login(
 ) -> dict[str, Any]:
     """Full flow → the token pair. Asserts each leg succeeded."""
     verifier, challenge = make_pkce()
-    authz = authorize(
-        client, email, password, totp_code=totp_code, challenge=challenge
-    )
+    authz = authorize(client, email, password, totp_code=totp_code, challenge=challenge)
     assert authz.status_code == 200, authz.text
     code = authz.json()["code"]
 

@@ -105,20 +105,15 @@ def _events(migrated_engine: Any, event_type: str) -> int:
     async def count() -> int:
         async with migrated_engine.begin() as conn:
             row = await conn.execute(
-                text(
-                    "SELECT count(*) FROM security_events "
-                    "WHERE event_type = :t AND email = :e"
-                ),
+                text("SELECT count(*) FROM security_events WHERE event_type = :t AND email = :e"),
                 {"t": event_type, "e": EMAIL},
             )
             return int(row.scalar_one())
 
-    return run_async(count)
+    return int(run_async(count))
 
 
-def test_successful_login_writes_an_audit_event(
-    client: TestClient, migrated_engine: Any
-) -> None:
+def test_successful_login_writes_an_audit_event(client: TestClient, migrated_engine: Any) -> None:
     login(client, EMAIL, PASSWORD)
     assert _events(migrated_engine, "login.succeeded") == 1
 

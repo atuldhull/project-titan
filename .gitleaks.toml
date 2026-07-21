@@ -5,10 +5,26 @@
 [extend]
 useDefault = true
 
+# Phase 68: catch a committed age vault identity (TITAN_VAULT_AGE_KEY). The age
+# file itself is ciphertext (allowlisted below); the IDENTITY must never land in
+# git, and the default ruleset has no age rule, so add one.
+# Case-INSENSITIVE: age.parse_identity lower-cases the bech32 string before
+# decoding, so a lowercase `age-secret-key-1…` is a fully valid, usable key — a
+# case-sensitive rule would miss it (Phase-68 security review).
+[[rules]]
+id = "titan-age-identity"
+description = "age secret key (vault identity) — must never be committed"
+regex = '''(?i)AGE-SECRET-KEY-1[0-9A-Za-z]{50,}'''
+keywords = ["AGE-SECRET-KEY-1", "age-secret-key-1"]
+
 [allowlist]
 paths = [
     '''\.venv/''',
     '''node_modules/''',
     '''\.next/''',
     '''\.git/''',
+    # ONLY the one ciphertext vault file (age binary, git-safe) — NOT a global
+    # `\.age$` suffix, which would blanket-exempt any *.age file from EVERY rule
+    # and could hide a real leak (Phase-68 security review).
+    '''config/secrets\.yaml\.age$''',
 ]

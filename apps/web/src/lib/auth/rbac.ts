@@ -73,6 +73,11 @@ const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     "member:write",
     "settings:read",
     "settings:write",
+    // Secrets vault (Vol 8 §6, Phase 68). `secret` is in SENSITIVE_RESOURCES,
+    // so `*:read` does not reach it — the grant is explicit (Owner/Admin/
+    // Maintainer, §4.2). `read` is metadata only; there is no plaintext read.
+    "secret:read",
+    "secret:write",
     "*:read",
   ],
   maintainer: [
@@ -88,6 +93,8 @@ const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     "kb:propose",
     "kb:approve",
     "pipeline:advance",
+    "secret:read",
+    "secret:write",
     "*:read",
   ],
   operator: [

@@ -7,6 +7,7 @@ phase by phase on this single factory.
 
 import asyncio
 import contextlib
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -67,9 +68,55 @@ from titan.runtime import service as runtime_service
 from titan.settings import Settings, get_settings
 from titan.tools import router as tools_router
 from titan.tools import service as tools_service
+from titan.tools.sandbox.session import SandboxSecretResolver
 from titan.usage import router as usage_router
+from titan.vault import bootstrap as vault_bootstrap
+from titan.vault import router as secrets_router
+from titan.vault import service as vault_service
 
 logger = structlog.get_logger("titan.main")
+
+
+def _build_sandbox_secret_resolver(application: FastAPI) -> "SandboxSecretResolver":
+    """A TITAN-SEC-053 resolver closure over app state: task → assignee agent →
+    roster grants → the tools' ``required_secrets`` → vault values, and an
+    injection audit. Fast-paths to an empty map when no registered tool declares
+    a sandbox secret need (the current state), so it costs nothing until a
+    sandbox-executing tool actually needs a credential."""
+    from sqlalchemy import text
+
+    from titan.agents.definition import roster_id_for_role
+    from titan.tools.sandbox.injection import resolve_sandbox_secrets
+
+    async def _resolver(project_id: "uuid.UUID", task_id: "uuid.UUID | None") -> dict[str, str]:
+        registry = application.state.tool_registry
+        if task_id is None or not any(s.required_secrets for s in registry.specs()):
+            return {}
+        async with application.state.engine.connect() as conn:
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT a.role FROM tasks t JOIN agents a "
+                        "ON a.id = t.assignee_agent_id WHERE t.id = :tid"
+                    ),
+                    {"tid": task_id},
+                )
+            ).first()
+        roster_id = roster_id_for_role(row.role) if row is not None else None
+        agent_def = application.state.agent_registry.get(roster_id) if roster_id else None
+        grants = agent_def.tool_grants if agent_def is not None else ()
+        secrets = await resolve_sandbox_secrets(grants, registry, application.state.vault_provider)
+        if secrets:
+            async with application.state.engine.begin() as conn:
+                await vault_service.record_injection(
+                    conn,
+                    actor=f"sandbox:{task_id}",
+                    names=list(secrets),
+                    task_id=str(task_id),
+                )
+        return secrets
+
+    return _resolver
 
 
 def _egress_config(settings: Settings) -> "tools_service.EgressConfig | None":
@@ -105,6 +152,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.state.engine = clients.create_engine(active_settings)
         application.state.redis = clients.create_redis(active_settings)
         application.state.http = clients.create_http_client(active_settings)
+        # Phase 68: the secrets vault (Vol 8 §6, ADR-SEC-03) — the age store (or
+        # the env fallback) for get-by-reference + write-only management, the
+        # field cipher for at-rest column encryption (SEC-063), and the bus
+        # envelope signer + audit hook for signed streams (SEC-020). Built at the
+        # composition root so titan.events stays a leaf (signer/hook injected).
+        vault_store, vault_provider = vault_bootstrap.build_secret_backend(active_settings)
+        application.state.vault_store = vault_store
+        application.state.vault_provider = vault_provider
+        application.state.field_cipher = vault_bootstrap.build_field_cipher(active_settings)
+        application.state.bus_signer = vault_bootstrap.build_envelope_signer(active_settings)
+        _engine_for_audit = application.state.engine
+
+        async def _audit_invalid_envelope(rejection: "events_service.InvalidEnvelope") -> None:
+            await vault_service.record_envelope_rejection(
+                _engine_for_audit,
+                actor=rejection.actor,
+                topic=rejection.topic,
+                reason=rejection.reason,
+                event_id=rejection.event_id,
+                payload_digest=rejection.payload_sha256,
+            )
+
+        application.state.bus_invalid_hook = _audit_invalid_envelope
         application.state.llm_gateway = llm_service.build_gateway(
             active_settings,
             engine=application.state.engine,
@@ -143,7 +213,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             egress=egress_config,
         )
         application.state.sandbox_manager = tools_service.build_sandbox_manager(
-            application.state.sandbox_controller
+            application.state.sandbox_controller,
+            secret_resolver=_build_sandbox_secret_resolver(application),
         )
         # Per-task rootless DinD sidecars (docker.* tools) + headless-browser
         # containers (browser.* tools); both degrade to TOOL_UNAVAILABLE when no
@@ -190,7 +261,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.state.plugin_cipher = plugins_service.ConfigCipher(
             active_settings.plugin_config_key
         )
-        application.state.plugin_secrets = plugins_service.EnvSecretsProvider()
+        # Phase 68: one secret source. Plugins resolve their named secrets from
+        # the SAME provider the vault exposes — the env fallback in the default
+        # config (identical to Phase 52), or the age vault when one is unlocked
+        # (SEC-050: integration secrets live in the vault, resolved by name).
+        application.state.plugin_secrets = application.state.vault_provider
         application.state.plugin_supervisor = None
         application.state.plugin_health_stop = None
         application.state.plugin_health_task = None
@@ -274,7 +349,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 reranker=application.state.memory_reranker,
             )
             watchdog = runtime_service.build_watchdog(
-                agent_runtime, events_service.build_bus(application.state.redis)
+                agent_runtime,
+                events_service.build_bus(
+                    application.state.redis,
+                    signer=application.state.bus_signer,
+                    on_invalid=application.state.bus_invalid_hook,
+                ),
             )
             watchdog.register()
             application.state.watchdog = watchdog
@@ -414,6 +494,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     planning_router.mount(app)  # /projects/{id}/sprint-plan, ceremonies, milestone, blockers (§4)
     artifacts_router.mount(app)  # /projects/{id}/artifacts — the six derived §5 artifacts
     plugins_router.mount(app)  # /plugins lifecycle + /hooks (HMAC) + /plugin-ui (Vol 7 §3)
+    secrets_router.mount(app)  # /secrets — write-only vault management (Vol 8 §6)
     otel.instrument_app(active_settings, app)
 
     def custom_openapi() -> dict[str, Any]:

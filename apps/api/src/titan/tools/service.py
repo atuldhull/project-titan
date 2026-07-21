@@ -61,7 +61,11 @@ from titan.tools.registry import (
 )
 from titan.tools.sandbox.controller import ExecResult, Sandbox, SandboxController
 from titan.tools.sandbox.policy import EgressConfig, ResourceLimits, SandboxPolicy
-from titan.tools.sandbox.session import SandboxSession, SandboxSessionManager
+from titan.tools.sandbox.session import (
+    SandboxSecretResolver,
+    SandboxSession,
+    SandboxSessionManager,
+)
 from titan.tools.sandbox.workspace import Workspace, WorkspaceManager
 from titan.tools.streaming import ToolOutputStream, channel_for
 from titan.tools.web.session import ResearchClient, ResearchSession
@@ -136,9 +140,14 @@ def build_sandbox_controller(
     return SandboxController(SandboxPolicy(image=image), docker_host=docker_host, egress=egress)
 
 
-def build_sandbox_manager(controller: SandboxController) -> SandboxSessionManager:
-    """The per-task sandbox-session pool the terminal/git/code tools run inside."""
-    return SandboxSessionManager(controller)
+def build_sandbox_manager(
+    controller: SandboxController,
+    *,
+    secret_resolver: "SandboxSecretResolver | None" = None,
+) -> SandboxSessionManager:
+    """The per-task sandbox-session pool the terminal/git/code tools run inside.
+    ``secret_resolver`` (TITAN-SEC-053) supplies the task's scoped secret files."""
+    return SandboxSessionManager(controller, secret_resolver=secret_resolver)
 
 
 def build_dind_controller(

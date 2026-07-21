@@ -16,10 +16,13 @@ from sqlalchemy import text
 from tests.conftest import run_async
 from titan.db import uuid7
 from titan.identity import mfa
+from titan.vault.cipher import FieldCipher
 
 pytestmark = pytest.mark.schema
 
 _ISSUER = "TITAN"
+# A deterministic cipher so an enroll-then-verify round-trip decrypts (SEC-063).
+_CIPHER = FieldCipher("mfa-test-key")
 
 
 async def _new_user(engine: Any) -> uuid.UUID:
@@ -38,13 +41,15 @@ async def _new_user(engine: Any) -> uuid.UUID:
 
 async def _enroll(engine: Any, uid: uuid.UUID) -> str:
     async with engine.begin() as conn:
-        result = await mfa.begin_enrollment(conn, uid, f"{uid.hex[:8]}@titan.local", _ISSUER)
+        result = await mfa.begin_enrollment(
+            conn, uid, f"{uid.hex[:8]}@titan.local", _ISSUER, _CIPHER
+        )
     return result.secret
 
 
 async def _confirm(engine: Any, uid: uuid.UUID, secret: str) -> list[str]:
     async with engine.begin() as conn:
-        return await mfa.confirm_enrollment(conn, uid, pyotp.TOTP(secret).now())
+        return await mfa.confirm_enrollment(conn, uid, pyotp.TOTP(secret).now(), _CIPHER)
 
 
 def _wrong_code(secret: str) -> str:
@@ -59,7 +64,7 @@ def test_begin_enrollment_produces_secret_uri_and_png_qr(migrated_engine: Any) -
     async def go() -> mfa.EnrollmentResult:
         uid = await _new_user(migrated_engine)
         async with migrated_engine.begin() as conn:
-            return await mfa.begin_enrollment(conn, uid, "person@titan.local", _ISSUER)
+            return await mfa.begin_enrollment(conn, uid, "person@titan.local", _ISSUER, _CIPHER)
 
     result = run_async(go)
     assert result.secret and result.secret.isalnum()
@@ -78,7 +83,7 @@ def test_confirm_with_correct_code_returns_recovery_codes_and_enables(
         uid = await _new_user(migrated_engine)
         secret = await _enroll(migrated_engine, uid)
         async with migrated_engine.begin() as conn:
-            codes = await mfa.confirm_enrollment(conn, uid, pyotp.TOTP(secret).now())
+            codes = await mfa.confirm_enrollment(conn, uid, pyotp.TOTP(secret).now(), _CIPHER)
         async with migrated_engine.begin() as conn:
             enabled = await mfa.is_mfa_enabled(conn, uid)
             audited = (
@@ -107,7 +112,7 @@ def test_confirm_with_wrong_code_raises_and_does_not_confirm(migrated_engine: An
         raised = False
         try:
             async with migrated_engine.begin() as conn:
-                await mfa.confirm_enrollment(conn, uid, _wrong_code(secret))
+                await mfa.confirm_enrollment(conn, uid, _wrong_code(secret), _CIPHER)
         except mfa.MfaCodeInvalid:
             raised = True
         async with migrated_engine.begin() as conn:
@@ -125,9 +130,9 @@ def test_verify_totp_accepts_fresh_rejects_wrong(migrated_engine: Any) -> None:
         secret = await _enroll(migrated_engine, uid)
         await _confirm(migrated_engine, uid, secret)
         async with migrated_engine.begin() as conn:
-            good = await mfa.verify_totp(conn, uid, pyotp.TOTP(secret).now())
+            good = await mfa.verify_totp(conn, uid, pyotp.TOTP(secret).now(), _CIPHER)
         async with migrated_engine.begin() as conn:
-            bad = await mfa.verify_totp(conn, uid, _wrong_code(secret))
+            bad = await mfa.verify_totp(conn, uid, _wrong_code(secret), _CIPHER)
         return good, bad
 
     good, bad = run_async(go)
@@ -142,9 +147,9 @@ def test_recovery_code_works_once_then_is_rejected(migrated_engine: Any) -> None
         codes = await _confirm(migrated_engine, uid, secret)
         rc = codes[0]
         async with migrated_engine.begin() as conn:
-            first = await mfa.verify_totp(conn, uid, rc)
+            first = await mfa.verify_totp(conn, uid, rc, _CIPHER)
         async with migrated_engine.begin() as conn:
-            second = await mfa.verify_totp(conn, uid, rc)
+            second = await mfa.verify_totp(conn, uid, rc, _CIPHER)
         return first, second
 
     first, second = run_async(go)
@@ -159,7 +164,7 @@ def test_re_enroll_when_already_confirmed_raises(migrated_engine: Any) -> None:
         await _confirm(migrated_engine, uid, secret)
         try:
             async with migrated_engine.begin() as conn:
-                await mfa.begin_enrollment(conn, uid, "again@titan.local", _ISSUER)
+                await mfa.begin_enrollment(conn, uid, "again@titan.local", _ISSUER, _CIPHER)
         except mfa.MfaAlreadyEnrolled:
             return True
         return False

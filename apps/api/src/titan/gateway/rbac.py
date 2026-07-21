@@ -115,6 +115,15 @@ KNOWN_SCOPES: frozenset[str] = frozenset(
         "member:write",
         "settings:read",
         "settings:write",
+        # Secrets vault (Vol 8 §6, Phase 68). `secret` is already in
+        # SENSITIVE_RESOURCES, so neither of these is reachable via `*:read` —
+        # both are granted explicitly (Owner/Admin/Maintainer, §4.2). `read`
+        # returns METADATA only; there is no plaintext-read scope because there
+        # is no plaintext-read endpoint (SEC-051). The resource is SINGULAR
+        # `secret` to match the carve-out; a plural `secrets:*` would parse to a
+        # non-sensitive resource and leak through `*:read`.
+        "secret:read",
+        "secret:write",
     }
 )
 

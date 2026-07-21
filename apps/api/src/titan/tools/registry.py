@@ -119,6 +119,13 @@ class ToolSpec:
     timeout_s: float = 60.0  # §4.3 default per-call wall clock
     rate_limit_per_min: int | None = None  # stored per §4.1; enforced Phase 19
     constraints: tuple[ParamConstraint, ...] = ()
+    # Vault secret NAMES this tool needs delivered INTO the task sandbox as
+    # tmpfs files (TITAN-SEC-053). Only for tools that execute in the sandbox —
+    # plugin tools run out-of-process and receive secrets over the capability
+    # broker instead, so they never list any here. Empty for every builtin tool
+    # today (none needs an injected credential), which keeps the injection set
+    # empty and the resolver's fast path free.
+    required_secrets: tuple[str, ...] = ()
 
     def tool_def(self) -> ToolDef:
         """This entry in the gateway's canonical tool-definition format."""

@@ -32,7 +32,7 @@ def _store(ttl_seconds: int = 60) -> AuthCodeStore:
 
 def _payload(**overrides: object) -> AuthCodePayload:
     verifier = "a" * 64
-    base = {
+    base: dict[str, object] = {
         "user_id": "user-123",
         "redirect_uri": "https://app.titan.local/callback",
         "code_challenge": compute_s256_challenge(verifier),
@@ -94,7 +94,7 @@ def test_verify_pkce_rejects_too_long_verifier() -> None:
 # response_type / grant_type validation (SEC-010)
 # --------------------------------------------------------------------------- #
 def test_validate_response_type_accepts_code() -> None:
-    assert validate_response_type("code") is None
+    validate_response_type("code")  # must not raise
 
 
 def test_validate_response_type_rejects_token_implicit() -> None:
@@ -111,7 +111,7 @@ def test_validate_response_type_rejects_garbage() -> None:
 
 
 def test_validate_grant_type_accepts_authorization_code() -> None:
-    assert validate_grant_type("authorization_code") is None
+    validate_grant_type("authorization_code")  # must not raise
 
 
 def test_validate_grant_type_rejects_password() -> None:
@@ -256,21 +256,17 @@ def test_consume_of_an_expired_code_is_invalid_grant() -> None:
 # Discovery
 # --------------------------------------------------------------------------- #
 def test_discovery_document_excludes_password_and_token() -> None:
-    doc = discovery_document(
-        issuer="https://titan.local", base_url="https://titan.local"
-    )
+    doc = discovery_document(issuer="https://titan.local", base_url="https://titan.local")
     assert doc["grant_types_supported"] == ["authorization_code", "refresh_token"]
-    assert "password" not in doc["grant_types_supported"]  # type: ignore[operator]
+    assert "password" not in doc["grant_types_supported"]
     assert doc["response_types_supported"] == ["code"]
-    assert "token" not in doc["response_types_supported"]  # type: ignore[operator]
+    assert "token" not in doc["response_types_supported"]
     assert doc["code_challenge_methods_supported"] == ["S256"]
     assert doc["id_token_signing_alg_values_supported"] == ["RS256"]
 
 
 def test_discovery_document_endpoints_use_base_url() -> None:
-    doc = discovery_document(
-        issuer="https://titan.local", base_url="https://titan.local"
-    )
+    doc = discovery_document(issuer="https://titan.local", base_url="https://titan.local")
     assert doc["authorization_endpoint"] == "https://titan.local/api/v1/oauth/authorize"
     assert doc["token_endpoint"] == "https://titan.local/api/v1/oauth/token"
     assert doc["jwks_uri"] == "https://titan.local/api/v1/oauth/jwks"

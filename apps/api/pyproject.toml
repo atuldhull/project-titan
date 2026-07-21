@@ -235,6 +235,7 @@ source_modules = [
     "titan.ci_kit",
     "titan.events",
     "titan.observability",
+    "titan.vault",
 ]
 forbidden_modules = ["anthropic", "openai", "google", "ollama"]
 

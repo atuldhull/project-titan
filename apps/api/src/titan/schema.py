@@ -19,6 +19,7 @@ from titan.projects import models as projects_models
 from titan.runs import models as runs_models
 from titan.runtime import models as runtime_models
 from titan.tools import tables as tools_tables
+from titan.vault import models as vault_models
 
 __all__ = [
     "Base",
@@ -35,4 +36,5 @@ __all__ = [
     "runs_models",
     "runtime_models",
     "tools_tables",
+    "vault_models",
 ]

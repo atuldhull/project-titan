@@ -19,6 +19,34 @@ from titan.events.envelope import Envelope
 DeadLetterHook = Callable[[Envelope], Awaitable[None]]
 
 
+class Signer(Protocol):
+    """HMAC signer for stream envelopes (TITAN-SEC-020). Structurally satisfied
+    by ``titan.vault.signing.HmacEnvelopeSigner`` — injected, never imported, so
+    ``titan.events`` stays a leaf that pulls in no domain (nor the vault)."""
+
+    def sign(self, payload: str) -> str: ...
+
+    def verify(self, payload: str, signature: str) -> bool: ...
+
+
+@dataclass(frozen=True)
+class InvalidEnvelope:
+    """A dropped queue message (TITAN-SEC-020): its signature failed, it carried
+    none, or it would not parse. Carries a digest and the CLAIMED sender for
+    forensics — never the payload (SEC-092)."""
+
+    topic: str
+    actor: str
+    reason: str  # missing_signature | bad_signature | unparseable | missing_data
+    event_id: str | None
+    payload_sha256: str | None
+
+
+# Invoked when consume()/reap() drops an envelope for a signature/parse failure,
+# so the caller can write the security audit event (SEC-020 "drop and audit").
+InvalidEnvelopeHook = Callable[[InvalidEnvelope], Awaitable[None]]
+
+
 @dataclass
 class Delivery:
     """One consumed message. ``handle`` is a broker-opaque ack token (a Redis

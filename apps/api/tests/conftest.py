@@ -130,8 +130,13 @@ def _reset_auth_policy(request: pytest.FixtureRequest) -> "Iterator[None]":
         async with engine.begin() as conn:
             await conn.execute(
                 text(
+                    # Phase 68: secret_metadata (unique names) and secret_audit
+                    # (lifecycle counts) are session-persistent global state too —
+                    # a fixed secret name or an audit-count assertion would carry
+                    # across tests without this (the same session-scoped-DB trap).
                     "TRUNCATE org_security_policy, mfa_recovery_codes, "
-                    "mfa_credentials RESTART IDENTITY CASCADE"
+                    "mfa_credentials, secret_metadata, secret_audit "
+                    "RESTART IDENTITY CASCADE"
                 )
             )
 

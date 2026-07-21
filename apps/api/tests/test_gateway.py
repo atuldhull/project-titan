@@ -97,7 +97,15 @@ def _sample_router() -> APIRouter:
 def _build_app(monkeypatch: pytest.MonkeyPatch, **settings_overrides: Any) -> FastAPI:
     fake = fakeredis.aioredis.FakeRedis(decode_responses=True)
     monkeypatch.setattr(clients, "create_redis", lambda _settings: fake)
-    settings = Settings(otel_exporter_otlp_endpoint="", _env_file=None, **settings_overrides)
+    # Phase 68: production/staging refuse to boot without crypto keys, so a
+    # non-local test app must supply them (overridable via settings_overrides).
+    settings = Settings(
+        otel_exporter_otlp_endpoint="",
+        bus_hmac_key="test-bus-key",
+        field_encryption_key="test-field-key",
+        _env_file=None,
+        **settings_overrides,
+    )
     app = create_app(settings)
     app.include_router(_sample_router())
     return app

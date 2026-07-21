@@ -102,9 +102,7 @@ async def token(request: Request, grant: PasswordGrant | ApiKeyGrant) -> TokenPa
         # non-interactive grant the token endpoint still serves.
         async with app.state.engine.begin() as conn:
             try:
-                pair, _ = await service.exchange_api_key(
-                    conn, app.state.keyring, grant.api_key
-                )
+                pair, _ = await service.exchange_api_key(conn, app.state.keyring, grant.api_key)
                 return pair
             except AuthenticationFailed as exc:
                 raise _unauthorized(str(exc)) from exc

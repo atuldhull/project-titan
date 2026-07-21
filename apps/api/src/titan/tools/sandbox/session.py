@@ -15,6 +15,7 @@ closed (TOOL_UNAVAILABLE) — exactly like the fs tools without a workspace.
 
 import asyncio
 import uuid
+from collections.abc import Awaitable, Callable
 
 from titan.tools.errors import ToolError
 from titan.tools.sandbox.controller import Sandbox, SandboxController
@@ -24,12 +25,24 @@ from titan.tools.streaming import ToolOutputStream
 _Key = tuple[str, str]
 _LOCK_STRIPES = 64
 
+# Given (project_id, task_id), the scoped secret map to inject into the task's
+# sandbox as tmpfs files (TITAN-SEC-053). Resolved at the composition root
+# (task → agent → roster grants → required_secrets → vault), which is why it is
+# injected here rather than computed in this leaf.
+SandboxSecretResolver = Callable[[uuid.UUID, "uuid.UUID | None"], Awaitable[dict[str, str]]]
+
 
 class SandboxSessionManager:
     """A process-wide pool of per-task sandbox containers."""
 
-    def __init__(self, controller: SandboxController) -> None:
+    def __init__(
+        self,
+        controller: SandboxController,
+        *,
+        secret_resolver: SandboxSecretResolver | None = None,
+    ) -> None:
         self._controller = controller
+        self._secret_resolver = secret_resolver
         self._pool: dict[_Key, Sandbox] = {}
         # A FIXED stripe of locks (not a per-key dict) so serialization memory
         # is O(stripes) forever — a per-key defaultdict would leak one lock per
@@ -54,7 +67,17 @@ class SandboxSessionManager:
             existing = self._pool.get(key)
             if existing is not None:
                 return existing
-            sandbox = await self._controller.create(task_id, workspace, project_id=project_id)
+            # TITAN-SEC-053: resolve the task's scoped secrets ONCE, at container
+            # creation, and deliver them as tmpfs files. Empty for every current
+            # task (no sandbox tool declares a secret need).
+            secret_files = (
+                await self._secret_resolver(project_id, task_id)
+                if self._secret_resolver is not None
+                else None
+            )
+            sandbox = await self._controller.create(
+                task_id, workspace, project_id=project_id, secret_files=secret_files
+            )
             self._pool[key] = sandbox
             return sandbox
 

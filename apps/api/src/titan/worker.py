@@ -42,6 +42,9 @@ from titan.runs.live_executor import LiveExecutor, make_role_resolver
 from titan.runs.storage import FilesystemStorage
 from titan.runtime.service import build_runtime
 from titan.settings import get_settings
+from titan.vault import alerts as vault_alerts
+from titan.vault import bootstrap as vault_bootstrap
+from titan.vault import service as vault_service
 
 logger = structlog.get_logger("titan.worker")
 
@@ -140,12 +143,44 @@ async def run_artifact_reconciler(  # pragma: no cover — live-verified loop
         await _sleep_or_stop(stop, interval)
 
 
+async def run_secret_expiry_monitor(  # pragma: no cover — periodic orchestration
+    engine: AsyncEngine, *, stop: asyncio.Event, interval: float = 6 * 60 * 60.0
+) -> None:
+    """Raise dashboard alerts for rotation-overdue secrets (TITAN-SEC-052).
+    Deduped in the alert seam, so a periodic scan never re-notifies. Self-healing:
+    a transient DB error is logged and retried."""
+    while not stop.is_set():
+        try:
+            created = await vault_alerts.notify_overdue_secrets(engine)
+            if created:
+                logger.info("vault.overdue_alerts", created=created)
+        except Exception:
+            logger.exception("vault.expiry_monitor_error")
+        await _sleep_or_stop(stop, interval)
+
+
 async def run() -> None:  # pragma: no cover — live-verified orchestration loop
     """Start the worker's stream-processing loops until interrupted."""
     settings = get_settings()
     engine = clients.create_engine(settings)
     redis = clients.create_redis(settings)
-    bus = events.build_bus(redis)
+
+    # TITAN-SEC-020: verify signed envelopes on the worker's consume/reap path
+    # and audit any drop. The worker is the dominant consumer, so signing here
+    # (with the SAME key the API publishes with) is what actually enforces it.
+    signer = vault_bootstrap.build_envelope_signer(settings)
+
+    async def _audit_invalid_envelope(rejection: events.InvalidEnvelope) -> None:
+        await vault_service.record_envelope_rejection(
+            engine,
+            actor=rejection.actor,
+            topic=rejection.topic,
+            reason=rejection.reason,
+            event_id=rejection.event_id,
+            payload_digest=rejection.payload_sha256,
+        )
+
+    bus = events.build_bus(redis, signer=signer, on_invalid=_audit_invalid_envelope)
     drainer = OutboxDrainer(engine, bus)
     ws_fanout = realtime.build_fanout(redis, org=settings.org)
     storage = FilesystemStorage(settings.artifact_root)
@@ -233,6 +268,7 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
         asyncio.create_task(run_clarification_timeout_reaper(engine, stop=stop)),
         asyncio.create_task(run_blocker_sweeper(engine, stop=stop)),
         asyncio.create_task(run_artifact_reconciler(engine, stop=stop)),
+        asyncio.create_task(run_secret_expiry_monitor(engine, stop=stop)),
     ]
     try:
         # return_exceptions: a loop that somehow escapes its own guard cannot

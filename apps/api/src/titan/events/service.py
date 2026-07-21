@@ -7,7 +7,13 @@ the broker-agnostic QueueBus (ADR-BCK-02), the transactional outbox
 
 from redis.asyncio import Redis
 
-from titan.events.bus import Delivery, QueueBus
+from titan.events.bus import (
+    Delivery,
+    InvalidEnvelope,
+    InvalidEnvelopeHook,
+    QueueBus,
+    Signer,
+)
 from titan.events.envelope import Envelope
 from titan.events.outbox import OutboxDrainer, write_event
 from titan.events.redis_bus import RedisStreamBus
@@ -21,13 +27,22 @@ from titan.events.streams import (
 )
 
 
-def build_bus(redis: Redis) -> QueueBus:
+def build_bus(
+    redis: Redis,
+    *,
+    signer: Signer | None = None,
+    on_invalid: InvalidEnvelopeHook | None = None,
+) -> QueueBus:
     """Construct the QueueBus. The backend is Redis Streams; a future NATS
     JetStream implementation (ADR-BCK-02) swaps in behind this same Protocol
     with identical envelopes, but will need its own factory signature (it
     takes connection config, not a Redis client) and a QUEUE_BACKEND setting —
-    neither exists yet."""
-    return RedisStreamBus(redis)
+    neither exists yet.
+
+    ``signer`` enables TITAN-SEC-020 envelope signing: publish signs, consume/
+    reap verify and DROP + audit (via ``on_invalid``) a bad/missing signature.
+    Both are injected here so ``titan.events`` never imports the vault."""
+    return RedisStreamBus(redis, signer=signer, on_invalid=on_invalid)
 
 
 __all__ = [
@@ -38,9 +53,12 @@ __all__ = [
     "STREAM_TASKS_READY",
     "Delivery",
     "Envelope",
+    "InvalidEnvelope",
+    "InvalidEnvelopeHook",
     "OutboxDrainer",
     "QueueBus",
     "RedisStreamBus",
+    "Signer",
     "build_bus",
     "dlq_stream",
     "write_event",

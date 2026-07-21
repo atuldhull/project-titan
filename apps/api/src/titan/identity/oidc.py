@@ -114,8 +114,7 @@ def validate_response_type(response_type: str) -> None:
     if response_type == "token":
         raise OAuthError(
             "unsupported_response_type",
-            "the implicit flow (response_type=token) is disabled; use "
-            "response_type=code with PKCE",
+            "the implicit flow (response_type=token) is disabled; use response_type=code with PKCE",
         )
     raise OAuthError(
         "unsupported_response_type",
@@ -149,8 +148,7 @@ def validate_grant_type(grant_type: str) -> None:
     if grant_type in ("implicit", "client_credentials"):
         raise OAuthError(
             "unsupported_grant_type",
-            f"the {grant_type} grant is not supported; use authorization_code "
-            "with PKCE",
+            f"the {grant_type} grant is not supported; use authorization_code with PKCE",
         )
     raise OAuthError(
         "unsupported_grant_type",
@@ -199,14 +197,10 @@ class AuthCodeStore:
     async def issue(self, payload: AuthCodePayload) -> str:
         """Store ``payload`` under a fresh code with the store's TTL; return it."""
         code = secrets.token_urlsafe(32)
-        await self._redis.set(
-            self._key(code), json.dumps(asdict(payload)), ex=self._ttl
-        )
+        await self._redis.set(self._key(code), json.dumps(asdict(payload)), ex=self._ttl)
         return code
 
-    async def consume(
-        self, code: str, redirect_uri: str, code_verifier: str
-    ) -> AuthCodePayload:
+    async def consume(self, code: str, redirect_uri: str, code_verifier: str) -> AuthCodePayload:
         """Atomically burn ``code`` and validate it; return the bound payload.
 
         The GETDEL is first and unconditional (RFC 6749 §4.1.2, §10.5): a code
@@ -225,9 +219,7 @@ class AuthCodeStore:
             raise OAuthError(
                 "invalid_grant", "redirect_uri does not match the authorization request"
             )
-        if not verify_pkce(
-            code_verifier, payload.code_challenge, payload.code_challenge_method
-        ):
+        if not verify_pkce(code_verifier, payload.code_challenge, payload.code_challenge_method):
             raise OAuthError("invalid_grant", "PKCE verification failed")
         return payload
 

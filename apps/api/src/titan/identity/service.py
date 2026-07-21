@@ -104,9 +104,7 @@ class AuthenticatedUser:
     roles: list[str]
 
 
-async def authenticate_local(
-    conn: AsyncConnection, email: str, password: str
-) -> AuthenticatedUser:
+async def authenticate_local(conn: AsyncConnection, email: str, password: str) -> AuthenticatedUser:
     """Verify a local password and return the user — mint NOTHING.
 
     The credential-check half of a login, split out in Phase 67 so the OAuth
@@ -139,9 +137,7 @@ async def authenticate_local(
     return AuthenticatedUser(user_id=row.id, roles=roles)
 
 
-async def issue_refresh_for(
-    conn: AsyncConnection, user_id: uuid.UUID
-) -> tuple[str, uuid.UUID]:
+async def issue_refresh_for(conn: AsyncConnection, user_id: uuid.UUID) -> tuple[str, uuid.UUID]:
     """A fresh refresh token in a NEW rotation family, and that family's id.
 
     The OAuth token exchange calls this after redeeming a code, and MUST stamp
@@ -226,9 +222,7 @@ async def rotate_refresh(
             # for everyone else. The token is left CONSUMED (rotation already
             # happened) so the presented token cannot be retried; the account
             # must re-login and enroll.
-            required = await mfa.mfa_required_for_login(
-                conn, row.user_id, keyring.org, roles
-            )
+            required = await mfa.mfa_required_for_login(conn, row.user_id, keyring.org, roles)
             if required and not await mfa.is_mfa_enabled(conn, row.user_id):
                 raise MfaEnrollmentRequired(
                     "MFA enrollment is required before this account can continue."

@@ -89,12 +89,8 @@ def upgrade() -> None:
     )
     # The two axes an operator actually queries: "what happened to this account"
     # and "what is this address doing". Both are time-ordered reads.
-    op.create_index(
-        "ix_security_events_email_time", "security_events", ["email", "created_at"]
-    )
-    op.create_index(
-        "ix_security_events_ip_time", "security_events", ["source_ip", "created_at"]
-    )
+    op.create_index("ix_security_events_email_time", "security_events", ["email", "created_at"])
+    op.create_index("ix_security_events_ip_time", "security_events", ["source_ip", "created_at"])
     _updated_at_trigger("security_events")
 
     op.create_table(
@@ -112,9 +108,7 @@ def upgrade() -> None:
         sa.Column("secret", sa.Text(), nullable=False),
         # NULL until the user verifies one code; enforcement reads this, so a
         # started-but-unconfirmed enrollment never blocks a login.
-        sa.Column(
-            "confirmed_at", postgresql.TIMESTAMP(timezone=True), nullable=True
-        ),
+        sa.Column("confirmed_at", postgresql.TIMESTAMP(timezone=True), nullable=True),
         *_conventions(),
     )
     _updated_at_trigger("mfa_credentials")
@@ -134,9 +128,7 @@ def upgrade() -> None:
         sa.Column("used_at", postgresql.TIMESTAMP(timezone=True), nullable=True),
         *_conventions(),
     )
-    op.create_index(
-        "ix_mfa_recovery_codes_user", "mfa_recovery_codes", ["user_id"]
-    )
+    op.create_index("ix_mfa_recovery_codes_user", "mfa_recovery_codes", ["user_id"])
     _updated_at_trigger("mfa_recovery_codes")
 
     op.create_table(

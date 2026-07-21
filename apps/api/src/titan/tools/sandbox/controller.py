@@ -14,9 +14,11 @@ the async Tool Bus is never blocked (TITAN-BCK-002 / ruff ASYNC).
 
 import asyncio
 import codecs
+import io
+import tarfile
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,6 +37,41 @@ from titan.tools.sandbox.policy import (
 from titan.tools.sandbox.workspace import MOUNT_POINT, Workspace
 
 logger = structlog.get_logger("titan.tools.sandbox")
+
+# Scoped secrets (TITAN-SEC-053) land here on a tmpfs (RAM only, mode 0700,
+# freed when the container stops) as individual 0400 files owned by the sandbox
+# uid — never as env vars, which terminal.run lets the model override per call.
+SECRETS_MOUNT = "/run/secrets"
+_SECRETS_TMPFS_BYTES = 1024 * 1024  # 1 MiB is plenty for credential files
+
+
+def _build_secrets_tar(secret_files: Mapping[str, str], *, uid: int, gid: int) -> bytes:
+    """A tar of ``name -> value`` files for ``put_archive`` into the secrets
+    tmpfs: each mode 0400, owned by the sandbox uid so only in-sandbox code
+    running as that user can read it."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as tar:
+        for name, value in secret_files.items():
+            data = value.encode("utf-8")
+            info = tarfile.TarInfo(name=name)
+            info.size = len(data)
+            info.mode = 0o400
+            info.uid = uid
+            info.gid = gid
+            tar.addfile(info, io.BytesIO(data))
+    return buffer.getvalue()
+
+
+def _uid_gid(user: str) -> tuple[int, int]:
+    """Parse a docker ``user`` string ("10001:10001" | "10001") into (uid, gid)."""
+    parts = user.split(":", 1)
+    try:
+        uid = int(parts[0])
+        gid = int(parts[1]) if len(parts) == 2 else uid
+    except ValueError:
+        return 0, 0
+    return uid, gid
+
 
 # busybox/coreutils `timeout` enforces wall-clock INSIDE the sandbox regardless
 # of the SDK; -s KILL guarantees a runaway can't outlive its budget.
@@ -303,16 +340,19 @@ class SandboxController:
         *,
         policy: SandboxPolicy | None = None,
         project_id: uuid.UUID | None = None,
+        secret_files: Mapping[str, str] | None = None,
     ) -> Sandbox:
         """Start a hardened container with ``workspace`` bind-mounted rw at
         ``/workspace`` and nothing else writable. When egress is configured the
         sandbox joins the egress network + is pointed through the forward proxy
-        via a per-task credential. Raises TOOL_UNAVAILABLE if the daemon or base
-        image is unreachable."""
+        via a per-task credential. ``secret_files`` (TITAN-SEC-053) are written
+        into a ``/run/secrets`` tmpfs as 0400 files owned by the sandbox uid —
+        only the task's scoped secrets, freed when the container stops. Raises
+        TOOL_UNAVAILABLE if the daemon or base image is unreachable."""
         active = policy or self._policy
         try:
             container_id = await asyncio.to_thread(
-                self._create_blocking, task_id, workspace.root, active, project_id
+                self._create_blocking, task_id, workspace.root, active, project_id, secret_files
             )
         except ImageNotFound as exc:
             raise ToolError(
@@ -328,10 +368,15 @@ class SandboxController:
         workspace_root: Path,
         policy: SandboxPolicy,
         project_id: uuid.UUID | None,
+        secret_files: Mapping[str, str] | None = None,
     ) -> str:
         client = self._get_client()
         name = f"titan-sbx-{task_id or uuid.uuid4()}"
         tmpfs = {path: f"rw,size={size},mode=1777" for path, size in policy.tmpfs.items()}
+        if secret_files:
+            # A private tmpfs for the injected secrets (mode 0700 — root-of-mount
+            # not world-listable; the files themselves are 0400/sandbox-uid).
+            tmpfs[SECRETS_MOUNT] = f"rw,size={_SECRETS_TMPFS_BYTES},mode=0700"
         # Deny-all by default; if egress is wired, join the egress network and
         # inject the proxy/mirror env (deny-all still holds at the network layer —
         # the only reachable peer on an internal egress network is the proxy).
@@ -359,6 +404,12 @@ class SandboxController:
             environment=environment,
             labels={"titan.sandbox": "1", "titan.task": str(task_id or "adhoc")},
         )
+        if secret_files:
+            # put_archive writes the tar straight into the tmpfs (RAM) without
+            # exposing values via env or the process table. The container is
+            # running (`sleep`), so the mount exists.
+            uid, gid = _uid_gid(policy.user)
+            container.put_archive(SECRETS_MOUNT, _build_secrets_tar(secret_files, uid=uid, gid=gid))
         return str(container.id)
 
     def _egress_env(

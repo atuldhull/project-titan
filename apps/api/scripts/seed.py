@@ -68,6 +68,13 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "member:write",
         "settings:read",
         "settings:write",
+        # Secrets vault (Vol 8 §6, Phase 68). `secret` is carved into
+        # SENSITIVE_RESOURCES, so — like audit/logs/member/settings above —
+        # `*:read` no longer reaches it and the grant must be explicit. §4.2
+        # grants create/rotate (write-only) to Owner/Admin/Maintainer; there is
+        # no plaintext read for any role. `read` here is METADATA only.
+        "secret:read",
+        "secret:write",
         "*:read",
     ],
     "maintainer": [
@@ -87,6 +94,9 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # Maintainer advances the pipeline; the NOT_APPLICABLE skip + budget-raise
         # (pipeline:override) stay with Admin/Owner — the human sign-off gate.
         "pipeline:advance",
+        # Secrets: §4.2 grants create/rotate (write-only) to Maintainer too.
+        "secret:read",
+        "secret:write",
         "*:read",
     ],
     # The machine/agent bundle (TITAN-BCK-021): task flow + the sandbox

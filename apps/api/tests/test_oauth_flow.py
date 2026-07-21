@@ -186,12 +186,10 @@ def _enroll_mfa(client: TestClient, access_token: str) -> str:
     headers = {"Authorization": f"Bearer {access_token}"}
     begin = client.post("/api/v1/auth/mfa/enroll", headers=headers)
     assert begin.status_code == 200, begin.text
-    secret = begin.json()["secret"]
+    secret: str = begin.json()["secret"]
     assert begin.json()["qr_png_data_url"].startswith("data:image/png;base64,")
     code = pyotp.TOTP(secret).now()
-    confirm = client.post(
-        "/api/v1/auth/mfa/confirm", json={"code": code}, headers=headers
-    )
+    confirm = client.post("/api/v1/auth/mfa/confirm", json={"code": code}, headers=headers)
     assert confirm.status_code == 200, confirm.text
     assert len(confirm.json()["recovery_codes"]) == 10
     return secret
@@ -202,9 +200,7 @@ def test_mfa_policy_forces_totp_at_next_privileged_login(client: TestClient) -> 
     pair = login(client, EMAIL, PASSWORD)
     secret = _enroll_mfa(client, pair["access_token"])
     headers = {"Authorization": f"Bearer {pair['access_token']}"}
-    policy = client.put(
-        "/api/v1/auth/mfa/policy", json={"mfa_required": True}, headers=headers
-    )
+    policy = client.put("/api/v1/auth/mfa/policy", json={"mfa_required": True}, headers=headers)
     assert policy.status_code == 200
 
     # 2) A fresh login with NO code is now refused (MFA required).
@@ -285,9 +281,7 @@ def test_agent_api_key_cannot_manage_its_owners_mfa(
     enroll a second factor it controls on that account (account-takeover)."""
     pair = login(client, EMAIL, PASSWORD)
     headers = {"Authorization": f"Bearer {pair['access_token']}"}
-    created = client.post(
-        "/api/v1/auth/api-keys", json={"name": "ci-runner"}, headers=headers
-    )
+    created = client.post("/api/v1/auth/api-keys", json={"name": "ci-runner"}, headers=headers)
     assert created.status_code == 201, created.text
     api_key = created.json()["api_key"]
 
@@ -312,9 +306,7 @@ def test_forced_mfa_also_gates_refresh(client: TestClient) -> None:
 
     # The pre-policy refresh token must not mint fresh tokens for this now-forced
     # account — both the legacy /auth/refresh and the OAuth token endpoint.
-    legacy = client.post(
-        "/api/v1/auth/refresh", json={"refresh_token": refresh_token}
-    )
+    legacy = client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
     assert legacy.status_code == 401
     assert "mfa-enrollment-required" in legacy.json()["type"]
 
@@ -368,9 +360,7 @@ def test_refresh_still_works_for_a_non_privileged_user_under_policy(
         headers={"Authorization": f"Bearer {owner['access_token']}"},
     )
     viewer = login(client, viewer_email, PASSWORD)
-    rotated = client.post(
-        "/api/v1/auth/refresh", json={"refresh_token": viewer["refresh_token"]}
-    )
+    rotated = client.post("/api/v1/auth/refresh", json={"refresh_token": viewer["refresh_token"]})
     assert rotated.status_code == 200, rotated.text
 
 

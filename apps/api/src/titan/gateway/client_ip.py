@@ -31,7 +31,7 @@ attacker typed.
 from __future__ import annotations
 
 import ipaddress
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 # ipaddress._BaseNetwork is private and unparameterised; mypy --strict rejects
 # it as a bare generic. The public union is the same thing with a name.
@@ -40,7 +40,21 @@ IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from starlette.requests import Request
+    from starlette.datastructures import Address, Headers
+
+
+class _RequestLike(Protocol):
+    """The subset of ``starlette.Request`` this resolver reads. Typing to it
+    (rather than the full ``Request``, which needs an ASGI scope to construct)
+    lets a per-IP test drive the resolver directly with a peer/headers stub —
+    the whole point, since TestClient fixes the peer address."""
+
+    @property
+    def client(self) -> Address | None: ...
+
+    @property
+    def headers(self) -> Headers: ...
+
 
 # The address recorded when there is no peer at all. Starlette leaves
 # `request.client` as None for ASGI transports that carry no client scope —
@@ -77,7 +91,7 @@ def _is_trusted(address: str, networks: Sequence[IPNetwork]) -> bool:
     return any(ip in network for network in networks)
 
 
-def resolve_client_ip(request: Request, trusted_proxies: Sequence[str]) -> str:
+def resolve_client_ip(request: _RequestLike, trusted_proxies: Sequence[str]) -> str:
     """The client's address, honouring `X-Forwarded-For` only from a trusted peer.
 
     Returns :data:`UNKNOWN_IP` when there is no peer address to fall back on.

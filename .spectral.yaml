@@ -5,25 +5,26 @@ extends: []
 rules:
   titan-base-path:
     # API resources are URI-versioned under /api/v1. The carve-outs are the
-    # non-API surfaces: probe/metrics endpoints, and /plugin-ui/{id}/{path},
-    # which serves plugin UI panel ASSETS at the path Vol 7 §3 mandates
-    # (`src: /plugin-ui/titan.jira/panel.html` — an iframe src, not an API call).
-    description: All paths live under /api/v1 (URI versioning), or are probe/metrics/plugin-UI-asset endpoints.
+    # non-API surfaces: probe/metrics endpoints, /plugin-ui/{id}/{path} (plugin
+    # UI panel ASSETS at the path Vol 7 §3 mandates — an iframe src, not an API
+    # call), and /.well-known/* (RFC 8414 mandates the OIDC discovery document at
+    # a fixed, root-relative, non-versioned URI — Phase 67 TITAN-SEC-011).
+    description: All paths live under /api/v1 (URI versioning), or are probe/metrics/plugin-UI-asset/.well-known endpoints.
     severity: error
     given: $.paths[*]~
     then:
       function: pattern
       functionOptions:
-        match: "^/(api/v1/|plugin-ui/|healthz$|readyz$|metrics$)"
+        match: "^/(api/v1/|plugin-ui/|\\.well-known/|healthz$|readyz$|metrics$)"
 
   titan-kebab-case-resources:
-    description: "Resource segments are plural kebab-case; {params} and :verb actions allowed (AIP-136), including {param}:verb."
+    description: "Resource segments are plural kebab-case; {params} and :verb actions allowed (AIP-136), including {param}:verb. The RFC-8414 /.well-known/ discovery prefix is a fixed non-resource URI and is allowed."
     severity: error
     given: $.paths[*]~
     then:
       function: pattern
       functionOptions:
-        match: "^/([a-z0-9-]+|\\{[a-z_]+\\})(:[a-z-]+)?(/([a-z0-9-]+|\\{[a-z_]+\\})(:[a-z-]+)?)*$"
+        match: "^/([a-z0-9-]+|\\{[a-z_]+\\}|\\.well-known)(:[a-z-]+)?(/([a-z0-9-]+|\\{[a-z_]+\\})(:[a-z-]+)?)*$"
 
   titan-snake-case-properties:
     description: JSON bodies are snake_case (Pydantic native).

@@ -256,7 +256,7 @@ async def authorize(request: Request, body: AuthorizeRequest) -> AuthorizeRespon
             raise _mfa_required(enrollment_required=False)
         await _guard_totp_replay(app, user.user_id, body.totp_code)
         async with app.state.engine.begin() as conn:
-            ok = await mfa.verify_totp(conn, user.user_id, body.totp_code)
+            ok = await mfa.verify_totp(conn, user.user_id, body.totp_code, app.state.field_cipher)
         if not ok:
             await throttle.record_failure(body.email, source_ip)
             raise _unauthorized("Invalid authentication code.")
@@ -307,16 +307,12 @@ async def oauth_token(request: Request, body: TokenExchangeRequest) -> TokenPair
             raise OAuthError("invalid_grant", str(exc)) from exc
 
     if not (body.code and body.code_verifier and body.redirect_uri):
-        raise OAuthError(
-            "invalid_request", "code, code_verifier and redirect_uri are required"
-        )
+        raise OAuthError("invalid_request", "code, code_verifier and redirect_uri are required")
     payload = await oidc.AuthCodeStore(app.state.redis).consume(
         body.code, body.redirect_uri, body.code_verifier
     )
     async with app.state.engine.begin() as conn:
-        refresh, family_id = await service.issue_refresh_for(
-            conn, uuid.UUID(payload.user_id)
-        )
+        refresh, family_id = await service.issue_refresh_for(conn, uuid.UUID(payload.user_id))
     # The `fam` claim must match the refresh family, or `revoke`/logout cannot
     # kill this session (TITAN-SEC-012/014).
     access, _jti = app.state.keyring.mint(
@@ -358,6 +354,7 @@ async def enroll(request: Request, principal: _AnyUser) -> EnrollResponse:
                 principal.sub,
                 account_label=str(principal.sub),
                 issuer=app.state.settings.jwt_issuer,
+                cipher=app.state.field_cipher,
             )
     except mfa.MfaAlreadyEnrolled as exc:
         raise ProblemException(
@@ -370,14 +367,14 @@ async def enroll(request: Request, principal: _AnyUser) -> EnrollResponse:
 
 
 @mfa_router.post("/confirm", response_model=ConfirmResponse)
-async def confirm(
-    request: Request, body: ConfirmRequest, principal: _AnyUser
-) -> ConfirmResponse:
+async def confirm(request: Request, body: ConfirmRequest, principal: _AnyUser) -> ConfirmResponse:
     """Confirm enrollment with a code; returns the one-time recovery codes."""
     app = request.app
     try:
         async with app.state.engine.begin() as conn:
-            codes = await mfa.confirm_enrollment(conn, principal.sub, body.code)
+            codes = await mfa.confirm_enrollment(
+                conn, principal.sub, body.code, app.state.field_cipher
+            )
     except mfa.MfaNotEnrolled as exc:
         raise ProblemException(
             status=409,
@@ -399,9 +396,7 @@ async def get_policy(request: Request, principal: _SettingsReader) -> MfaPolicy:
 
 
 @mfa_router.put("/policy", response_model=MfaPolicy)
-async def set_policy(
-    request: Request, body: MfaPolicy, principal: _SettingsWriter
-) -> MfaPolicy:
+async def set_policy(request: Request, body: MfaPolicy, principal: _SettingsWriter) -> MfaPolicy:
     app = request.app
     async with app.state.engine.begin() as conn:
         await mfa.set_org_mfa_required(conn, app.state.settings.org, body.mfa_required)

@@ -8,6 +8,7 @@ keys with 24 h TTL.
 """
 
 import datetime as dt
+import hashlib
 from typing import Any, cast
 
 import structlog
@@ -15,7 +16,13 @@ import uuid_utils
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
 
-from titan.events.bus import DeadLetterHook, Delivery
+from titan.events.bus import (
+    DeadLetterHook,
+    Delivery,
+    InvalidEnvelope,
+    InvalidEnvelopeHook,
+    Signer,
+)
 from titan.events.envelope import Envelope
 from titan.events.streams import dlq_stream
 from titan.observability.metrics import STREAM_DLQ_DEPTH
@@ -23,15 +30,32 @@ from titan.observability.metrics import STREAM_DLQ_DEPTH
 logger = structlog.get_logger("titan.events")
 
 _WIRE_FIELD = "data"
+_WIRE_SIG = "sig"  # TITAN-SEC-020 HMAC over the _WIRE_FIELD bytes
 SEEN_TTL_SECONDS = 24 * 60 * 60
 
 
 class RedisStreamBus:
-    """QueueBus over Redis Streams. One instance per process; safe to share."""
+    """QueueBus over Redis Streams. One instance per process; safe to share.
 
-    def __init__(self, redis: Redis, *, maxlen: int = 100_000) -> None:
+    When a ``signer`` is set (TITAN-SEC-020), publish attaches an HMAC over the
+    serialized envelope and consume/reap verify it: a bad, missing, or
+    unparseable envelope is DROPPED (acked, never processed) and reported to
+    ``on_invalid`` for the audit event — it is NOT raised, because raising before
+    the poison check is exactly what would wedge the reaper on a single bad
+    frame."""
+
+    def __init__(
+        self,
+        redis: Redis,
+        *,
+        maxlen: int = 100_000,
+        signer: Signer | None = None,
+        on_invalid: InvalidEnvelopeHook | None = None,
+    ) -> None:
         self._redis = redis
         self._maxlen = maxlen
+        self._signer = signer
+        self._on_invalid = on_invalid
 
     async def ensure_group(self, topic: str, group: str) -> None:
         try:
@@ -59,9 +83,20 @@ class RedisStreamBus:
             payload=payload,
             trace_id=trace_id,
         )
-        await self._redis.xadd(
-            topic, {_WIRE_FIELD: envelope.to_wire()}, maxlen=self._maxlen, approximate=True
-        )
+        wire = envelope.to_wire()
+        # Two literal branches (not a built variable) so mypy contextually types
+        # the mapping against xadd's expected field type.
+        if self._signer is not None:
+            await self._redis.xadd(
+                topic,
+                {_WIRE_FIELD: wire, _WIRE_SIG: self._signer.sign(wire)},
+                maxlen=self._maxlen,
+                approximate=True,
+            )
+        else:
+            await self._redis.xadd(
+                topic, {_WIRE_FIELD: wire}, maxlen=self._maxlen, approximate=True
+            )
         return envelope.event_id
 
     async def consume(
@@ -73,7 +108,9 @@ class RedisStreamBus:
         deliveries: list[Delivery] = []
         for _stream, entries in cast("list[tuple[str, list[Any]]]", response or []):
             for entry_id, fields in cast("list[tuple[str, dict[str, str]]]", entries):
-                envelope = Envelope.from_wire(fields[_WIRE_FIELD])
+                envelope = await self._verify_and_parse(topic, group, entry_id, fields)
+                if envelope is None:
+                    continue  # dropped + audited (bad/missing signature or unparseable)
                 if await self._already_seen(group, envelope.event_id):
                     # Duplicate: ack and drop — no side effect (TITAN-BCK-010).
                     await self._redis.xack(topic, group, entry_id)
@@ -104,7 +141,9 @@ class RedisStreamBus:
         )
         deliveries: list[Delivery] = []
         for entry_id, fields in cast("list[tuple[str, dict[str, str]]]", claimed):
-            envelope = Envelope.from_wire(fields[_WIRE_FIELD])
+            envelope = await self._verify_and_parse(topic, group, entry_id, fields)
+            if envelope is None:
+                continue  # dropped + audited — never counts against max_attempts
             if await self._already_seen(group, envelope.event_id):
                 await self._redis.xack(topic, group, entry_id)
                 continue
@@ -155,7 +194,9 @@ class RedisStreamBus:
             if not entries:
                 break
             for _id, fields in entries:
-                event_ids.append(Envelope.from_wire(fields[_WIRE_FIELD]).event_id)
+                envelope = self._safe_parse(fields.get(_WIRE_FIELD))
+                if envelope is not None:  # a corrupt frame is not a recoverable id
+                    event_ids.append(envelope.event_id)
             if len(entries) < page:
                 break
             cursor = f"({entries[-1][0]}"  # exclusive of the last id (Redis 6.2+)
@@ -185,7 +226,9 @@ class RedisStreamBus:
             entry_id = item["message_id"]
             entries = await self._redis.xrange(topic, min=entry_id, max=entry_id, count=1)
             for _id, fields in cast("list[tuple[str, dict[str, str]]]", entries):
-                event_ids.append(Envelope.from_wire(fields[_WIRE_FIELD]).event_id)
+                envelope = self._safe_parse(fields.get(_WIRE_FIELD))
+                if envelope is not None:
+                    event_ids.append(envelope.event_id)
         return event_ids
 
     async def forget(self, group: str, event_id: str) -> None:
@@ -195,6 +238,110 @@ class RedisStreamBus:
         clearing ingest_outbox.dead_at/published_at) must call this too, or the
         replayed publish is silently swallowed for the seen TTL."""
         await self._redis.delete(self._seen_key(group, event_id))
+
+    # -- signature verification (TITAN-SEC-020) ----------------------------
+
+    @staticmethod
+    def _safe_parse(raw: str | None) -> Envelope | None:
+        """Parse a wire frame, returning None on ANY malformation instead of
+        raising — the reaper must never wedge on one corrupt entry."""
+        if raw is None:
+            return None
+        try:
+            return Envelope.from_wire(raw)
+        except Exception:  # noqa: BLE001 — a bad frame is data, not a bug
+            return None
+
+    async def _verify_and_parse(
+        self, topic: str, group: str, entry_id: str, fields: dict[str, str]
+    ) -> Envelope | None:
+        """Verify the SEC-020 signature and parse the envelope. On a missing/bad
+        signature or unparseable frame, DROP it (ack so it never redelivers or
+        wedges the reaper) and report it for the audit event — returning None so
+        the caller skips it. With no signer configured, only parsing is guarded
+        (backward-compatible with unsigned local/test buses)."""
+        raw = fields.get(_WIRE_FIELD)
+        if raw is None:
+            await self._drop_invalid(topic, group, entry_id, reason="missing_data", envelope=None)
+            return None
+        if self._signer is not None:
+            signature = fields.get(_WIRE_SIG)
+            if not signature:
+                await self._drop_invalid(
+                    topic, group, entry_id, reason="missing_signature", envelope=None, raw=raw
+                )
+                return None
+            if not self._signer.verify(raw, signature):
+                # Best-effort claimed identity for forensics — the frame is
+                # untrusted, so parse only to surface an event_id/actor.
+                await self._drop_invalid(
+                    topic,
+                    group,
+                    entry_id,
+                    reason="bad_signature",
+                    envelope=self._safe_parse(raw),
+                    raw=raw,
+                )
+                return None
+        envelope = self._safe_parse(raw)
+        if envelope is None:
+            await self._drop_invalid(
+                topic, group, entry_id, reason="unparseable", envelope=None, raw=raw
+            )
+            return None
+        # Bind the signature to THIS stream. The HMAC key is shared across
+        # streams, so a signature valid on one stream is valid on another; without
+        # this a Redis-write attacker could relay a legitimately-signed frame onto
+        # a different stream and have it dispatched to the wrong handler. The
+        # envelope already carries its own topic, so a mismatch is a relay.
+        if self._signer is not None and envelope.topic != topic:
+            await self._drop_invalid(
+                topic, group, entry_id, reason="topic_mismatch", envelope=envelope, raw=raw
+            )
+            return None
+        return envelope
+
+    async def _drop_invalid(
+        self,
+        topic: str,
+        group: str,
+        entry_id: str,
+        *,
+        reason: str,
+        envelope: Envelope | None,
+        raw: str | None = None,
+    ) -> None:
+        """Drop a rejected envelope (TITAN-SEC-020 "consumers drop and audit").
+
+        ACK removes it from the PEL so it neither redelivers nor wedges the
+        reaper. Deliberately NOT dead-lettered and NOT marked-seen: dead-lettering
+        would let a forged-frame flood grow the DLQ unbounded, and marking a
+        forged (attacker-chosen) event_id seen would let an attacker poison the
+        dedup ledger against a future legitimate event with that id."""
+        await self._redis.xack(topic, group, entry_id)
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest() if raw else None
+        event_id = envelope.event_id if envelope is not None else None
+        actor = envelope.actor if envelope is not None else "unknown"
+        logger.warning(
+            "queue.envelope_rejected",
+            stream=topic,
+            reason=reason,
+            event_id=event_id,
+            claimed_actor=actor,
+        )
+        if self._on_invalid is not None:
+            try:
+                await self._on_invalid(
+                    InvalidEnvelope(
+                        topic=topic,
+                        actor=actor,
+                        reason=reason,
+                        event_id=event_id,
+                        payload_sha256=digest,
+                    )
+                )
+            except Exception:
+                logger.exception("queue.invalid_envelope_hook_failed", stream=topic)
 
     # -- internals ---------------------------------------------------------
 

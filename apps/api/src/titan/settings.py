@@ -9,7 +9,7 @@ import json
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -268,6 +268,32 @@ class Settings(BaseSettings):
     # BFF's address range wherever browsers reach the API through the proxy.
     trusted_proxies: Annotated[list[str], NoDecode] = []
 
+    # --- Secrets vault (Phase 68; Vol 8 §6, ADR-SEC-03) ---
+    # The age identity (AGE-SECRET-KEY-1…) that unlocks the age-encrypted YAML
+    # vault at boot. EMPTY = no writable vault: secrets resolve read-only from
+    # the environment (the Phase-52 default) and the write-only secrets API
+    # answers 503. Generate one with `age-keygen` or `python -m titan.vault`.
+    # This is a class-1 platform secret — never commit it; set it via env.
+    vault_age_key: str = ""
+    # Path to the age-encrypted secrets YAML (ciphertext; git-storable). Written
+    # atomically by create/rotate/delete when a vault_age_key is set.
+    vault_age_file: str = "config/secrets.yaml.age"
+    # Key material for AES-256-GCM field encryption of the highest-sensitivity
+    # columns (mfa_credentials.secret today; TITAN-SEC-063). Empty = an ephemeral
+    # dev key in LOCAL only; staging/production refuse to boot without it (see
+    # _require_crypto_keys_outside_local) because an ephemeral key locks every
+    # MFA user out after a restart.
+    field_encryption_key: str = ""
+    # The PREVIOUS field key during a rotation window: new writes use
+    # field_encryption_key, but rows written under the old key still decrypt
+    # (TITAN-SEC-063 "decrypt old rows with old key version"). Clear it once a
+    # re-encrypt pass has migrated every row.
+    field_encryption_key_previous: str = ""
+    # HMAC key for signed Redis Streams envelopes (TITAN-SEC-020). Empty derives
+    # a fixed, well-known DEV key (so sign/verify is exercised locally without
+    # wedging cross-process); set from the vault in production.
+    bus_hmac_key: str = ""
+
     # CORS allowlist (§9.1; dev default per spec). Env: comma-separated or
     # JSON list in TITAN_CORS_ORIGINS. NoDecode: the validator below owns
     # parsing (pydantic-settings would otherwise demand JSON and crash on
@@ -310,6 +336,42 @@ class Settings(BaseSettings):
                     f"address or CIDR block: {error}"
                 ) from error
         return value
+
+    @model_validator(mode="after")
+    def _require_crypto_keys_outside_local(self) -> "Settings":
+        """Fail CLOSED on empty crypto keys anywhere but local (Phase 68 security
+        review). Both keys derive a usable-but-insecure fallback when empty —
+        ``bus_hmac_key`` a source-visible fixed HMAC key (so a forgotten
+        ``TITAN_BUS_HMAC_KEY`` would silently sign/verify SEC-020 envelopes with
+        a public key, making forgery trivial — the exact fail-open the whole
+        control exists to prevent), and ``field_encryption_key`` an ephemeral
+        per-process AES key (so a forgotten ``TITAN_FIELD_ENCRYPTION_KEY`` would
+        lock every MFA-enrolled user out after any restart or on any second
+        worker). A warning is not enough — like ``trusted_proxies`` above and
+        ``seed.py``'s refusal to seed a default admin password outside local,
+        refusing to boot is the only reading that cannot be mistaken for
+        working. ``vault_age_key`` is intentionally NOT required: an empty vault
+        is a supported prod mode (env-backed secrets, SEC-050) and the write API
+        answers 503 rather than failing open.
+        """
+        if self.environment == "local":
+            return self
+        missing = [
+            name
+            for name, value in (
+                ("TITAN_BUS_HMAC_KEY", self.bus_hmac_key),
+                ("TITAN_FIELD_ENCRYPTION_KEY", self.field_encryption_key),
+            )
+            if not value
+        ]
+        if missing:
+            raise ValueError(
+                f"{', '.join(missing)} must be set when environment is "
+                f"{self.environment!r} — an empty value would fall back to an "
+                "insecure default (a public HMAC key / an ephemeral AES key). "
+                "Set them from the vault, or run with environment=local for dev."
+            )
+        return self
 
 
 @lru_cache

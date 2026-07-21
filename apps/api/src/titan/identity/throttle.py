@@ -72,9 +72,7 @@ def _retry_after(failures: int, last_failure_at: float, now: float) -> float:
     """Seconds still to wait, or 0 if the caller may attempt now."""
     if failures < THRESHOLD:
         return 0.0
-    delay: float = min(
-        BASE_DELAY_SECONDS * 2 ** (failures - THRESHOLD), MAX_DELAY_SECONDS
-    )
+    delay: float = min(BASE_DELAY_SECONDS * 2 ** (failures - THRESHOLD), MAX_DELAY_SECONDS)
     remaining = (last_failure_at + delay) - now
     return max(0.0, remaining)
 
@@ -128,9 +126,7 @@ class LoginThrottle:
             return ThrottleDecision(
                 allowed=False, retry_after_seconds=acct_wait, triggered_by="account"
             )
-        return ThrottleDecision(
-            allowed=False, retry_after_seconds=ip_wait, triggered_by="ip"
-        )
+        return ThrottleDecision(allowed=False, retry_after_seconds=ip_wait, triggered_by="ip")
 
     async def _bump(self, key: str, now: float) -> None:
         try:

@@ -2481,6 +2481,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/secrets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Secrets
+         * @description List secret metadata (never values), including expiry state (SEC-052).
+         */
+        get: operations["list_secrets_api_v1_secrets_get"];
+        put?: never;
+        /**
+         * Create Secret
+         * @description Create a secret (write-only). The value is stored age-encrypted and never
+         *     round-trips; the response is metadata only.
+         */
+        post: operations["create_secret_api_v1_secrets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/secrets/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Secret
+         * @description Metadata for one secret (never its value).
+         */
+        get: operations["get_secret_api_v1_secrets__name__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Secret
+         * @description Delete a secret (metadata + stored value).
+         */
+        delete: operations["delete_secret_api_v1_secrets__name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/secrets/{name}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate Secret
+         * @description Replace a secret's value (write-only), resetting its rotation clock.
+         */
+        post: operations["rotate_secret_api_v1_secrets__name__rotate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/secrets/{name}/value": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Secret Value
+         * @description There is no such thing (TITAN-SEC-051). A value is NEVER read back through
+         *     any API or UI — this route exists only to answer 405 explicitly rather than a
+         *     bare 404, so the write-only contract is discoverable.
+         */
+        get: operations["read_secret_value_api_v1_secrets__name__value_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/llm": {
         parameters: {
             query?: never;
@@ -3452,6 +3543,25 @@ export interface components {
             title: string;
             /** Version */
             version: number;
+        };
+        /** CreateSecretIn */
+        CreateSecretIn: {
+            /** Name */
+            name: string;
+            /**
+             * Rotation Days
+             * @default 90
+             */
+            rotation_days: number;
+            /** @default org */
+            scope: components["schemas"]["SecretScope"];
+            /** Scope Ref */
+            scope_ref?: string | null;
+            /**
+             * Value
+             * Format: password
+             */
+            value: string;
         };
         /**
          * CurationReport
@@ -6044,6 +6154,14 @@ export interface components {
             /** Role */
             role: string;
         };
+        /** RotateSecretIn */
+        RotateSecretIn: {
+            /**
+             * Value
+             * Format: password
+             */
+            value: string;
+        };
         /** RunCreate */
         RunCreate: {
             /**
@@ -6128,6 +6246,50 @@ export interface components {
             /** Title */
             title: string;
         };
+        /**
+         * SecretMetadataOut
+         * @description Everything a read returns — metadata only, and the derived expiry (SEC-052).
+         */
+        SecretMetadataOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Due At
+             * Format: date-time
+             */
+            due_at: string;
+            /** Name */
+            name: string;
+            /** Overdue */
+            overdue: boolean;
+            /** Owner Id */
+            owner_id: string | null;
+            /**
+             * Rotated At
+             * Format: date-time
+             */
+            rotated_at: string;
+            /** Rotation Days */
+            rotation_days: number;
+            scope: components["schemas"]["SecretScope"];
+            /** Scope Ref */
+            scope_ref: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * SecretScope
+         * @description Who a secret is scoped to (SEC-052). ``org`` secrets inject into any of
+         *     the org's tasks; ``project``/``task`` narrow that.
+         * @enum {string}
+         */
+        SecretScope: "org" | "project" | "task";
         /**
          * SecretStatus
          * @description One entry of ``permissions.secrets``.
@@ -11158,6 +11320,185 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_secrets_api_v1_secrets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretMetadataOut"][];
+                };
+            };
+        };
+    };
+    create_secret_api_v1_secrets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSecretIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretMetadataOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_secret_api_v1_secrets__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretMetadataOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    delete_secret_api_v1_secrets__name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    rotate_secret_api_v1_secrets__name__rotate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotateSecretIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretMetadataOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    read_secret_value_api_v1_secrets__name__value_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
