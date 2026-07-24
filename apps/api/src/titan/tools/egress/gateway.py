@@ -21,7 +21,7 @@ import asyncio
 import hmac
 import socket
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 import structlog
@@ -34,16 +34,57 @@ from titan.tools.egress.search import SearchBackend
 logger = structlog.get_logger("titan.tools.egress.gateway")
 
 _MAX_BODY_BYTES = 8 * 1024 * 1024
+# SEC-074: redirects are followed MANUALLY so each hop is SSRF-checked BEFORE it
+# is contacted. `follow_redirects=True` would let httpx connect to an internal
+# host on an intermediate hop (triggering side effects) while only the first and
+# final host were ever validated — the vacuous "final-host re-check" this
+# replaces. A small hop cap also bounds redirect loops.
+_MAX_REDIRECTS = 5
+_REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
+
+
+class _SsrfBlocked(Exception):
+    """A hop targeted a private/metadata address or a non-http(s) scheme."""
+
+
+async def _fetch_following_redirects(client: httpx.AsyncClient, start_url: str) -> httpx.Response:
+    """GET ``start_url``, validating EVERY hop's host against the SSRF block
+    before connecting (TITAN-SEC-074 "re-validate on every redirect hop")."""
+    current = start_url
+    for _ in range(_MAX_REDIRECTS + 1):
+        parts = urlsplit(current)
+        if parts.scheme not in {"http", "https"} or not parts.hostname:
+            raise _SsrfBlocked("redirect to a non-http(s) URL")
+        default_port = 443 if parts.scheme == "https" else 80
+        if await _resolves_to_blocked(parts.hostname, parts.port or default_port):
+            raise _SsrfBlocked("redirected to a private/metadata address")
+        response = await client.get(current, follow_redirects=False, timeout=20.0)
+        if response.status_code in _REDIRECT_CODES:
+            location = response.headers.get("location")
+            if location:
+                current = urljoin(current, location)
+                continue
+        return response
+    raise _SsrfBlocked("too many redirects")
 
 
 async def _resolves_to_blocked(host: str, port: int) -> bool:
     """True if ``host`` (a name OR literal) resolves to ANY private/loopback/
     link-local/metadata IP — the post-DNS SSRF check the tool-side literal-IP
     guard defers to the proxy (SEC-074). Blocks the 'DNS name → 169.254.169.254'
-    attack the constraint layer can't see. (A residual DNS-rebinding window
-    remains between this check and httpx's own resolution; the deny-all sandbox
-    never reaches this path — it CONNECT-tunnels through the forward proxy — so
-    this guards only the trusted tool-host research fetch.)"""
+    attack the constraint layer can't see, on the initial URL AND on every
+    redirect hop (see _fetch_following_redirects).
+
+    ACCEPTED RESIDUAL (Phase-70 review): a DNS-rebinding window remains between
+    this getaddrinfo check and httpx's own connect-time resolution — an attacker
+    controlling a domain with a low TTL could answer public here and private at
+    connect. Closing it requires pinning the vetted IP into the connection
+    (custom transport + SNI/Host preservation for TLS), which is disproportionate
+    here: the deny-all sandbox never reaches this path (it CONNECT-tunnels
+    through the forward proxy, which is the network-layer control that also stops
+    rebinding), so this guards only the trusted tool-host research fetch, and in
+    production that egress is itself confined by the §3.5 egress NetworkPolicy.
+    Rebinding is therefore contained at the network layer, not here."""
     if host_is_blocked(host):  # literal IP / known metadata name — cheap first pass
         return True
     try:
@@ -91,23 +132,22 @@ def build_gateway_app(
         parts = urlsplit(url)
         if parts.scheme not in {"http", "https"} or not parts.hostname:
             raise HTTPException(status_code=400, detail="only http(s) URLs may be fetched")
-        default_port = 443 if parts.scheme == "https" else 80
-        # SSRF: block targets that RESOLVE to a private/metadata IP (not just
-        # literal-IP URLs) — the post-DNS check the constraint layer defers here.
-        if await _resolves_to_blocked(parts.hostname, parts.port or default_port):
-            raise HTTPException(status_code=403, detail="target is a private/metadata address")
         cached = cache.get(url)
         if cached is not None:
             return _fetch_body(cached, from_cache=True)
         try:
-            response = await client.get(url, follow_redirects=True, timeout=20.0)
+            # Manual per-hop redirect following: EVERY hop's host (initial and
+            # each Location) is SSRF-checked before it is contacted (SEC-074), so
+            # a `public -> 302 internal -> public` chain never reaches the
+            # internal host. A block raises 403, which the tool host maps to an
+            # audited SANDBOX_VIOLATION (tools/web/session.py) — the "blocked
+            # attempts audited" clause.
+            response = await _fetch_following_redirects(client, url)
+        except _SsrfBlocked as exc:
+            logger.warning("egress.ssrf_blocked", url=url, reason=str(exc))
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
         except httpx.HTTPError as exc:
             raise HTTPException(status_code=502, detail=f"fetch failed: {exc}") from exc
-        # Re-check the FINAL host after redirects (SSRF via redirect, SEC-074) —
-        # resolving it too, so a redirect to a DNS name over a metadata IP is caught.
-        final_host = response.url.host
-        if final_host and await _resolves_to_blocked(final_host, response.url.port or 0):
-            raise HTTPException(status_code=403, detail="redirected to a private/metadata address")
         body = response.content[:_MAX_BODY_BYTES]
         entry = CachedResponse(
             status=response.status_code,

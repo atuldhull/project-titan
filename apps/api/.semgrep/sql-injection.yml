@@ -1,0 +1,52 @@
+rules:
+  - id: titan-string-built-sql
+    languages: [python]
+    severity: ERROR
+    message: >-
+      String-built SQL is banned (TITAN-SEC-071). All database access uses
+      SQLAlchemy parameter binding (a ":name" placeholder plus a params dict) —
+      never string concatenation, %-formatting, or str.format() to assemble a
+      query, including in Alembic migrations. Column/table identifiers that must
+      be interpolated MUST come from module-level constants inside an f-string,
+      not from request data. Concatenation/%/.format are the classic SQL
+      injection vectors and never appear in this codebase.
+    metadata:
+      cwe: "CWE-89: SQL Injection"
+      owasp: "A03:2021 - Injection"
+      references:
+        - https://docs.sqlalchemy.org/en/20/core/tutorial.html#using-textual-sql
+    patterns:
+      - pattern-either:
+          # str concatenation into a query
+          - pattern: sqlalchemy.text(... + ...)
+          - pattern: text(... + ...)
+          - pattern: $CONN.execute(... + ...)
+          - pattern: op.execute(... + ...)
+          # %-formatting into a query
+          - pattern: sqlalchemy.text(... % ...)
+          - pattern: text(... % ...)
+          - pattern: $CONN.execute(... % ...)
+          - pattern: op.execute(... % ...)
+          # str.format() into a query
+          - pattern: sqlalchemy.text("...".format(...))
+          - pattern: text("...".format(...))
+          - pattern: $CONN.execute("...".format(...))
+          - pattern: op.execute("...".format(...))
+          - pattern: sqlalchemy.text($S.format(...))
+          - pattern: text($S.format(...))
+          - pattern: $CONN.execute($S.format(...))
+          - pattern: op.execute($S.format(...))
+          # f-string interpolation of a SUBSCRIPT or CALL — the dominant modern
+          # vector (request data spliced into SQL, e.g. text(f"...{data['id']}")).
+          # The real data layer only interpolates module-level CONSTANTS by bare
+          # name and one fixed attribute (keyset.order_by), so those shapes are
+          # intentionally NOT matched — this catches the tainted shapes without
+          # flooding on the vetted constant-column f-strings.
+          - pattern: sqlalchemy.text(f"...{$X[$Y]}...")
+          - pattern: text(f"...{$X[$Y]}...")
+          - pattern: $CONN.execute(f"...{$X[$Y]}...")
+          - pattern: op.execute(f"...{$X[$Y]}...")
+          - pattern: sqlalchemy.text(f"...{$F(...)}...")
+          - pattern: text(f"...{$F(...)}...")
+          - pattern: $CONN.execute(f"...{$F(...)}...")
+          - pattern: op.execute(f"...{$F(...)}...")

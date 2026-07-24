@@ -40,6 +40,12 @@ class SecurityEventType(StrEnum):
     MFA_RECOVERY_USED = "mfa.recovery_used"
     MFA_REQUIRED_BLOCKED = "mfa.required_blocked"
     MFA_POLICY_CHANGED = "mfa.policy_changed"
+    # Phase 70 abuse-prevention blocks (Vol 8 §10.2: "rate-limit and SSRF
+    # blocks", WebSocket controls). Detail carries references (route class,
+    # path, IP), never bodies or secrets (SEC-092).
+    RATE_LIMITED = "ratelimit.exceeded"
+    WS_CONNECTION_REJECTED = "ws.connection_rejected"
+    WS_FLOOD_DISCONNECTED = "ws.flood_disconnected"
 
 
 _INSERT = text(

@@ -5,7 +5,22 @@ any module).
 import json
 from typing import Annotated, Any, ClassVar
 
-from pydantic import BaseModel, BeforeValidator, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, model_validator
+
+
+class StrictModel(BaseModel):
+    """Base for every REQUEST body and queue payload (TITAN-SEC-070).
+
+    ``extra="forbid"`` rejects unknown keys with a 422 rather than silently
+    dropping them (Pydantic's permissive default) — so a typo'd or injected
+    field is a loud client error, not a silent no-op that hides a bug or smuggles
+    an unexpected value past validation. Response DTOs deliberately do NOT use
+    this: they validate ORM rows that legitimately carry extra columns
+    (``extra="ignore"``). Length/enum/pattern bounds are the field's own job;
+    this base only owns the extra-key policy so it can be applied uniformly.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
 
 def _decode_jsonb(value: Any) -> Any:

@@ -489,6 +489,59 @@ def test_create_task_201_and_appears_on_board(ctx: dict[str, Any]) -> None:
     assert task["id"] in {c["id"] for c in columns["backlog"]["tasks"]}
 
 
+def test_board_is_read_through_cached(ctx: dict[str, Any]) -> None:
+    """BCK-023: a repeated board fetch is served from Redis (hit-counter delta)."""
+    from titan.observability.metrics import CACHE_HITS, CACHE_MISSES
+
+    pid = _new_project(ctx).json()["id"]
+    _new_task(ctx, pid, title="Cached task")
+    hdr = ctx["token_for"]("owner")
+    hits0 = CACHE_HITS.labels(resource="board")._value.get()
+    misses0 = CACHE_MISSES.labels(resource="board")._value.get()
+
+    first = ctx["client"].get(f"/api/v1/projects/{pid}/board", headers=hdr)
+    second = ctx["client"].get(f"/api/v1/projects/{pid}/board", headers=hdr)
+    assert first.json() == second.json()
+    assert CACHE_MISSES.labels(resource="board")._value.get() == misses0 + 1  # populated once
+    assert CACHE_HITS.labels(resource="board")._value.get() == hits0 + 1  # served from cache
+
+
+def test_task_transition_invalidates_the_cached_board(ctx: dict[str, Any]) -> None:
+    """BCK-023 acceptance: a task transition changes the board within one cycle —
+    the cache does not serve a stale board."""
+    pid = _new_project(ctx).json()["id"]
+    task = _new_task(ctx, pid, title="Move me")
+    hdr = ctx["token_for"]("owner")
+
+    board = ctx["client"].get(f"/api/v1/projects/{pid}/board", headers=hdr).json()
+    backlog = {c["status"]: c for c in board["columns"]}["backlog"]
+    assert task["id"] in {t["id"] for t in backlog["tasks"]}  # cached in backlog
+
+    moved = ctx["client"].post(
+        f"/api/v1/tasks/{task['id']}:transition", json={"action": "ready"}, headers=hdr
+    )
+    assert moved.status_code == 200 and moved.json()["status"] == "ready"
+
+    after = ctx["client"].get(f"/api/v1/projects/{pid}/board", headers=hdr).json()
+    columns = {c["status"]: c for c in after["columns"]}
+    assert task["id"] not in {t["id"] for t in columns["backlog"]["tasks"]}  # not stale
+    assert task["id"] in {t["id"] for t in columns["ready"]["tasks"]}  # moved
+
+
+def test_board_if_none_match_returns_304(ctx: dict[str, Any]) -> None:
+    """BCK-023: the board carries an ETag and a matching If-None-Match saves the
+    payload with a 304."""
+    pid = _new_project(ctx).json()["id"]
+    _new_task(ctx, pid)
+    hdr = ctx["token_for"]("owner")
+    first = ctx["client"].get(f"/api/v1/projects/{pid}/board", headers=hdr)
+    etag = first.headers["etag"]
+    again = ctx["client"].get(
+        f"/api/v1/projects/{pid}/board", headers={**hdr, "If-None-Match": etag}
+    )
+    assert again.status_code == 304
+
+
 def test_task_patch_rejects_status_422(ctx: dict[str, Any]) -> None:
     """Phase requirement: the task PATCH schema must NOT accept `status`; a
     status change is a 422, because state only moves via :transition."""

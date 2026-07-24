@@ -15,7 +15,9 @@ Two non-CRUD surfaces:
 """
 
 import asyncio
+import hashlib
 import json
+import time
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -325,6 +327,60 @@ def _declared_hook(manifest: dict[str, Any], hook_path: str) -> dict[str, Any]:
     )
 
 
+_TIMESTAMP_HEADERS = ("x-titan-timestamp", "x-slack-request-timestamp", "x-signature-timestamp")
+
+
+def _reject_stale_timestamp(request: Request, skew_seconds: int) -> None:
+    """Reject a delivery whose signed timestamp is older than the window (SEC-075).
+
+    Applies only when a timestamp header is present (GitHub's body-only HMAC
+    carries none, so its freshness rests on replay dedup). A malformed timestamp
+    is rejected 401 rather than ignored — fail closed on the parse."""
+    for header in _TIMESTAMP_HEADERS:
+        raw = request.headers.get(header)
+        if raw is None:
+            continue
+        try:
+            sent = int(float(raw))
+        except ValueError as exc:
+            raise ProblemException(
+                status=401,
+                title="Invalid timestamp",
+                detail="the webhook timestamp is malformed",
+                problem_type=problem_type("unauthorized"),
+            ) from exc
+        if abs(time.time() - sent) > skew_seconds:
+            raise ProblemException(
+                status=401,
+                title="Stale delivery",
+                detail="the webhook timestamp is outside the accepted window",
+                problem_type=problem_type("unauthorized"),
+            )
+        return
+
+
+async def _reject_replay(redis: Any, plugin_id: str, signature: str, ttl_seconds: int) -> None:
+    """Reject a replayed delivery (SEC-075), deduped on the HMAC SIGNATURE — the
+    one value an attacker cannot forge or rotate (unlike the unsigned delivery-id
+    headers). A replay reuses the exact signature → same key → rejected. Fails
+    OPEN on a Redis outage: a cache blip must not reject genuine webhooks — the
+    HMAC still authenticates them."""
+    key = f"webhook:seen:{plugin_id}:{hashlib.sha256(signature.encode()).hexdigest()}"
+    try:
+        first_seen = await redis.set(key, "1", nx=True, ex=max(ttl_seconds, 60))
+    except Exception:  # pragma: no cover - fail-open path
+        logger.warning("plugin.webhook_dedup_unavailable", plugin_id=plugin_id)
+        return
+    if not first_seen:
+        logger.warning("plugin.webhook_replay", plugin_id=plugin_id)
+        raise ProblemException(
+            status=401,
+            title="Replayed delivery",
+            detail="this webhook delivery has already been processed",
+            problem_type=problem_type("unauthorized"),
+        )
+
+
 @router.post("/plugins/{plugin_id}/hooks/{hook_path:path}")
 async def webhook(request: Request, plugin_id: str, hook_path: str) -> dict[str, Any]:
     """Verify HMAC-SHA256 over the RAW body against the plugin's named secret, then
@@ -360,6 +416,29 @@ async def webhook(request: Request, plugin_id: str, hook_path: str) -> dict[str,
             detail="the webhook signature did not verify",
             problem_type=problem_type("unauthorized"),
         )
+    # SEC-075 freshness. Two orthogonal checks after the signature verifies:
+    #
+    #  * Replay dedup (all schemes): a replayed delivery reuses the exact same
+    #    signature, so a first-seen marker keyed on the delivery id (GitHub sends
+    #    a unique X-GitHub-Delivery; else the signature digest) rejects the
+    #    second copy. This is the ONLY freshness guarantee GitHub's body-only
+    #    HMAC can carry — it signs no timestamp.
+    #  * Timestamp skew (schemes that send a signed timestamp): reject deliveries
+    #    older than the configured window. An UNSIGNED timestamp would be
+    #    forgeable, but the only attack that enables — replaying with a fresh
+    #    timestamp — is independently caught by the replay dedup above.
+    settings = request.app.state.settings
+    _reject_stale_timestamp(request, settings.webhook_max_skew_seconds)
+    # Dedup key is the SIGNATURE — the ONLY value the attacker cannot forge (it
+    # is HMAC(secret, body) and they lack the secret). Deliberately NOT the
+    # delivery-id headers: those are unsigned and client-controlled, so keying on
+    # them let an attacker rotate x-github-delivery to defeat dedup while
+    # replaying a captured signed body (Phase-70 review, CRITICAL). Two genuinely
+    # distinct deliveries always differ in body → differ in signature; a GitHub
+    # re-delivery reuses the exact signature and is correctly deduped.
+    await _reject_replay(
+        request.app.state.redis, plugin_id, signature, settings.webhook_replay_ttl_seconds
+    )
     try:
         payload = json.loads(body.decode("utf-8")) if body else {}
     except json.JSONDecodeError:

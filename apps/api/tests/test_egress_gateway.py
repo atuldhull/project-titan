@@ -109,6 +109,48 @@ def test_fetch_blocks_ssrf_targets() -> None:
     run_async(scenario)
 
 
+def test_fetch_blocks_redirect_to_internal() -> None:
+    # SEC-074 per-hop: a public URL that 302-redirects to a metadata IP is
+    # blocked at the redirect hop, and the internal host is NEVER contacted.
+    async def scenario() -> None:
+        calls: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(str(request.url))
+            if "redirector" in str(request.url):
+                return httpx.Response(302, headers={"location": "http://169.254.169.254/latest/"})
+            return httpx.Response(200, text=_HTML)
+
+        outbound = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        async with _gateway(outbound) as gw:
+            resp = await gw.post("/fetch", json={"url": "http://redirector.test/go"}, headers=_AUTH)
+            assert resp.status_code == 403
+            # The redirector was dialled once; the metadata host never was.
+            assert calls == ["http://redirector.test/go"]
+            assert not any("169.254" in c for c in calls)
+        await outbound.aclose()
+
+    run_async(scenario)
+
+
+def test_fetch_follows_safe_redirect() -> None:
+    # The per-hop guard must still FOLLOW a redirect to a benign host.
+    async def scenario() -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if "start" in str(request.url):
+                return httpx.Response(302, headers={"location": "http://dest.test/page"})
+            return httpx.Response(200, text=_HTML, headers={"content-type": "text/html"})
+
+        outbound = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        async with _gateway(outbound) as gw:
+            resp = await gw.post("/fetch", json={"url": "http://start.test/go"}, headers=_AUTH)
+            assert resp.status_code == 200
+            assert "hi" in resp.json()["body"]
+        await outbound.aclose()
+
+    run_async(scenario)
+
+
 def test_search_parses_and_caches() -> None:
     async def scenario() -> None:
         outbound, upstream = _client_pair()

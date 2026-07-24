@@ -317,8 +317,10 @@
         "type": "object"
       },
       "ApiKeyGrant": {
+        "additionalProperties": false,
         "properties": {
           "api_key": {
+            "maxLength": 512,
             "minLength": 1,
             "title": "Api Key",
             "type": "string"
@@ -420,6 +422,7 @@
         "type": "object"
       },
       "ApiKeyRequest": {
+        "additionalProperties": false,
         "properties": {
           "agent_id": {
             "anyOf": [
@@ -737,14 +740,17 @@
         "type": "object"
       },
       "AuthorizeRequest": {
+        "additionalProperties": false,
         "properties": {
           "code_challenge": {
+            "maxLength": 256,
             "minLength": 1,
             "title": "Code Challenge",
             "type": "string"
           },
           "code_challenge_method": {
             "default": "S256",
+            "maxLength": 16,
             "title": "Code Challenge Method",
             "type": "string"
           },
@@ -755,28 +761,33 @@
             "type": "string"
           },
           "password": {
+            "maxLength": 1024,
             "minLength": 1,
             "title": "Password",
             "type": "string"
           },
           "redirect_uri": {
+            "maxLength": 2048,
             "minLength": 1,
             "title": "Redirect Uri",
             "type": "string"
           },
           "response_type": {
             "default": "code",
+            "maxLength": 32,
             "title": "Response Type",
             "type": "string"
           },
           "scope": {
             "default": "user",
+            "maxLength": 256,
             "title": "Scope",
             "type": "string"
           },
           "state": {
             "anyOf": [
               {
+                "maxLength": 1024,
                 "type": "string"
               },
               {
@@ -1537,6 +1548,7 @@
         "type": "object"
       },
       "ConfirmRequest": {
+        "additionalProperties": false,
         "properties": {
           "code": {
             "maxLength": 64,
@@ -1629,6 +1641,7 @@
         "type": "object"
       },
       "CreateSecretIn": {
+        "additionalProperties": false,
         "properties": {
           "name": {
             "maxLength": 128,
@@ -4320,6 +4333,7 @@
         "type": "object"
       },
       "MemberRolesUpdate": {
+        "additionalProperties": false,
         "description": "Replace a member's grants at one scope. ``project_id`` NULL rewrites the\norg-wide set; a project id rewrites that project's set and leaves org-wide\ngrants untouched.",
         "properties": {
           "project_id": {
@@ -5088,6 +5102,7 @@
         "type": "object"
       },
       "MemorySearchRequest": {
+        "additionalProperties": false,
         "description": "\u00a76.11's search box.",
         "properties": {
           "min_score": {
@@ -5423,6 +5438,7 @@
         "type": "object"
       },
       "MfaPolicy": {
+        "additionalProperties": false,
         "properties": {
           "mfa_required": {
             "title": "Mfa Required",
@@ -6540,6 +6556,7 @@
         "type": "object"
       },
       "PasswordGrant": {
+        "additionalProperties": false,
         "properties": {
           "email": {
             "maxLength": 320,
@@ -6554,6 +6571,7 @@
             "type": "string"
           },
           "password": {
+            "maxLength": 1024,
             "minLength": 1,
             "title": "Password",
             "type": "string"
@@ -7805,8 +7823,10 @@
         "type": "object"
       },
       "RefreshRequest": {
+        "additionalProperties": false,
         "properties": {
           "refresh_token": {
+            "maxLength": 4096,
             "minLength": 1,
             "title": "Refresh Token",
             "type": "string"
@@ -7887,6 +7907,7 @@
         "type": "object"
       },
       "RotateSecretIn": {
+        "additionalProperties": false,
         "properties": {
           "value": {
             "format": "password",
@@ -9013,6 +9034,7 @@
           "code": {
             "anyOf": [
               {
+                "maxLength": 512,
                 "type": "string"
               },
               {
@@ -9024,6 +9046,7 @@
           "code_verifier": {
             "anyOf": [
               {
+                "maxLength": 256,
                 "type": "string"
               },
               {
@@ -9033,12 +9056,14 @@
             "title": "Code Verifier"
           },
           "grant_type": {
+            "maxLength": 64,
             "title": "Grant Type",
             "type": "string"
           },
           "redirect_uri": {
             "anyOf": [
               {
+                "maxLength": 2048,
                 "type": "string"
               },
               {
@@ -9050,6 +9075,7 @@
           "refresh_token": {
             "anyOf": [
               {
+                "maxLength": 4096,
                 "type": "string"
               },
               {

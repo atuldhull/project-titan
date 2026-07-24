@@ -128,6 +128,25 @@ lint-openapi:
 secret-scan:
 	MSYS2_ARG_CONV_EXCL='*' docker run --rm -v "$(CURDIR):/repo" zricethezav/gitleaks:latest detect --source /repo --no-banner --config /repo/.gitleaks.toml
 
+# TITAN-SEC-071: semgrep bans string-built SQL across production code AND
+# migrations. Docker, like gitleaks (semgrep has no first-class Windows binary),
+# so the fast per-phase `lint` loop stays hermetic — this runs in CI + on demand.
+# --error exits non-zero on any finding. tests/fixtures/ is excluded on purpose:
+# it holds the deliberately-vulnerable positive case the rule self-test fires on.
+semgrep:
+	MSYS2_ARG_CONV_EXCL='*' docker run --rm -v "$(CURDIR):/repo" semgrep/semgrep:latest \
+		semgrep --config /repo/apps/api/.semgrep/sql-injection.yml \
+		--error --quiet /repo/apps/api/src /repo/apps/api/alembic
+
+# Proves the SEC-071 rule actually bites (Phase 65/66 vacuous-gate discipline):
+# semgrep MUST find violations in the committed vulnerable fixture, else the rule
+# is inert. Exits 0 only when the fixture trips the rule.
+semgrep-selftest:
+	MSYS2_ARG_CONV_EXCL='*' docker run --rm -v "$(CURDIR):/repo" semgrep/semgrep:latest \
+		semgrep --config /repo/apps/api/.semgrep/sql-injection.yml \
+		--error --quiet /repo/apps/api/tests/fixtures/sql_injection_sample.py; \
+		test $$? -ne 0 || { echo "SEC-071 semgrep rule did NOT fire on the vulnerable fixture"; exit 1; }
+
 # --env-file pins the repo-root .env so host-side runs always target THIS
 # project's containers (ports may be remapped there), never defaults.
 migrate:

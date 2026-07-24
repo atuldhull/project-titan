@@ -61,6 +61,61 @@ def test_protocol_error_frame_keeps_socket_open(api: dict[str, Any]) -> None:
         assert ws.receive_json()["type"] == "pong"
 
 
+def test_message_rate_gate_bursts_then_throttles() -> None:
+    """SEC-081 unit: the inbound token bucket admits a burst, then denies and
+    counts the over-limit run (the disconnect trigger)."""
+    from titan.realtime.endpoint import _MessageRateGate
+
+    gate = _MessageRateGate(rate=1.0, burst=3.0, clock=lambda: 0.0)  # frozen clock
+    assert [gate.allow() for _ in range(3)] == [True, True, True]  # burst absorbed
+    denied = [gate.allow() for _ in range(3)]
+    assert denied == [False, False, False]  # no tokens left this instant
+    assert gate.over_streak == 3  # the sustained-violation counter climbs
+
+
+def test_gate_violation_streak_survives_interspersed_allows() -> None:
+    """SEC-081 re-break (Phase-70 review): during a flood, backpressure refills a
+    token or two between denials — over_streak must NOT reset on those
+    interspersed allows, or the disconnect threshold is never reached. It resets
+    ONLY when the bucket fully refills (the client actually backed off)."""
+    from titan.realtime.endpoint import _MessageRateGate
+
+    now = {"t": 0.0}
+    gate = _MessageRateGate(rate=10.0, burst=5.0, clock=lambda: now["t"])
+    for _ in range(5):  # spend the burst
+        assert gate.allow()
+    # Simulate a sustained flood: advance 0.05s each frame (refills 0.5 token) so
+    # allows and denials alternate. over_streak must keep climbing, not reset.
+    denials = 0
+    for _ in range(60):
+        now["t"] += 0.05
+        if not gate.allow():
+            denials += 1
+    assert denials > 20
+    assert gate.over_streak > 20  # climbs past a disconnect threshold despite allows
+
+    # Now the client backs off: a long quiet period fully refills the bucket.
+    now["t"] += 10.0
+    assert gate.allow()
+    assert gate.over_streak == 0  # reset only on a fully-refilled (idle) bucket
+
+
+def test_ws_flood_triggers_disconnect(api: dict[str, Any]) -> None:
+    """SEC-081 integration: a client that floods far past its burst is
+    disconnected (the flood-test acceptance)."""
+    client = api["client"]
+    with (
+        pytest.raises(WebSocketDisconnect),
+        client.websocket_connect(f"/ws?token={_token(api, 'viewer')}") as ws,
+    ):
+        # Enough frames that the violation streak climbs past the burst(40)
+        # disconnect threshold despite backpressure-interspersed allows.
+        for _ in range(260):
+            ws.send_json({"type": "ping"})
+        for _ in range(120):
+            ws.receive_json()
+
+
 def test_connection_cap_rejects_the_sixth(api: dict[str, Any]) -> None:
     client = api["client"]
     token = _token(api, "viewer")

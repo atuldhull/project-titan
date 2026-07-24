@@ -17,6 +17,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
 
+from titan.gateway import cache
 from titan.gateway.concurrency import require_if_match, set_etag, version_conflict
 from titan.gateway.pagination import Page, Pagination, keyset_from
 from titan.gateway.rbac import Requires, RequiresAuth, authorize_in_project
@@ -82,6 +83,12 @@ async def get_workflow(principal: _Authenticated) -> WorkflowDefinition:
 # --- project-nested task routes --------------------------------------------
 
 
+async def _invalidate_board(request: Request, project_id: uuid.UUID) -> None:
+    """Bump the project cache version so the read-through board (and project DTO)
+    reflect this task write within one poll cycle (TITAN-BCK-023). Fail-open."""
+    await cache.bump_version(request.app.state.redis, cache.project_version_key(project_id))
+
+
 @router.post("/projects/{project_id}/tasks", response_model=TaskOut, status_code=201)
 async def create_task(
     request: Request,
@@ -93,6 +100,7 @@ async def create_task(
     async with request.app.state.engine.begin() as conn:
         await projects.get_project(conn, project_id)  # 404 before the FK insert
         task = await service.create_task(conn, project_id, body, str(principal.sub))
+    await _invalidate_board(request, project_id)
     set_etag(response, task.version)
     return task
 
@@ -142,6 +150,7 @@ async def update_task(
         )
     if updated is None:
         raise version_conflict()
+    await _invalidate_board(request, updated.project_id)
     set_etag(response, updated.version)
     return updated
 
@@ -194,6 +203,7 @@ async def transition_task(
             # The TITAN-BRN-002 gate on `approve` reads wm:{task_id}:events.
             redis=request.app.state.redis,
         )
+    await _invalidate_board(request, updated.project_id)
     set_etag(response, updated.version)
     return updated
 

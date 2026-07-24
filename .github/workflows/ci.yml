@@ -254,6 +254,17 @@ jobs:
       # repos and would break command-set parity).
       - run: make secret-scan
 
+  sast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # TITAN-SEC-071: semgrep bans string-built SQL in src + migrations, and the
+      # self-test proves the rule bites against the committed vulnerable fixture
+      # (the acceptance: the rule fires on a committed string-SQL fixture). Same
+      # Docker command developers run locally, for command-set parity.
+      - run: make semgrep
+      - run: make semgrep-selftest
+
   # Live-provider conformance (TITAN-INT-060 item 4): a SEPARATE, NON-BLOCKING
   # job so real API divergence is surfaced without failing the main pipeline.
   # Each provider leg self-skips when its secret is absent, so this is a no-op

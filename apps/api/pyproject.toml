@@ -67,6 +67,10 @@ dev = [
     "hypothesis>=6.100",
     "import-linter>=2.0",
     "fakeredis>=2.36.2",
+    # Lua engine for fakeredis: lets the rate-limiter tests exercise the REAL
+    # TITAN-BCK-022 EVALSHA token-bucket script (not a Python re-implementation)
+    # under the in-memory Redis. Runtime uses real Redis; this is test-only.
+    "lupa>=2.0",
     "types-PyYAML>=6.0",
     "types-jsonschema>=4.23",
 ]
@@ -92,6 +96,10 @@ packages = ["src/titan"]
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
+# The SEC-071 semgrep fixture is DELIBERATELY vulnerable (string-built SQL) — it
+# exists only for the rule to fire on and is never imported/run, so linting it is
+# noise (UP031 %-format, etc.).
+extend-exclude = ["tests/fixtures/sql_injection_sample.py"]
 
 [tool.ruff.lint]
 # ASYNC = flake8-async blocking-call detection (TITAN-BCK-002 acceptance).
@@ -118,6 +126,8 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "TID", "ASYNC"]
 strict = true
 python_version = "3.12"
 files = ["src", "tests", "scripts"]
+# The SEC-071 semgrep fixture is deliberately-vulnerable, never-run code.
+exclude = ["tests/fixtures/sql_injection_sample\\.py$"]
 mypy_path = "src"
 plugins = ["pydantic.mypy"]
 

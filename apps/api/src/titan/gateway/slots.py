@@ -1,10 +1,14 @@
-"""Replaceable gateway slots for authentication, RBAC, and rate limiting.
+"""Replaceable gateway slots for authentication and RBAC.
 
-The §9.1 middleware order reserves these positions now; Phases 8/9/13 plug
-real strategies in by assigning ``app.state.auth_strategy`` /
-``rbac_strategy`` / ``rate_limit_strategy``. A strategy is an async callable
-``(request) -> Response | None`` — return a Response to short-circuit,
-None to continue. Unset strategies pass through.
+The §9.1 middleware order reserves these positions now; Phases 8/9 plug real
+strategies in by assigning ``app.state.auth_strategy`` / ``rbac_strategy``. A
+strategy is an async callable ``(request) -> Response | None`` — return a
+Response to short-circuit, None to continue. Unset strategies pass through.
+
+Rate limiting (TITAN-BCK-022) no longer uses a slot: it must stamp
+``X-RateLimit-*`` headers onto the DOWNSTREAM 2xx response, which the
+short-circuit-only slot contract cannot do, so it is a dedicated middleware —
+:class:`titan.gateway.ratelimit.RateLimitMiddleware` (Phase 70).
 """
 
 from collections.abc import Awaitable, Callable
@@ -38,9 +42,3 @@ class RBACSlot(_SlotMiddleware):
     """Filled by Phase 9 (Requires("resource:action") + role resolution)."""
 
     state_attr = "rbac_strategy"
-
-
-class RateLimitSlot(_SlotMiddleware):
-    """Filled by Phase 13+ (token-bucket Lua in Redis, TITAN-BCK-022)."""
-
-    state_attr = "rate_limit_strategy"

@@ -128,7 +128,7 @@ def test_middleware_stack_order_is_spec_exact() -> None:
         "CORSMiddleware",
         "AuthenticationSlot",
         "RBACSlot",
-        "RateLimitSlot",
+        "RateLimitMiddleware",
         "IdempotencyMiddleware",
         "DocsAuthGuardMiddleware",
         "BodySizeCapMiddleware",

@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, FastAPI, Request
 from pydantic import BaseModel, Field
 from starlette.responses import Response
 
+from titan.gateway.dto import StrictModel
 from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import Requires, RequiresAuth, mark_public
 from titan.identity import accounts, service
@@ -26,25 +27,28 @@ from titan.identity.service import (
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 
-class PasswordGrant(BaseModel):
+class PasswordGrant(StrictModel):
     grant_type: Literal["password"] = "password"
     # Plain str, not EmailStr: local mode uses .local addresses (reserved
     # TLD) and the credential match — not format validation — is the auth
     # boundary. Login must not leak which addresses are well-formed.
     email: str = Field(min_length=1, max_length=320)
-    password: str = Field(min_length=1)
+    # Upper bound: Argon2id hashes any length, but an unbounded field is a cheap
+    # CPU-amplification vector (SEC-070 length bounds). 1 KiB is far above any
+    # real passphrase.
+    password: str = Field(min_length=1, max_length=1024)
 
 
-class ApiKeyGrant(BaseModel):
+class ApiKeyGrant(StrictModel):
     grant_type: Literal["api_key"]
-    api_key: str = Field(min_length=1)
+    api_key: str = Field(min_length=1, max_length=512)
 
 
-class RefreshRequest(BaseModel):
-    refresh_token: str = Field(min_length=1)
+class RefreshRequest(StrictModel):
+    refresh_token: str = Field(min_length=1, max_length=4096)
 
 
-class ApiKeyRequest(BaseModel):
+class ApiKeyRequest(StrictModel):
     name: str = Field(min_length=1, max_length=200)
     agent_id: uuid.UUID | None = None
 

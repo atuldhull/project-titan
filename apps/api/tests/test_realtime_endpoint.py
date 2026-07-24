@@ -83,6 +83,9 @@ def _app(redis: Any, keyring: KeyRing, engine: Any = None) -> Any:
             engine=engine,
             ws_manager=ConnectionManager(),
             ws_org="titan",
+            # Phase 70: the endpoint reads the WS caps (connection/msg-rate) off
+            # settings; the ws_audit hook is optional (getattr → no-op if absent).
+            settings=Settings(otel_exporter_otlp_endpoint="", _env_file=None),
         )
     )
 

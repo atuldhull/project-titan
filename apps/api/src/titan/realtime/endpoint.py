@@ -19,6 +19,7 @@ import asyncio
 import contextlib
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import structlog
@@ -41,6 +42,63 @@ SUBSCRIBE_PERMISSION = "project:read"
 #: Distinct project subscriptions one connection may request — bounds the
 #: per-connection RBAC-resolver cache + DB lookups (anti-DoS).
 MAX_PROJECT_SUBSCRIPTIONS = 64
+#: When the inbound rate gate is exhausted, sleep this long before reading again
+#: — the backpressure that slows a flooder before the disconnect (TITAN-SEC-081).
+_BACKPRESSURE_SLEEP = 0.05
+#: WS abuse audit event names (mirror titan.identity.audit.SecurityEventType
+#: values). realtime does NOT import identity's audit module — the module
+#: independence contract only permits the ``.service`` facade — so the record is
+#: done by an ``app.state.ws_audit`` hook wired at the composition root (main.py),
+#: exactly like the rate-limiter's audit hook.
+WS_CONNECTION_REJECTED = "ws.connection_rejected"
+WS_FLOOD_DISCONNECTED = "ws.flood_disconnected"
+
+
+@dataclass
+class _MessageRateGate:
+    """Per-connection inbound token bucket (TITAN-SEC-081): refills ``rate``
+    tokens/second up to ``burst``; a frame arriving with no token is a
+    violation. ``over_streak`` accumulates violations and is reset ONLY when the
+    bucket has fully refilled — i.e. the client has actually backed off — NOT on
+    each interspersed success during a flood. (Resetting on any success made the
+    disconnect threshold unreachable: backpressure refills a token or two between
+    denials, so over_streak never climbed — Phase-70 review.) The clock is
+    injectable so the reset/accumulate logic is deterministically testable."""
+
+    rate: float
+    burst: float
+    clock: "Callable[[], float]" = time.monotonic
+    tokens: float = 0.0
+    last: float = 0.0
+    over_streak: int = 0
+
+    def __post_init__(self) -> None:
+        self.tokens = self.burst
+        self.last = self.clock()
+
+    def allow(self) -> bool:
+        now = self.clock()
+        self.tokens = min(self.burst, self.tokens + (now - self.last) * self.rate)
+        self.last = now
+        if self.tokens >= self.burst:  # fully refilled → the client has backed off
+            self.over_streak = 0
+        if self.tokens >= 1.0:
+            self.tokens -= 1.0
+            return True
+        self.over_streak += 1
+        return False
+
+
+async def _audit_ws(app: FastAPI, event: str, principal: Principal, conn_id: str) -> None:
+    """Best-effort WS abuse audit via the injected composition-root hook — never
+    fails the socket handler (a missing hook or a DB blip is swallowed)."""
+    hook = getattr(app.state, "ws_audit", None)
+    if hook is None:
+        return
+    try:
+        await hook(event=event, user_id=principal.sub, detail={"conn_id": conn_id})
+    except Exception:  # pragma: no cover - audit is never a request dependency
+        logger.warning("ws.audit_failed", conn_id=conn_id)
 
 
 class WebSocketAuthGuard:
@@ -75,7 +133,9 @@ async def serve_connection(websocket: WebSocket, principal: Principal, token: st
     run the frame loops, then always release the slot + unregister."""
     app: FastAPI = websocket.app
     manager: ConnectionManager = app.state.ws_manager
-    registry = ConnectionRegistry(app.state.redis)
+    registry = ConnectionRegistry(
+        app.state.redis, cap=app.state.settings.ws_max_connections_per_user
+    )
     buffer = ProjectBuffer(app.state.redis)
     resolver = PermissionResolver(app.state.engine, principal)
     org: str = app.state.ws_org
@@ -85,12 +145,15 @@ async def serve_connection(websocket: WebSocket, principal: Principal, token: st
     conn = Connection(websocket, user_id=user_id, conn_id=str(uuid.uuid4()))
 
     if not await registry.acquire(user_id, conn.conn_id, time.time()):
-        # Vol 3 §12: at most 5 concurrent connections per user (connect-time).
+        # Vol 3 §12 / SEC-081: at most `ws_max_connections_per_user` concurrent
+        # connections per user (connect-time), audited as an abuse signal.
+        cap = app.state.settings.ws_max_connections_per_user
         conn.enqueue(
             protocol.encode(
-                protocol.error_frame("connection_cap", "connection limit reached (5 per user)")
+                protocol.error_frame("connection_cap", f"connection limit reached ({cap} per user)")
             )
         )
+        await _audit_ws(app, WS_CONNECTION_REJECTED, principal, conn.conn_id)
         await conn.close(code=status.WS_1008_POLICY_VIOLATION, reason="connection cap exceeded")
         return
 
@@ -145,9 +208,28 @@ async def _receive_loop(
     state: _SessionState,
     stop: asyncio.Event,
 ) -> None:
+    settings = app.state.settings
+    gate = _MessageRateGate(
+        rate=settings.ws_max_messages_per_second, burst=settings.ws_message_burst
+    )
     try:
         while not stop.is_set():
             raw = await websocket.receive_text()
+            if not gate.allow():
+                # Sustained flood (the client ignored the backpressure) → close +
+                # audit. A brief burst is absorbed by the bucket; only a run of
+                # over-limit frames longer than the burst trips the disconnect.
+                if gate.over_streak > settings.ws_message_burst:
+                    await _audit_ws(app, WS_FLOOD_DISCONNECTED, principal, conn.conn_id)
+                    logger.warning(
+                        "ws.flood_disconnect", user_id=conn.user_id, conn_id=conn.conn_id
+                    )
+                    await conn.close(
+                        code=status.WS_1008_POLICY_VIOLATION, reason="message rate exceeded"
+                    )
+                    break
+                await asyncio.sleep(_BACKPRESSURE_SLEEP)  # backpressure the flooder
+                continue
             try:
                 frame = protocol.parse_client_frame(raw)
             except protocol.ProtocolError as exc:
@@ -167,10 +249,19 @@ async def _heartbeat_loop(
     state: _SessionState,
     stop: asyncio.Event,
 ) -> None:
+    # Refresh THIS connection's cap lease every tick. Without it the 90 s lease
+    # lapses on a still-live socket, so it stops counting toward the per-user cap
+    # and an attacker can open unbounded connections by cycling past each 90 s
+    # window (Phase-70 review, CRITICAL — registry.refresh was dead code). The
+    # 25 s tick is well under the 90 s lease.
+    registry = ConnectionRegistry(
+        app.state.redis, cap=app.state.settings.ws_max_connections_per_user
+    )
     try:
         while not stop.is_set():
             if await _wait_or_stopped(stop, HEARTBEAT_SECONDS):
                 return
+            await registry.refresh(conn.user_id, conn.conn_id, time.time())
             # TITAN-SEC-016: expiry/revocation closes the socket in ≤ 60 s (checked
             # every 25 s) unless the client re-authenticated in-band.
             if await _token_dead(app, state.token):

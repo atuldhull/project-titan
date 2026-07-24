@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
 from titan.gateway.client_ip import resolve_client_ip
+from titan.gateway.dto import StrictModel
 from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import Requires, RequiresAuth, mark_public
 from titan.identity import audit, mfa, oidc, service
@@ -95,16 +96,16 @@ _MFA_REPLAY_TTL_SECONDS = 90
 # --- request/response models ------------------------------------------------
 
 
-class AuthorizeRequest(BaseModel):
+class AuthorizeRequest(StrictModel):
     email: str = Field(min_length=1, max_length=320)
-    password: str = Field(min_length=1)
+    password: str = Field(min_length=1, max_length=1024)
     totp_code: str | None = Field(default=None, max_length=64)
-    response_type: str = "code"
-    redirect_uri: str = Field(min_length=1)
-    code_challenge: str = Field(min_length=1)
-    code_challenge_method: str = "S256"
-    scope: str = "user"
-    state: str | None = None
+    response_type: str = Field(default="code", max_length=32)
+    redirect_uri: str = Field(min_length=1, max_length=2048)
+    code_challenge: str = Field(min_length=1, max_length=256)
+    code_challenge_method: str = Field(default="S256", max_length=16)
+    scope: str = Field(default="user", max_length=256)
+    state: str | None = Field(default=None, max_length=1024)
 
 
 class AuthorizeResponse(BaseModel):
@@ -116,12 +117,17 @@ class AuthorizeResponse(BaseModel):
     state: str | None = None
 
 
+# NOT StrictModel: the OAuth token endpoint (RFC 6749 §3.2) receives grant-type-
+# specific parameters (a password grant carries username/password, etc.) and MUST
+# answer an unsupported grant with the OAuth error `unsupported_grant_type` (400),
+# NOT a 422 for "extra" fields. So it stays permissive-at-the-model and the
+# handler does grant dispatch + validation. Allowlisted in the SEC-070 census.
 class TokenExchangeRequest(BaseModel):
-    grant_type: str
-    code: str | None = None
-    code_verifier: str | None = None
-    redirect_uri: str | None = None
-    refresh_token: str | None = None
+    grant_type: str = Field(max_length=64)
+    code: str | None = Field(default=None, max_length=512)
+    code_verifier: str | None = Field(default=None, max_length=256)
+    redirect_uri: str | None = Field(default=None, max_length=2048)
+    refresh_token: str | None = Field(default=None, max_length=4096)
 
 
 class EnrollResponse(BaseModel):
@@ -130,7 +136,7 @@ class EnrollResponse(BaseModel):
     qr_png_data_url: str
 
 
-class ConfirmRequest(BaseModel):
+class ConfirmRequest(StrictModel):
     code: str = Field(min_length=1, max_length=64)
 
 
@@ -138,7 +144,7 @@ class ConfirmResponse(BaseModel):
     recovery_codes: list[str]
 
 
-class MfaPolicy(BaseModel):
+class MfaPolicy(StrictModel):
     mfa_required: bool
 
 

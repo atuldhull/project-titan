@@ -184,7 +184,11 @@ def test_env_and_id_rsa_absent_from_context_and_qdrant(api: dict[str, Any], tmp_
     assert _ENV_VALUE not in wire
     assert _RSA_VALUE not in wire
     assert _SMUGGLED_KEY not in wire  # sink (a) caught the terminal bypass
-    assert "[REDACTED:anthropic-key:" in wire
+    # The provider wire carries the CLASS-ONLY marker (no hash): the gateway sink
+    # deliberately strips the hash8 correlator so it is never egressed to the LLM
+    # provider (Phase-69 FIX 4 / _NO_CORRELATOR_SINKS). Internal sinks keep the
+    # hash; this asserts the redaction fired AND the fingerprint did not leak.
+    assert "[REDACTED:anthropic-key]" in wire
 
     # 3. Qdrant: points exist for the clean chunks, and NOTHING stored —
     #    ids, vectors, payloads — carries the planted values or filenames.

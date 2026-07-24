@@ -114,6 +114,93 @@ def test_github_webhook_with_a_bad_signature_is_rejected_401(
     assert bad.status_code == 401  # core verifies + rejects before the plugin ever runs
 
 
+def _push_body() -> bytes:
+    return json.dumps(
+        {"ref": "refs/heads/main", "commits": [], "repository": {"full_name": "o/r"}}
+    ).encode("utf-8")
+
+
+def _sign(body: bytes) -> str:
+    return "sha256=" + hmac.new(_WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
+
+
+def test_github_webhook_unsigned_is_rejected_401(github_env: Path, api: dict[str, Any]) -> None:
+    _enable_github(api)
+    # No signature header at all (SEC-075: unsigned → 401).
+    resp = api["client"].post(
+        "/api/v1/plugins/titan.github/hooks/hooks/github",
+        content=_push_body(),
+        headers={"content-type": "application/json"},
+    )
+    assert resp.status_code == 401
+
+
+def test_github_webhook_replay_is_rejected(github_env: Path, api: dict[str, Any]) -> None:
+    _enable_github(api)
+    body = _push_body()
+    headers = {"x-hub-signature-256": _sign(body), "content-type": "application/json"}
+    url = "/api/v1/plugins/titan.github/hooks/hooks/github"
+    first = api["client"].post(url, content=body, headers=headers)
+    assert first.status_code == 200
+    # An identical, correctly-signed delivery is a replay (SEC-075).
+    replay = api["client"].post(url, content=body, headers=headers)
+    assert replay.status_code == 401
+
+
+def test_github_webhook_replay_with_rotated_delivery_id_still_rejected(
+    github_env: Path, api: dict[str, Any]
+) -> None:
+    # Phase-70 review CRITICAL regression: dedup keys on the SIGNATURE, so
+    # rotating the unsigned X-GitHub-Delivery header does NOT defeat it.
+    _enable_github(api)
+    body = _push_body()
+    sig = _sign(body)
+    url = "/api/v1/plugins/titan.github/hooks/hooks/github"
+    first = api["client"].post(
+        url,
+        content=body,
+        headers={"x-hub-signature-256": sig, "x-github-delivery": str(uuid.uuid4())},
+    )
+    assert first.status_code == 200
+    # Same signed body, FRESH delivery-id header — the old (broken) code keyed on
+    # the delivery id and would let this through; it must now be 401.
+    replay = api["client"].post(
+        url,
+        content=body,
+        headers={"x-hub-signature-256": sig, "x-github-delivery": str(uuid.uuid4())},
+    )
+    assert replay.status_code == 401
+
+
+def test_github_webhook_stale_timestamp_is_rejected(github_env: Path, api: dict[str, Any]) -> None:
+    import time
+
+    _enable_github(api)
+    body = _push_body()
+    url = "/api/v1/plugins/titan.github/hooks/hooks/github"
+    stale = api["client"].post(
+        url,
+        content=body,
+        headers={
+            "x-hub-signature-256": _sign(body),
+            "x-titan-timestamp": str(int(time.time()) - 10_000),  # > 5 min skew
+            "content-type": "application/json",
+        },
+    )
+    assert stale.status_code == 401
+    # A fresh timestamp on the same (correctly-signed) delivery is accepted.
+    fresh = api["client"].post(
+        url,
+        content=body,
+        headers={
+            "x-hub-signature-256": _sign(body),
+            "x-titan-timestamp": str(int(time.time())),
+            "content-type": "application/json",
+        },
+    )
+    assert fresh.status_code == 200
+
+
 # --- Slack approval → real approval machinery (TITAN-INT-042) ----------------
 
 

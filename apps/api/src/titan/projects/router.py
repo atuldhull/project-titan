@@ -14,6 +14,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
 
+from titan.gateway import cache
 from titan.gateway.concurrency import require_if_match, set_etag, version_conflict
 from titan.gateway.pagination import Page, Pagination, keyset_from
 from titan.gateway.rbac import Requires
@@ -98,8 +99,21 @@ async def list_projects(
 async def get_project(
     request: Request, project_id: uuid.UUID, response: Response, principal: _ReadProject
 ) -> ProjectOut:
-    async with request.app.state.engine.connect() as conn:
-        project = await service.get_project(conn, project_id)
+    async def _load() -> ProjectOut:
+        async with request.app.state.engine.connect() as conn:
+            return await service.get_project(conn, project_id)
+
+    # Read-through cached (BCK-023). The row-version ETag is kept (it feeds
+    # If-Match on PATCH), so this uses cached_value, not a cache-version ETag.
+    project = await cache.cached_value(
+        request,
+        resource="project",
+        group=f"project:{project_id}",
+        version_key=cache.project_version_key(project_id),
+        ttl_seconds=request.app.state.settings.cache_project_ttl_seconds,
+        loader=_load,
+        model=ProjectOut,
+    )
     set_etag(response, project.version)
     return project
 
@@ -118,6 +132,7 @@ async def update_project(
         updated = await service.update_project(conn, project_id, body, current.version)
     if updated is None:
         raise version_conflict()
+    await cache.bump_version(request.app.state.redis, cache.project_version_key(project_id))
     set_etag(response, updated.version)
     return updated
 
@@ -128,17 +143,37 @@ async def archive_project(
 ) -> ProjectOut:
     async with request.app.state.engine.begin() as conn:
         project = await service.archive_project(conn, project_id)
+    await cache.bump_version(request.app.state.redis, cache.project_version_key(project_id))
     set_etag(response, project.version)
     return project
 
 
 @router.get("/projects/{project_id}/board", response_model=tasks.Board)
 async def project_board(
-    request: Request, project_id: uuid.UUID, principal: _ReadTasks
-) -> tasks.Board:
-    async with request.app.state.engine.connect() as conn:
-        await service.get_project(conn, project_id)  # 404 if the project is gone
-        return await tasks.board_for_project(conn, project_id)
+    request: Request, project_id: uuid.UUID, response: Response, principal: _ReadTasks
+) -> tasks.Board | Response:
+    async def _load() -> tasks.Board:
+        async with request.app.state.engine.connect() as conn:
+            await service.get_project(conn, project_id)  # 404 if the project is gone
+            return await tasks.board_for_project(conn, project_id)
+
+    # Read-through cached, keyed on the project version counter — a task
+    # transition bumps it (see the orchestrator router), so the board changes
+    # within one poll cycle (BCK-023 acceptance). ETag + If-None-Match 304.
+    outcome = await cache.cached_get(
+        request,
+        response,
+        resource="board",
+        group=f"board:{project_id}",
+        version_key=cache.project_version_key(project_id),
+        ttl_seconds=request.app.state.settings.cache_project_ttl_seconds,
+        loader=_load,
+        model=tasks.Board,
+    )
+    if outcome.not_modified:
+        return Response(status_code=304, headers=dict(response.headers))
+    assert outcome.value is not None
+    return outcome.value
 
 
 @router.get("/projects/{project_id}/graph", response_model=tasks.Graph)

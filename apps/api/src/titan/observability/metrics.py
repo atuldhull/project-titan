@@ -56,6 +56,20 @@ MEMORY_PACKET_CACHE = Counter(
     ["result"],  # hit | miss
 )
 
+# Read-through hot-endpoint cache (Vol 3 §11, TITAN-BCK-023). Two counters (as
+# the spec names them) labelled by resource so the hit ratio per endpoint is
+# observable: repeated board fetches should show a rising hit count.
+CACHE_HITS = Counter(
+    "titan_cache_hits_total",
+    "Read-through cache hits by resource (TITAN-BCK-023)",
+    ["resource"],  # project | board | agents
+)
+CACHE_MISSES = Counter(
+    "titan_cache_misses_total",
+    "Read-through cache misses by resource (TITAN-BCK-023)",
+    ["resource"],
+)
+
 router = APIRouter()
 
 _FIXED_PATHS = frozenset({"/api/docs", "/api/openapi.json", "/metrics"})

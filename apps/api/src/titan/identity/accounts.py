@@ -128,6 +128,8 @@ class MemberRolesUpdate(BaseModel):
     org-wide set; a project id rewrites that project's set and leaves org-wide
     grants untouched."""
 
+    model_config = ConfigDict(extra="forbid")
+
     roles: list[str] = Field(default_factory=list, max_length=16)
     project_id: uuid.UUID | None = None
 

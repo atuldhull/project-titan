@@ -59,6 +59,18 @@ def _walk(routes: Iterable[BaseRoute]) -> Iterator[BaseRoute]:
             yield route
 
 
+def api_routes(app: FastAPI) -> list[APIRoute]:
+    """Every leaf ``APIRoute``, descending included routers/mounts.
+
+    ``app.router.routes`` holds ``_IncludedRouter`` wrappers, not flat routes
+    (that is why :func:`_walk` exists) — so a naive ``isinstance(r, APIRoute)``
+    over the top level yields ZERO routes. Anything that needs the real routes
+    at startup (route-guard census, the rate-limiter route→class table) MUST go
+    through this, or it silently sees nothing.
+    """
+    return [route for route in _walk(app.routes) if isinstance(route, APIRoute)]
+
+
 def _has_guard(route: APIRoute | APIWebSocketRoute) -> bool:
     """True if any dependency in the route's tree is a titan guard."""
     dependant = getattr(route, "dependant", None)

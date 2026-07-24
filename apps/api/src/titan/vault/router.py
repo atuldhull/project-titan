@@ -22,6 +22,7 @@ import structlog
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from pydantic import BaseModel, Field, SecretStr
 
+from titan.gateway.dto import StrictModel
 from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import Requires, RequiresAuth
 from titan.identity.service import Principal
@@ -39,7 +40,7 @@ _ReadSecretMeta = Annotated[Principal, Depends(Requires("secret:read"))]
 _AnyAuth = Annotated[Principal, Depends(RequiresAuth())]
 
 
-class CreateSecretIn(BaseModel):
+class CreateSecretIn(StrictModel):
     name: str = Field(max_length=128)
     #: SecretStr so an accidental log/repr masks the value.
     value: SecretStr
@@ -48,7 +49,7 @@ class CreateSecretIn(BaseModel):
     rotation_days: int = Field(default=DEFAULT_ROTATION_DAYS, ge=1, le=3650)
 
 
-class RotateSecretIn(BaseModel):
+class RotateSecretIn(StrictModel):
     value: SecretStr
 
 

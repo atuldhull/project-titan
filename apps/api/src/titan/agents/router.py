@@ -7,6 +7,8 @@ org-scoped: any *:read principal may browse; agent:configure (owner/admin) may
 create, edit, pause, or resume.
 """
 
+import hashlib
+import json
 import uuid
 from typing import Annotated
 
@@ -14,6 +16,7 @@ from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
 
 from titan.agents import service
 from titan.agents.service import AgentCreate, AgentDefinition, AgentOut, AgentPatch
+from titan.gateway import cache
 from titan.gateway.concurrency import require_if_match, set_etag, version_conflict
 from titan.gateway.pagination import Page, Pagination, keyset_from
 from titan.gateway.rbac import Requires
@@ -24,18 +27,52 @@ router = APIRouter(prefix="/api/v1", tags=["agents"])
 _Read = Annotated[Principal, Depends(Requires("agent:read"))]
 _Configure = Annotated[Principal, Depends(Requires("agent:configure"))]
 
+_AgentPage = Page[AgentOut]
+
+
+async def _invalidate_agents(request: Request) -> None:
+    """Any agent write bumps the org-wide agents version, invalidating every
+    cached (role, status, cursor) variant of the registry list (TITAN-BCK-023)."""
+    await cache.bump_version(request.app.state.redis, cache.AGENTS_VERSION_KEY)
+
 
 @router.get("/agents", response_model=Page[AgentOut])
 async def list_agents(
     request: Request,
+    response: Response,
     pagination: Pagination,
     principal: _Read,
     role: Annotated[str | None, Query()] = None,
     status: Annotated[str | None, Query()] = None,
-) -> Page[AgentOut]:
+) -> Page[AgentOut] | Response:
     keyset = keyset_from(pagination)
-    async with request.app.state.engine.connect() as conn:
-        return await service.list_agents(conn, keyset=keyset, role=role, status=status)
+
+    async def _load() -> _AgentPage:
+        async with request.app.state.engine.connect() as conn:
+            return await service.list_agents(conn, keyset=keyset, role=role, status=status)
+
+    # Read-through cached; the query fingerprint namespaces each variant, and the
+    # shared version counter (bumped on any agent write) invalidates them all.
+    # JSON (not a '|'-join) so distinct queries can't collide onto one key — e.g.
+    # role="a|b",status="" vs role="a",status="b" would share a key otherwise
+    # (Phase-70 review).
+    fingerprint = hashlib.sha256(
+        json.dumps([role, status, pagination.limit, pagination.position], default=str).encode()
+    ).hexdigest()[:16]
+    outcome = await cache.cached_get(
+        request,
+        response,
+        resource="agents",
+        group=f"agents:{fingerprint}",
+        version_key=cache.AGENTS_VERSION_KEY,
+        ttl_seconds=request.app.state.settings.cache_agents_ttl_seconds,
+        loader=_load,
+        model=_AgentPage,
+    )
+    if outcome.not_modified:
+        return Response(status_code=304, headers=dict(response.headers))
+    assert outcome.value is not None
+    return outcome.value
 
 
 @router.post("/agents", response_model=AgentOut, status_code=201)
@@ -44,6 +81,7 @@ async def create_agent(
 ) -> AgentOut:
     async with request.app.state.engine.begin() as conn:
         agent = await service.create_agent(conn, body)
+    await _invalidate_agents(request)
     set_etag(response, agent.version)
     return agent
 
@@ -72,6 +110,7 @@ async def update_agent(
         updated = await service.update_agent(conn, agent_id, body, current.version)
     if updated is None:
         raise version_conflict()
+    await _invalidate_agents(request)
     set_etag(response, updated.version)
     return updated
 
@@ -82,6 +121,7 @@ async def pause_agent(
 ) -> AgentOut:
     async with request.app.state.engine.begin() as conn:
         agent = await service.pause_agent(conn, agent_id, str(principal.sub))
+    await _invalidate_agents(request)
     set_etag(response, agent.version)
     return agent
 
@@ -92,6 +132,7 @@ async def resume_agent(
 ) -> AgentOut:
     async with request.app.state.engine.begin() as conn:
         agent = await service.resume_agent(conn, agent_id, str(principal.sub))
+    await _invalidate_agents(request)
     set_etag(response, agent.version)
     return agent
 

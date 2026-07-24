@@ -36,6 +36,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from titan.gateway.dto import StrictModel
 from titan.gateway.pagination import Keyset, Page
 from titan.llm.service import EmbeddingsRequest
 from titan.memory.ingest import EmbeddingsClient
@@ -56,7 +57,7 @@ DEFAULT_TOP_K = 20
 MAX_TOP_K = 100
 
 
-class MemorySearchRequest(BaseModel):
+class MemorySearchRequest(StrictModel):
     """§6.11's search box."""
 
     query: str = Field(min_length=1, max_length=2_000)

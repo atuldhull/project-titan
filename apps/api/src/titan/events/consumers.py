@@ -48,13 +48,47 @@ async def record_inbox(engine: AsyncEngine, group: str, delivery: Delivery) -> b
         return result.rowcount == 1
 
 
-async def handle_domain_delivery(engine: AsyncEngine, bus: QueueBus, delivery: Delivery) -> None:
+def _project_id_from_payload(payload: dict[str, object]) -> str | None:
+    """The project id a task.* event pertains to (top-level, or nested under
+    ``task`` for task.created/updated). None if not a project-scoped event."""
+    pid = payload.get("project_id")
+    if pid is None:
+        task = payload.get("task")
+        if isinstance(task, dict):
+            pid = task.get("project_id")
+    return str(pid) if pid else None
+
+
+async def _invalidate_board_cache(redis: object, delivery: Delivery) -> None:
+    """Bump the project cache version on a task.* event (TITAN-BCK-023). This is
+    the ONLY invalidation the AUTONOMOUS engine's transitions get — they move
+    tasks via the worker, not the REST router, so the router's in-path bumps miss
+    them and the board would serve stale for up to the TTL (Phase-70 review).
+    Best-effort: a Redis blip just means a brief stale window until the TTL."""
+    if redis is None:
+        return
+    payload = delivery.envelope.payload
+    if not str(payload.get("type", "")).startswith("task."):
+        return
+    project_id = _project_id_from_payload(payload)
+    if project_id is None:
+        return
+    from titan.gateway import cache
+
+    await cache.bump_version(redis, cache.project_version_key(project_id))  # type: ignore[arg-type]
+
+
+async def handle_domain_delivery(
+    engine: AsyncEngine, bus: QueueBus, delivery: Delivery, *, redis: object = None
+) -> None:
     """Process one domain delivery: idempotent record + ack; nack on failure so
     the reaper retries it (and eventually dead-letters genuine poison). Shared
-    by the live consume path AND the reaper's reprocessing path."""
+    by the live consume path AND the reaper's reprocessing path. When ``redis``
+    is supplied (the worker), a task.* event also invalidates the board cache."""
     try:
         inserted = await record_inbox(engine, DOMAIN_GROUP, delivery)
         await bus.ack(STREAM_EVENTS_DOMAIN, DOMAIN_GROUP, delivery)
+        await _invalidate_board_cache(redis, delivery)
         if inserted:
             logger.info("events.consumed", event_id=delivery.envelope.event_id)
     except Exception:
@@ -63,7 +97,7 @@ async def handle_domain_delivery(engine: AsyncEngine, bus: QueueBus, delivery: D
 
 
 async def process_domain_batch(
-    engine: AsyncEngine, bus: QueueBus, consumer: str, *, block_ms: int = 1000
+    engine: AsyncEngine, bus: QueueBus, consumer: str, *, block_ms: int = 1000, redis: object = None
 ) -> int:
     """Consume one batch of NEW messages and handle each; returns the count.
     The deterministic unit the loop and the tests both call."""
@@ -71,17 +105,19 @@ async def process_domain_batch(
         STREAM_EVENTS_DOMAIN, DOMAIN_GROUP, consumer, count=50, block_ms=block_ms
     )
     for delivery in deliveries:
-        await handle_domain_delivery(engine, bus, delivery)
+        await handle_domain_delivery(engine, bus, delivery, redis=redis)
     return len(deliveries)
 
 
-async def reap_domain_once(engine: AsyncEngine, bus: QueueBus, consumer: str) -> int:
+async def reap_domain_once(
+    engine: AsyncEngine, bus: QueueBus, consumer: str, *, redis: object = None
+) -> int:
     """Reclaim idle-pending domain messages and REPROCESS them (retry), routing
     genuine poison to the DLQ. Returns how many were reclaimed. Also publishes
     the pending-depth gauge for the domain group."""
     reclaimed = await bus.reap(STREAM_EVENTS_DOMAIN, DOMAIN_GROUP, consumer, min_idle_ms=60_000)
     for delivery in reclaimed:
-        await handle_domain_delivery(engine, bus, delivery)
+        await handle_domain_delivery(engine, bus, delivery, redis=redis)
     STREAM_DEPTH.labels(stream=STREAM_EVENTS_DOMAIN, group=DOMAIN_GROUP).set(
         await bus.pending_depth(STREAM_EVENTS_DOMAIN, DOMAIN_GROUP)
     )
@@ -96,13 +132,14 @@ async def reap_domain_once(engine: AsyncEngine, bus: QueueBus, consumer: str) ->
 
 
 async def run_domain_consumer(  # pragma: no cover
-    engine: AsyncEngine, bus: QueueBus, consumer: str, *, stop: asyncio.Event
+    engine: AsyncEngine, bus: QueueBus, consumer: str, *, stop: asyncio.Event, redis: object = None
 ) -> None:
-    """Consume stream:events.domain into the inbox ledger until stopped."""
+    """Consume stream:events.domain into the inbox ledger until stopped. ``redis``
+    (the worker's client) drives the BCK-023 board-cache invalidation."""
     await bus.ensure_group(STREAM_EVENTS_DOMAIN, DOMAIN_GROUP)
     while not stop.is_set():
         try:
-            processed = await process_domain_batch(engine, bus, consumer)
+            processed = await process_domain_batch(engine, bus, consumer, redis=redis)
         except Exception:
             logger.exception("events.consumer_loop_error")
             await _sleep_or_stop(stop, 2.0)
@@ -112,13 +149,13 @@ async def run_domain_consumer(  # pragma: no cover
 
 
 async def run_reaper(  # pragma: no cover
-    engine: AsyncEngine, bus: QueueBus, consumer: str, *, stop: asyncio.Event
+    engine: AsyncEngine, bus: QueueBus, consumer: str, *, stop: asyncio.Event, redis: object = None
 ) -> None:
     """Reclaim + reprocess idle-pending domain work every 30 s (min-idle 60 s)."""
     await bus.ensure_group(STREAM_EVENTS_DOMAIN, DOMAIN_GROUP)
     while not stop.is_set():
         try:
-            await reap_domain_once(engine, bus, consumer)
+            await reap_domain_once(engine, bus, consumer, redis=redis)
         except Exception:
             logger.exception("events.reaper_loop_error")
         await _sleep_or_stop(stop, 30.0)

@@ -27,6 +27,15 @@ T = TypeVar("T")
 
 TEST_DB_ENV = "TITAN_TEST_DATABASE_URL"
 
+# Rate limiting (Phase 70) is ON by default in production, but must be OFF for
+# the general test suite: every TestClient request shares one client IP, so the
+# per-IP / auth-class buckets would 429 any test that makes more than a handful
+# of calls (and would defeat the auth-throttle tests that make many logins). The
+# dedicated rate-limit tests (test_ratelimit.py) opt back in explicitly. Settings
+# reads os.environ even with _env_file=None, so this default reaches every app
+# the fixtures build. setdefault so a developer can still force it on.
+os.environ.setdefault("TITAN_RATE_LIMIT_ENABLED", "false")
+
 
 def run_async(factory: "Callable[[], Any]") -> Any:
     """Run a coroutine from sync test code (no pytest-asyncio dependency)."""

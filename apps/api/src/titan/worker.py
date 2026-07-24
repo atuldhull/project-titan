@@ -241,8 +241,10 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
         asyncio.create_task(
             run_drainer(drainer, stop=stop, idle_seconds=settings.outbox_drain_idle_seconds)
         ),
-        asyncio.create_task(run_domain_consumer(engine, bus, consumer_name, stop=stop)),
-        asyncio.create_task(run_reaper(engine, bus, consumer_name, stop=stop)),
+        asyncio.create_task(
+            run_domain_consumer(engine, bus, consumer_name, stop=stop, redis=redis)
+        ),
+        asyncio.create_task(run_reaper(engine, bus, consumer_name, stop=stop, redis=redis)),
         asyncio.create_task(
             realtime.run_ws_fanout(bus, ws_fanout, f"{consumer_name}-ws", stop=stop)
         ),

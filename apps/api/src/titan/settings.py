@@ -294,6 +294,60 @@ class Settings(BaseSettings):
     # wedging cross-process); set from the vault in production.
     bus_hmac_key: str = ""
 
+    # --- Rate limiting (Phase 70; TITAN-BCK-022, TITAN-SEC-080) ---
+    # A Redis token-bucket (atomic Lua/EVALSHA) layered per-IP (pre-auth),
+    # per-user, and per-route-class. Disabling it makes the RateLimitMiddleware
+    # a pass-through (used by tests that assert raw handler behaviour). The
+    # limiter FAILS OPEN on a Redis outage (like the login throttle): a cache
+    # blip must not become a total API outage. Limits are "count per window
+    # seconds" with a burst ceiling (the bucket capacity); refill is
+    # count/window tokens per second. All are env-configurable (TITAN-BCK-026);
+    # "per-org" is per-deployment here (single-org: `org`).
+    rate_limit_enabled: bool = True
+    # Route classes (requests / window-seconds / burst). Read = GET; write =
+    # POST/PATCH/PUT/DELETE; transition = :transition + run creation; auth = the
+    # login/token surface (per-IP); project_create = project creation.
+    rate_limit_read: str = "300/60/60"
+    rate_limit_write: str = "60/60/20"
+    rate_limit_transition: str = "30/60/30"
+    rate_limit_auth: str = "10/60/10"
+    rate_limit_project_create: str = "10/3600/10"
+    # Layered coarse buckets that apply to every request regardless of class.
+    rate_limit_per_ip: str = "60/60/60"  # pre-auth, per client IP
+    rate_limit_per_user: str = "600/60/120"  # per authenticated principal
+    rate_limit_per_org: str = "6000/60/600"  # per deployment/org
+
+    # --- WebSocket abuse controls (Phase 70; TITAN-SEC-081) ---
+    # Max concurrent connections per user (connect-time, cross-replica via
+    # Redis) — Vol 3 §10 says 5, Vol 8 §9 says "<= 10"; 5 satisfies the <=10
+    # ceiling and is the stricter reading, so it stands. Inbound frames are
+    # capped at ws_max_messages_per_second per connection; sustained breach
+    # (> burst tokens spent) triggers backpressure then disconnect + an audit
+    # event.
+    ws_max_connections_per_user: int = 5
+    ws_max_messages_per_second: int = 20
+    ws_message_burst: int = 40  # short bursts tolerated before disconnect
+
+    # --- Read-through cache (Phase 70; TITAN-BCK-023) ---
+    # Hot GETs (project, board, agents) served read-through from Redis, keyed by
+    # a dedicated per-resource version counter bumped on write via the outbox
+    # consumer (NOT the row version, which does not move on a task transition).
+    # Fails open: a Redis miss/blip just re-reads Postgres.
+    cache_enabled: bool = True
+    cache_project_ttl_seconds: int = 300
+    cache_agents_ttl_seconds: int = 60
+
+    # --- Inbound webhooks (Phase 70; TITAN-SEC-075) ---
+    # Reject deliveries whose signed timestamp is older than this (skew). Applies
+    # only to schemes that sign a timestamp; body-only HMAC (GitHub
+    # X-Hub-Signature-256) has no timestamp and is protected by replay dedup.
+    webhook_max_skew_seconds: int = 300
+    # How long a processed delivery's replay marker is retained. DECOUPLED from
+    # the skew window (Phase-70 review): body-only-HMAC schemes have no timestamp,
+    # so this dedup horizon is their ONLY replay protection — it must be long
+    # (default 24h), not the 5-minute skew window.
+    webhook_replay_ttl_seconds: int = 86_400
+
     # CORS allowlist (§9.1; dev default per spec). Env: comma-separated or
     # JSON list in TITAN_CORS_ORIGINS. NoDecode: the validator below owns
     # parsing (pydantic-settings would otherwise demand JSON and crash on
@@ -336,6 +390,27 @@ class Settings(BaseSettings):
                     f"address or CIDR block: {error}"
                 ) from error
         return value
+
+    @model_validator(mode="after")
+    def _forbid_debug_outside_local(self) -> "Settings":
+        """Refuse ``debug=True`` outside local (Phase 70 security review, SEC-076).
+
+        FastAPI is built with ``debug=self.debug`` (main.py). When debug is on,
+        Starlette's ``ServerErrorMiddleware`` renders an HTML traceback and
+        BYPASSES the ``@app.exception_handler(Exception)`` generic-500 handler —
+        so a stack trace would reach clients despite the RFC 9457 problem
+        handler, defeating SEC-076 entirely. Like the crypto-key and
+        trusted-proxy guards, a warning is not enough: refusing to boot is the
+        only reading that cannot be mistaken for working.
+        """
+        if self.debug and self.environment != "local":
+            raise ValueError(
+                "debug=True is forbidden when environment is "
+                f"{self.environment!r}: Starlette's debug traceback bypasses the "
+                "generic-error handler and would leak stack traces to clients "
+                "(TITAN-SEC-076). Set TITAN_DEBUG=false outside local."
+            )
+        return self
 
     @model_validator(mode="after")
     def _require_crypto_keys_outside_local(self) -> "Settings":

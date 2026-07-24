@@ -32,13 +32,14 @@ from titan.gateway.idempotency import IdempotencyMiddleware
 from titan.gateway.middleware import RequestContextMiddleware
 from titan.gateway.openapi import problemify_openapi
 from titan.gateway.problems import register_problem_handlers
+from titan.gateway.ratelimit import RateLimiter, RateLimitMiddleware, build_route_class_table
 from titan.gateway.rbac import KNOWN_SCOPES
 from titan.gateway.security import (
     BodySizeCapMiddleware,
     DocsAuthGuardMiddleware,
     SecurityHeadersMiddleware,
 )
-from titan.gateway.slots import AuthenticationSlot, RateLimitSlot, RBACSlot
+from titan.gateway.slots import AuthenticationSlot, RBACSlot
 from titan.handoffs import router as handoffs_router
 from titan.handoffs.service import register_standard_gates
 from titan.identity import router as identity_router
@@ -155,6 +156,63 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.state.engine = clients.create_engine(active_settings)
         application.state.redis = clients.create_redis(active_settings)
         application.state.http = clients.create_http_client(active_settings)
+        # Phase 70: the TITAN-BCK-022 / SEC-080 Redis token-bucket rate limiter.
+        # Built here so the route→class table sees the fully-mounted app; the
+        # audit hook writes security_events without the gateway importing
+        # identity (module boundary). Disabled → the middleware passes through.
+        application.state.rate_limiter = None
+        application.state.route_class_table = {}
+        application.state.rate_limit_routes = []
+        if active_settings.rate_limit_enabled:
+
+            async def _rate_limit_audit(
+                *, source_ip: str, user_id: "uuid.UUID | None", detail: dict[str, Any]
+            ) -> None:
+                from titan.identity import audit as identity_audit
+
+                await identity_audit.record(
+                    application.state.engine,
+                    identity_audit.SecurityEventType.RATE_LIMITED,
+                    user_id=user_id,
+                    source_ip=source_ip,
+                    detail=detail,
+                )
+
+            limiter = RateLimiter.build(
+                application.state.redis,
+                read=active_settings.rate_limit_read,
+                write=active_settings.rate_limit_write,
+                transition=active_settings.rate_limit_transition,
+                auth=active_settings.rate_limit_auth,
+                project_create=active_settings.rate_limit_project_create,
+                per_ip=active_settings.rate_limit_per_ip,
+                per_user=active_settings.rate_limit_per_user,
+                per_org=active_settings.rate_limit_per_org,
+                trusted_proxies=active_settings.trusted_proxies,
+                org=active_settings.org,
+                audit=_rate_limit_audit,
+            )
+            await limiter.load()
+            from titan.gateway.route_guard import api_routes
+
+            application.state.rate_limiter = limiter
+            application.state.route_class_table = build_route_class_table(application)
+            application.state.rate_limit_routes = api_routes(application)
+
+        # Phase 70: WS abuse audit hook (SEC-081). realtime cannot import
+        # identity's audit module (module-independence contract), so the record
+        # is wired here at the composition root and read off app.state.ws_audit.
+        async def _ws_audit(*, event: str, user_id: "uuid.UUID", detail: dict[str, Any]) -> None:
+            from titan.identity import audit as identity_audit
+
+            await identity_audit.record(
+                application.state.engine,
+                identity_audit.SecurityEventType(event),
+                user_id=user_id,
+                detail=detail,
+            )
+
+        application.state.ws_audit = _ws_audit
         # Phase 68: the secrets vault (Vol 8 §6, ADR-SEC-03) — the age store (or
         # the env fallback) for get-by-reference + write-only management, the
         # field cipher for at-rest column encryption (SEC-063), and the bus
@@ -462,10 +520,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # them. The RBACSlot stays a documented pass-through: the §9.1 pipeline
     # position is reserved, the route-guard check guarantees every route
     # carries a Requires. Building a second middleware net here would be the
-    # "second authorization mechanism" the phase forbids. Rate-limit: Phase 13.
+    # "second authorization mechanism" the phase forbids. Rate limiting
+    # (TITAN-BCK-022, Phase 70) IS a real middleware — RateLimitMiddleware — that
+    # reads app.state.rate_limiter (built in the lifespan) and passes through
+    # when it is None.
     app.state.auth_strategy = None
     app.state.rbac_strategy = None
-    app.state.rate_limit_strategy = None
     app.state.keyring = KeyRing(active_settings)
     # Phase 67: the login path resolves the client IP from `trusted_proxies`,
     # and the throttle/MFA services read auth settings off request.app.state.
@@ -483,7 +543,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(BodySizeCapMiddleware)
     app.add_middleware(DocsAuthGuardMiddleware, production=production)
     app.add_middleware(IdempotencyMiddleware)
-    app.add_middleware(RateLimitSlot)
+    app.add_middleware(RateLimitMiddleware)
     app.add_middleware(RBACSlot)
     app.add_middleware(AuthenticationSlot)
     app.add_middleware(
