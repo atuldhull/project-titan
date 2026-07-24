@@ -2603,6 +2603,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/llm/budget:resume-global": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Global Budget
+         * @description Lift the deployment-global monthly budget hold (TITAN-SEC-082): clear the
+         *     current month's ``org_month`` hold AND reset its counter, so every task paused
+         *     on the global ceiling resumes. Raising the config value alone does NOT clear an
+         *     existing hold, so this is the supported operator resume action for the global
+         *     tier (the project/task tiers have their own :resume-budget routes).
+         *     ``settings:write`` — a deployment-admin action.
+         */
+        post: operations["resume_global_budget_api_v1_settings_llm_budget_resume_global_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/llm:test": {
         parameters: {
             query?: never;
@@ -3284,13 +3309,22 @@ export interface components {
         };
         /**
          * BudgetsOut
-         * @description §8.4 caps. Named per_project_usd but enforced as ONE cap applied to
-         *     whatever project a call carries — there is no per-project override table,
-         *     so this is a single global ceiling and the UI says so.
+         * @description §8.4 / TITAN-SEC-082 caps. Named per_project_usd but enforced as ONE cap
+         *     applied to whatever project a call carries — there is no per-project override
+         *     table, so this is a single global ceiling and the UI says so. The windowed
+         *     tiers (project/day, org/month) and the local-time cap are Phase-71 additions;
+         *     ``per_org_month_usd`` is the deployment-global monthly ceiling (TITAN is
+         *     single-org).
          */
         BudgetsOut: {
             /** Action On Exceeded */
             action_on_exceeded?: string | null;
+            /** Local Seconds Per Task */
+            local_seconds_per_task?: number | null;
+            /** Per Org Month Usd */
+            per_org_month_usd?: string | null;
+            /** Per Project Day Usd */
+            per_project_day_usd?: string | null;
             /** Per Project Usd */
             per_project_usd?: string | null;
             /** Per Task Usd */
@@ -3975,6 +4009,14 @@ export interface components {
              */
             project_id: string;
         };
+        /** GlobalBudgetResumeResult */
+        GlobalBudgetResumeResult: {
+            /**
+             * Resumed
+             * @default true
+             */
+            resumed: boolean;
+        };
         /** Graph */
         Graph: {
             /** Edges */
@@ -4421,6 +4463,12 @@ export interface components {
             fallbacks?: {
                 [key: string]: string[];
             } | null;
+            /** Local Seconds Per Task */
+            local_seconds_per_task?: number | null;
+            /** Per Org Month Usd */
+            per_org_month_usd?: number | string | null;
+            /** Per Project Day Usd */
+            per_project_day_usd?: number | string | null;
             /** Per Project Usd */
             per_project_usd?: number | string | null;
             /** Per Task Usd */
@@ -11581,6 +11629,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LlmSettingsOut"];
+                };
+            };
+        };
+    };
+    resume_global_budget_api_v1_settings_llm_budget_resume_global_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GlobalBudgetResumeResult"];
                 };
             };
         };

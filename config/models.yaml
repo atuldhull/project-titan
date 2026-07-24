@@ -70,6 +70,9 @@ routing:
     reasoning-large: [coding-default, local-default]
 
 budgets:
-  per_project_usd: 25.00
-  per_task_usd: 2.00
+  per_project_usd: 25.00 # cumulative per-project ceiling
+  per_task_usd: 2.00 # cumulative per-task cap (§10 default)
+  per_project_day_usd: 10.00 # TITAN-SEC-082 daily window per project (UTC day)
+  per_org_month_usd: 500.00 # TITAN-SEC-082 global monthly ceiling (single-org)
+  local_seconds_per_task: 1800 # local models are time-capped, not $-capped (30 min)
   action_on_exceeded: fallback_then_pause # fallback to local, else pause task

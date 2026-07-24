@@ -348,6 +348,15 @@ class Settings(BaseSettings):
     # (default 24h), not the 5-minute skew window.
     webhook_replay_ttl_seconds: int = 86_400
 
+    # --- Agent loop detection (Phase 71; TITAN-SEC-083) ---
+    # A runaway agent is halted BEFORE the offending tool call: >= loop_max_repeats
+    # near-identical CONSECUTIVE tool calls for a task, or more than
+    # loop_step_budget total tool calls for a task, pauses it for review (a rung-3
+    # escalation + audit event) within N+1 iterations. State is per task (Redis).
+    loop_detection_enabled: bool = True
+    loop_max_repeats: int = 3
+    loop_step_budget: int = 120
+
     # CORS allowlist (§9.1; dev default per spec). Env: comma-separated or
     # JSON list in TITAN_CORS_ORIGINS. NoDecode: the validator below owns
     # parsing (pydantic-settings would otherwise demand JSON and crash on

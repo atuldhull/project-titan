@@ -68,16 +68,27 @@ async def insert_usage(
 
 
 async def get_hold(
-    conn: AsyncConnection, *, project_id: uuid.UUID | None, task_id: uuid.UUID | None
+    conn: AsyncConnection, candidates: list[tuple[str, uuid.UUID]]
 ) -> Row[tuple[str, str]] | None:
-    """The active hold covering this project OR task, if any (scope, reason)."""
+    """The first active hold among the given (scope, scope_id) candidates, if any
+    (scope, reason). The caller passes the tiers that could pause a call — task,
+    local_task, project, the current project/day and global/month windows — so a
+    stale (past-period) hold is simply never queried."""
+    if not candidates:
+        return None
+    # Parameterised row-value IN — never string-built SQL (TITAN-SEC-071). Only
+    # the placeholder COUNT is interpolated; every value is a bound param, and
+    # Postgres infers each param's type from the (text, uuid) left operand.
+    pairs = ", ".join(f"(:scope_{i}, :id_{i})" for i in range(len(candidates)))
+    params: dict[str, object] = {}
+    for i, (scope, scope_id) in enumerate(candidates):
+        params[f"scope_{i}"] = scope
+        params[f"id_{i}"] = scope_id
     result = await conn.execute(
         text(
-            "SELECT scope, reason FROM budget_holds WHERE "
-            "(scope = 'project' AND scope_id = :project_id) OR "
-            "(scope = 'task' AND scope_id = :task_id) LIMIT 1"
+            f"SELECT scope, reason FROM budget_holds WHERE (scope, scope_id) IN ({pairs}) LIMIT 1"
         ),
-        {"project_id": project_id, "task_id": task_id},
+        params,
     )
     return result.first()
 

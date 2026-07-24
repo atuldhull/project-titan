@@ -85,6 +85,7 @@ from titan.runtime.grants import (
     is_granted,
     log_security_event,
 )
+from titan.runtime.loop_detection import LoopConfig, LoopGuard
 from titan.runtime.memory import MemoryProvider, MemoryRequest, WorkingMemoryCoordinator
 from titan.runtime.output import AgentTurnOutput, TurnOutputError, parse_turn_output
 from titan.runtime.recovery import (
@@ -124,7 +125,9 @@ TurnOutcome = Literal[
 ]
 
 # Why a turn could not complete (recorded even when the ladder then escalates).
-FailureReason = Literal["invalid_output", "tool_budget_exhausted", "transient_error"]
+FailureReason = Literal[
+    "invalid_output", "tool_budget_exhausted", "transient_error", "loop_detected"
+]
 
 # Bounds on one turn's LLM round-trips (§8 step 4/5). The tool-use loop lets the
 # model act then react; the self-critique + transient-retry rungs re-invoke.
@@ -200,6 +203,10 @@ class AgentRuntime:
     # Roles holding a §7.4 blocking veto (``{"security"}`` by default) — when one of
     # them emits a veto verdict, the runtime records the pipeline veto (TITAN-AGT-018).
     vetoing_roles: frozenset[str] = frozenset()
+    # TITAN-SEC-083: per-task loop detector (≥N near-identical consecutive tool
+    # calls, or step budget). Default is a disabled guard so a bare runtime (unit
+    # rigs) never trips; build_runtime installs the live one from settings.
+    loop_guard: LoopGuard = field(default_factory=lambda: LoopGuard(LoopConfig(enabled=False)))
     max_tool_iterations: int = DEFAULT_MAX_TOOL_ITERATIONS
     max_self_critique: int = DEFAULT_MAX_SELF_CRITIQUE
     max_transient_retries: int = DEFAULT_MAX_TRANSIENT_RETRIES
@@ -732,6 +739,26 @@ async def _agent_loop(
         result.output_tokens += response.usage.output_tokens
 
         if response.tool_calls:
+            # TITAN-SEC-083: halt a runaway loop BEFORE the offending call runs —
+            # ≥N near-identical consecutive tool calls, or the per-task step budget.
+            # State is per task and spans turns, so a cross-turn loop is caught too.
+            verdict = await runtime.loop_guard.check(
+                trigger.task_id, [(tc.name, tc.arguments) for tc in response.tool_calls]
+            )
+            if verdict is not None:
+                # Audit event + KPI metric; the rung-3 escalation below pauses the
+                # task for review (a blocked ProgressReport to the supervisor).
+                logger.warning(
+                    "runtime.loop_detected",
+                    agent_id=agent_id,
+                    task_id=str(trigger.task_id),
+                    reason=verdict.reason,
+                    repeats=verdict.repeat_count,
+                    steps=verdict.steps,
+                )
+                metrics.observe_loop_detected(f"agent.{agent_id}", verdict.reason or "repeat")
+                result.failure_reason = "loop_detected"
+                return None
             if tool_iters >= runtime.max_tool_iterations:
                 # The model keeps requesting tools past its budget — a distinct,
                 # observable failure (not invalid output). The ladder escalates.

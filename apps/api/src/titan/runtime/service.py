@@ -43,6 +43,7 @@ from titan.runtime.grants import (
     granted_tool_defs,
     is_granted,
 )
+from titan.runtime.loop_detection import LoopConfig, LoopGuard
 from titan.runtime.memory import (
     Citation,
     KgEdgeEvent,
@@ -177,6 +178,17 @@ def build_runtime(
             # (best-effort, idempotent) instead of the Phase-38 typed no-op.
             memory_service.GraphKgSink(engine),
         )
+    # TITAN-SEC-083: the per-task loop detector. Redis-backed so a cross-worker,
+    # cross-turn loop is caught; a runtime without Redis falls back to in-process
+    # state (still spans a long-lived worker's turns).
+    loop_guard = LoopGuard(
+        LoopConfig(
+            max_repeats=settings.loop_max_repeats,
+            step_budget=settings.loop_step_budget,
+            enabled=settings.loop_detection_enabled,
+        ),
+        redis=redis,
+    )
     return AgentRuntime(
         engine=engine,
         registry=registry,
@@ -190,6 +202,7 @@ def build_runtime(
         # Data-driven from the roster: exactly the roles whose AgentDefinition holds
         # a blocking veto (Security by default, §7.4) — never a hard-coded id.
         vetoing_roles=_vetoing_roles(registry),
+        loop_guard=loop_guard,
     )
 
 

@@ -24,8 +24,7 @@
  * The deep link is `?task=<uuid>`, not §6.3's `?task=T-231` — see `shortTaskId`.
  */
 
-import ReactMarkdown from "react-markdown";
-
+import { SafeMarkdown } from "@/components/ui/safe-markdown";
 import type { components } from "@titan/schemas";
 
 import { AgentAvatar } from "@/components/kanban/agent-avatar";
@@ -187,9 +186,10 @@ export function TaskSheet({
               </h4>
               {task.data.spec ? (
                 <div className="prose prose-sm mt-1 max-w-none dark:prose-invert">
-                  {/* No rehype-raw: task specs are agent-authored, so raw HTML
-                      must never be interpreted. */}
-                  <ReactMarkdown>{task.data.spec}</ReactMarkdown>
+                  {/* SafeMarkdown = react-markdown + rehype-sanitize allowlist:
+                      task specs are agent-authored, so markup is never interpreted
+                      (TITAN-SEC-072). */}
+                  <SafeMarkdown>{task.data.spec}</SafeMarkdown>
                 </div>
               ) : (
                 <p className="mt-1 text-sm text-muted-foreground">

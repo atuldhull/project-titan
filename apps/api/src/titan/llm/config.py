@@ -75,11 +75,28 @@ class Routing(BaseModel):
 
 
 class Budgets(BaseModel):
-    """Budget caps (§8.4); enforcement lands in Phase 18 (TITAN-INT-064)."""
+    """Budget caps (§8.4, TITAN-SEC-082). The Phase-18 cumulative caps
+    (``per_project_usd``, ``per_task_usd``) plus the Phase-71 tier extension:
+
+    * ``per_project_day_usd`` — a DAILY window per project (resets at UTC midnight);
+    * ``per_org_month_usd`` — the global monthly ceiling. TITAN is single-org by
+      construction (no ``organizations`` table — see ``identity.accounts``), so
+      Vol 9 §10's "global monthly ceiling → per-organization budget" collapse to
+      ONE deployment-wide monthly cap, keyed on a singleton scope;
+    * ``local_seconds_per_task`` — local models are $0, so a dollar cap never
+      bounds a runaway LOCAL loop; this time-caps cumulative local-model wall
+      time per task instead (TITAN-SEC-082 "local models time-capped").
+
+    Windowed caps bake the period into their Redis key + hold scope, so a new day
+    or month starts fresh with no bookkeeping and a stale hold is simply never
+    consulted again (the resume is automatic at rollover)."""
 
     model_config = ConfigDict(extra="forbid")
     per_project_usd: Decimal | None = None
     per_task_usd: Decimal | None = None
+    per_project_day_usd: Decimal | None = None
+    per_org_month_usd: Decimal | None = None
+    local_seconds_per_task: int | None = None
     action_on_exceeded: str | None = None
 
 

@@ -1123,7 +1123,10 @@ async def resume_pipeline_budget(
     (§ point 4). Idempotent — clearing an absent hold is a no-op that still logs
     the resume intent."""
     out = await ensure_pipeline(conn, project_id)
+    # Clear every project-scoped tier that could pause the pipeline: the
+    # cumulative project cap AND the current day's window (TITAN-SEC-082).
     await llm.raise_budget(conn, scope="project", scope_id=project_id, redis=redis)
+    await llm.raise_budget(conn, scope="project_day", scope_id=project_id, redis=redis)
     await _record_stage_event(
         conn,
         project_id,
@@ -1217,7 +1220,10 @@ async def resume_task_budget(
     (§ point 4). Emits a Kanban event so the board reflects the resume; idempotent
     when no hold is present."""
     task = await get_task(conn, task_id)
+    # Clear every task-scoped tier: the cumulative dollar cap AND the local-model
+    # time cap (TITAN-SEC-082) — either can have paused the task.
     await llm.raise_budget(conn, scope="task", scope_id=task_id, redis=redis)
+    await llm.raise_budget(conn, scope="local_task", scope_id=task_id, redis=redis)
     await _emit_kanban(
         conn, task, from_status=task.status, to_status=task.status, action="resume", actor=actor
     )

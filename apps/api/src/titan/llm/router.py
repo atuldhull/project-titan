@@ -131,6 +131,27 @@ async def test_llm_provider(
         ) from exc
 
 
+class GlobalBudgetResumeResult(BaseModel):
+    resumed: bool = True
+
+
+@settings_router.post("/settings/llm/budget:resume-global", response_model=GlobalBudgetResumeResult)
+async def resume_global_budget(
+    request: Request, principal: _SettingsAdmin
+) -> GlobalBudgetResumeResult:
+    """Lift the deployment-global monthly budget hold (TITAN-SEC-082): clear the
+    current month's ``org_month`` hold AND reset its counter, so every task paused
+    on the global ceiling resumes. Raising the config value alone does NOT clear an
+    existing hold, so this is the supported operator resume action for the global
+    tier (the project/task tiers have their own :resume-budget routes).
+    ``settings:write`` — a deployment-admin action."""
+    from titan.llm.service import raise_global_month_budget
+
+    async with request.app.state.engine.begin() as conn:
+        await raise_global_month_budget(conn, redis=request.app.state.redis)
+    return GlobalBudgetResumeResult()
+
+
 def mount(app: FastAPI) -> None:
     app.include_router(router)
     app.include_router(settings_router)

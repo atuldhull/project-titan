@@ -199,7 +199,14 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
     # stream → embedder (gateway /embeddings → Qdrant) → reaper. Embeddings go
     # ONLY through the gateway (TITAN-BRN-006).
     qdrant_http = clients.create_http_client(settings)
-    llm_gateway = build_gateway(settings, engine=engine, redis=redis)
+    # SEC-082: alert Maintainers on the 80%/100% budget crossings (the worker is
+    # the autonomous LLM path where caps actually trip). Injected at the root so
+    # llm need not import messaging/identity.
+    from titan.budget_alerts import build_budget_notifier
+
+    llm_gateway = build_gateway(
+        settings, engine=engine, redis=redis, budget_notifier=build_budget_notifier(engine)
+    )
     # Phase 56: the real agent turn as the run executor when enabled (offline
     # acceptance run), else the deterministic placeholder (default CI/cloud).
     executor: LiveExecutor | StubExecutor

@@ -1,8 +1,9 @@
 "use client";
 
-import Markdown, { type Components } from "react-markdown";
+import { type Components } from "react-markdown";
 
 import { Badge } from "@/components/ui/badge";
+import { SafeMarkdown } from "@/components/ui/safe-markdown";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError } from "@titan/api-client";
 import { useArtifact } from "@/lib/projects/hooks";
@@ -12,9 +13,9 @@ import { useArtifact } from "@/lib/projects/hooks";
  * analysis, tech-debt report. We read the existing artifact endpoint; nothing
  * here re-derives a roadmap.
  *
- * SECURITY: react-markdown does NOT render raw HTML unless `rehype-raw` is
- * added, so agent-authored Markdown cannot inject markup. Do not add rehype-raw
- * here without a sanitize allowlist (Vol 8 TITAN-SEC-072).
+ * SECURITY: rendered through SafeMarkdown (TITAN-SEC-072) — react-markdown with
+ * a rehype-sanitize allowlist, so agent-authored Markdown cannot inject markup
+ * even if raw-HTML parsing were ever enabled.
  *
  * A 404 is the normal "never generated" case, not a failure: artifacts are
  * produced by the H1->H4 handoff chain, so a young project legitimately has
@@ -111,9 +112,9 @@ export function ArtifactPanel({
           <p className="text-sm text-muted-foreground">{emptyHint}</p>
         ) : (
           <div className="prose-titan max-w-none text-sm">
-            <Markdown components={MARKDOWN_COMPONENTS}>
+            <SafeMarkdown components={MARKDOWN_COMPONENTS}>
               {data.content_md}
-            </Markdown>
+            </SafeMarkdown>
           </div>
         )}
       </div>

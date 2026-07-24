@@ -533,6 +533,64 @@ def test_tool_spam_past_budget_is_tool_budget_exhausted(migrated_engine: Any) ->
     run_async(scenario)
 
 
+def test_repeated_identical_tool_call_is_halted_as_loop(migrated_engine: Any) -> None:
+    """TITAN-SEC-083: a model repeating the SAME tool call is halted BEFORE the
+    Nth (default 3) execution — outcome escalated (paused for review via the
+    rung-3 supervisor report), reason loop_detected — so the runaway ends within
+    N+1 iterations having run only N-1 tools, and the KPI counter increments."""
+    from titan.runtime import metrics
+
+    async def scenario() -> None:
+        bus = _bus()
+        pid = await _make_project(migrated_engine)
+        # The identical call, verbatim, more times than any budget — a runaway.
+        script = {
+            "agent.eng_backend": [
+                _resp(tool_calls=[ToolCall(id=f"c{i}", name="code.echo", arguments={"n": 1})])
+                for i in range(8)
+            ]
+        }
+        runtime = build_runtime(
+            Settings(), migrated_engine, redis=bus._redis, llm=ScriptedLlm(script)
+        )
+        # Keep the turn focused on loop detection; skip working-memory hydration.
+        runtime.coordinator = None
+        _register_echo(runtime)
+        _grant_tool(runtime, "eng_backend", "code.echo")
+        assert runtime.loop_guard.enabled  # default Settings enable it, N=3
+
+        before = metrics.AGENT_LOOPS_DETECTED_TOTAL.labels(
+            "agent.eng_backend", "repeat"
+        )._value.get()
+        task_id = uuid.uuid4()  # the loop guard keys per task; the escalation FKs it
+        async with migrated_engine.begin() as conn:
+            await conn.execute(
+                text("INSERT INTO tasks (id, project_id, title) VALUES (:id, :p, 'looping task')"),
+                {"id": task_id, "p": pid},
+            )
+        trigger = AgentMessage(
+            type="TaskAssignment",
+            project_id=pid,
+            task_id=task_id,
+            from_agent="pm_project",
+            to_agent="eng_backend",
+            payload={"title": "loop", "description": "d", "acceptance_criteria": ["x"]},
+        )
+        result = await run_turn(runtime, pid, "eng_backend", trigger)
+
+        assert result.outcome == "escalated"  # paused for review
+        assert result.failure_reason == "loop_detected"
+        # The 3rd identical call was blocked BEFORE the bus: only N-1 = 2 executed.
+        granted = [t for t in result.tool_calls if t.disposition == "granted"]
+        assert len(granted) == 2
+        after = metrics.AGENT_LOOPS_DETECTED_TOTAL.labels(
+            "agent.eng_backend", "repeat"
+        )._value.get()
+        assert after == before + 1  # the audit/KPI signal fired
+
+    run_async(scenario)
+
+
 # --- helpers ---------------------------------------------------------------
 
 

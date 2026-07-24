@@ -992,7 +992,7 @@
         "type": "object"
       },
       "BudgetsOut": {
-        "description": "\u00a78.4 caps. Named per_project_usd but enforced as ONE cap applied to\nwhatever project a call carries \u2014 there is no per-project override table,\nso this is a single global ceiling and the UI says so.",
+        "description": "\u00a78.4 / TITAN-SEC-082 caps. Named per_project_usd but enforced as ONE cap\napplied to whatever project a call carries \u2014 there is no per-project override\ntable, so this is a single global ceiling and the UI says so. The windowed\ntiers (project/day, org/month) and the local-time cap are Phase-71 additions;\n``per_org_month_usd`` is the deployment-global monthly ceiling (TITAN is\nsingle-org).",
         "properties": {
           "action_on_exceeded": {
             "anyOf": [
@@ -1004,6 +1004,41 @@
               }
             ],
             "title": "Action On Exceeded"
+          },
+          "local_seconds_per_task": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Seconds Per Task"
+          },
+          "per_org_month_usd": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Org Month Usd"
+          },
+          "per_project_day_usd": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Project Day Usd"
           },
           "per_project_usd": {
             "anyOf": [
@@ -2591,6 +2626,17 @@
         "title": "GateLedger",
         "type": "object"
       },
+      "GlobalBudgetResumeResult": {
+        "properties": {
+          "resumed": {
+            "default": true,
+            "title": "Resumed",
+            "type": "boolean"
+          }
+        },
+        "title": "GlobalBudgetResumeResult",
+        "type": "object"
+      },
       "Graph": {
         "properties": {
           "edges": {
@@ -3630,6 +3676,50 @@
               }
             ],
             "title": "Fallbacks"
+          },
+          "local_seconds_per_task": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Seconds Per Task"
+          },
+          "per_org_month_usd": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Org Month Usd"
+          },
+          "per_project_day_usd": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Project Day Usd"
           },
           "per_project_usd": {
             "anyOf": [
@@ -17061,6 +17151,28 @@
           }
         },
         "summary": "Update Llm Settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/llm/budget:resume-global": {
+      "post": {
+        "description": "Lift the deployment-global monthly budget hold (TITAN-SEC-082): clear the\ncurrent month's ``org_month`` hold AND reset its counter, so every task paused\non the global ceiling resumes. Raising the config value alone does NOT clear an\nexisting hold, so this is the supported operator resume action for the global\ntier (the project/task tiers have their own :resume-budget routes).\n``settings:write`` \u2014 a deployment-admin action.",
+        "operationId": "resume_global_budget_api_v1_settings_llm_budget_resume_global_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlobalBudgetResumeResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Resume Global Budget",
         "tags": [
           "settings"
         ]

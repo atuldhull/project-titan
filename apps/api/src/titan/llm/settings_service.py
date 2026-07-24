@@ -75,12 +75,18 @@ class ModelAliasOut(BaseModel):
 
 
 class BudgetsOut(BaseModel):
-    """§8.4 caps. Named per_project_usd but enforced as ONE cap applied to
-    whatever project a call carries — there is no per-project override table,
-    so this is a single global ceiling and the UI says so."""
+    """§8.4 / TITAN-SEC-082 caps. Named per_project_usd but enforced as ONE cap
+    applied to whatever project a call carries — there is no per-project override
+    table, so this is a single global ceiling and the UI says so. The windowed
+    tiers (project/day, org/month) and the local-time cap are Phase-71 additions;
+    ``per_org_month_usd`` is the deployment-global monthly ceiling (TITAN is
+    single-org)."""
 
     per_project_usd: Decimal | None = None
     per_task_usd: Decimal | None = None
+    per_project_day_usd: Decimal | None = None
+    per_org_month_usd: Decimal | None = None
+    local_seconds_per_task: int | None = None
     action_on_exceeded: str | None = None
 
 
@@ -121,6 +127,9 @@ class LlmSettingsUpdate(BaseModel):
     by_agent: dict[str, str] | None = None
     per_project_usd: Decimal | None = Field(default=None, ge=0)
     per_task_usd: Decimal | None = Field(default=None, ge=0)
+    per_project_day_usd: Decimal | None = Field(default=None, ge=0)
+    per_org_month_usd: Decimal | None = Field(default=None, ge=0)
+    local_seconds_per_task: int | None = Field(default=None, ge=0)
     action_on_exceeded: str | None = None
 
 
@@ -200,6 +209,9 @@ def describe(
         budgets=BudgetsOut(
             per_project_usd=budgets.per_project_usd if budgets else None,
             per_task_usd=budgets.per_task_usd if budgets else None,
+            per_project_day_usd=budgets.per_project_day_usd if budgets else None,
+            per_org_month_usd=budgets.per_org_month_usd if budgets else None,
+            local_seconds_per_task=budgets.local_seconds_per_task if budgets else None,
             action_on_exceeded=budgets.action_on_exceeded if budgets else None,
         ),
         overridden=overridden,
@@ -262,6 +274,12 @@ def build_overlay(current: dict[str, Any], patch: LlmSettingsUpdate) -> dict[str
         budgets["per_project_usd"] = float(patch.per_project_usd)
     if patch.per_task_usd is not None:
         budgets["per_task_usd"] = float(patch.per_task_usd)
+    if patch.per_project_day_usd is not None:
+        budgets["per_project_day_usd"] = float(patch.per_project_day_usd)
+    if patch.per_org_month_usd is not None:
+        budgets["per_org_month_usd"] = float(patch.per_org_month_usd)
+    if patch.local_seconds_per_task is not None:
+        budgets["local_seconds_per_task"] = int(patch.local_seconds_per_task)
     if patch.action_on_exceeded is not None:
         budgets["action_on_exceeded"] = patch.action_on_exceeded
 

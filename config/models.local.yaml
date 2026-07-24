@@ -25,3 +25,11 @@ routing:
   embeddings_default: embed-default
   by_agent: {}
   fallbacks: {}
+
+budgets:
+  # Everything here runs on Ollama ($0), so DOLLAR caps never bind — a runaway
+  # local loop would be free and therefore unbounded by them. The per-task LOCAL
+  # TIME cap is the SEC-082 backstop that pauses it (with SEC-083 loop detection
+  # as the second line). Without this the local profile had zero spend/abuse
+  # protection (Phase-71 review).
+  local_seconds_per_task: 1800

@@ -16,6 +16,7 @@ import functools
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -29,7 +30,14 @@ from titan.llm import metrics
 from titan.llm import repository as repo
 from titan.llm.adapters import AnthropicAdapter, GoogleAdapter, OllamaAdapter, OpenAIAdapter
 from titan.llm.adapters.base import ChatAdapter, ChatResult, EmbeddingsAdapter
-from titan.llm.budget import BudgetManager, Reserved, estimate_input_tokens
+from titan.llm.budget import (
+    LOCAL_PROVIDERS,
+    BudgetManager,
+    Cap,
+    Reserved,
+    estimate_input_tokens,
+    ttl_for_kind,
+)
 from titan.llm.config import ConfigLoader, GatewayConfig
 from titan.llm.errors import (
     AllProvidersDownError,
@@ -153,9 +161,12 @@ class LlmGateway:
         project_id = _uuid_or_none(req.metadata.project_id)
         task_id = _uuid_or_none(req.metadata.task_id)
         candidates = self._chain(router, primary)
+        # Snapshot the budget clock ONCE so reserve + settle land in the same
+        # day/month window even if the call straddles a UTC boundary.
+        now = self._budget.now()
 
         candidates, reserved, reserved_estimate = await self._apply_budget(
-            config, req, primary, candidates, project_id, task_id
+            config, req, primary, candidates, project_id, task_id, now
         )
 
         served, result, latency_ms, error, attempts = await self._dispatch(router, candidates, req)
@@ -181,7 +192,16 @@ class LlmGateway:
         if degraded:
             metrics.LLM_FALLBACKS_TOTAL.labels(primary.alias, served.alias).inc()
         await self._record(
-            config, req, primary, served, response, project_id, task_id, reserved, reserved_estimate
+            config,
+            req,
+            primary,
+            served,
+            response,
+            project_id,
+            task_id,
+            reserved,
+            reserved_estimate,
+            now,
         )
         return response
 
@@ -199,6 +219,7 @@ class LlmGateway:
         candidates: list[ResolvedModel],
         project_id: uuid.UUID | None,
         task_id: uuid.UUID | None,
+        now: datetime,
     ) -> tuple[list[ResolvedModel], Reserved, Decimal]:
         """Pre-request budget gate. Hard-stop if held; else atomically reserve the
         estimate. On breach, fall to an affordable local candidate
@@ -207,30 +228,38 @@ class LlmGateway:
         if self._engine is None or not self._budget.enabled:
             return candidates, [], Decimal(0)
         async with self._engine.connect() as conn:
-            held = await self._budget.held_reason(conn, project_id, task_id)
+            held = await self._budget.held_reason(conn, project_id, task_id, now)
         if held is not None:
             raise BudgetExceededError("hold", f"LLM calls are on budget hold: {held}")
 
         estimate = self._estimated_cost(primary, req)
-        breach, reserved = await self._budget.reserve(config.budgets, project_id, task_id, estimate)
+        breach, reserved = await self._budget.reserve(
+            config.budgets, project_id, task_id, estimate, now
+        )
         if breach is None:
             return candidates, reserved, estimate
 
         policy = config.budgets.action_on_exceeded if config.budgets else None
-        local = next((c for c in candidates if c.provider == "ollama"), None)
+        local = next((c for c in candidates if c.provider in LOCAL_PROVIDERS), None)
         if policy == "fallback_then_pause" and local is not None:
             local_estimate = self._estimated_cost(local, req)
             local_breach, local_reserved = await self._budget.reserve(
-                config.budgets, project_id, task_id, local_estimate
+                config.budgets, project_id, task_id, local_estimate, now
             )
             if local_breach is None:  # local fits (free or affordable) — serve it
                 return [local], local_reserved, local_estimate
         async with self._engine.begin() as conn:
             await self._budget.persist_hold(
-                conn, breach, f"estimated call over {breach.scope} cap {breach.cap}"
+                conn, breach, f"estimated call over {breach.kind} cap {breach.cap}"
             )
+        # Notify the Maintainer AFTER the hold transaction closes — never open the
+        # notifier's connection while this one is held (review: pool-starvation).
+        await self._budget.notify_hold_once(
+            Cap(breach.kind, breach.scope, breach.scope_id, breach.cap, ttl_for_kind(breach.kind)),
+            breach.cap,
+        )
         raise BudgetExceededError(
-            breach.scope, f"{breach.scope} budget cap {breach.cap} would be exceeded"
+            breach.kind, f"{breach.kind} budget cap {breach.cap} would be exceeded"
         )
 
     async def _dispatch(
@@ -314,6 +343,7 @@ class LlmGateway:
         task_id: uuid.UUID | None,
         reserved: Reserved,
         estimate: Decimal,
+        now: datetime,
     ) -> None:
         metrics.observe_usage(
             provider=served.provider,
@@ -348,7 +378,12 @@ class LlmGateway:
         # Settle AFTER the ledger commit so a Redis hiccup never unwinds the
         # durable usage row (the two stores are decoupled).
         await self._budget.settle(
-            config.budgets, project_id, task_id, reserved, estimate, response.cost_usd
+            config.budgets, project_id, task_id, reserved, estimate, response.cost_usd, now
+        )
+        # Local models are $0, so the dollar tiers never bound them — meter their
+        # wall time toward the per-task local time cap instead (TITAN-SEC-082).
+        await self._budget.settle_local_time(
+            config.budgets, task_id, served.provider, response.latency_ms
         )
 
     # --- streaming (metered) + embeddings ----------------------------------
@@ -376,9 +411,10 @@ class LlmGateway:
             raise ProviderNotConfiguredError(f"no adapter for '{resolved.provider}'")
         project_id = _uuid_or_none(req.metadata.project_id)
         task_id = _uuid_or_none(req.metadata.task_id)
+        now = self._budget.now()
         if self._engine is not None and self._budget.enabled:
             async with self._engine.connect() as conn:
-                held = await self._budget.held_reason(conn, project_id, task_id)
+                held = await self._budget.held_reason(conn, project_id, task_id, now)
             if held is not None:
                 raise BudgetExceededError("hold", f"LLM calls are on budget hold: {held}")
 
@@ -406,7 +442,16 @@ class LlmGateway:
                 # abort a completion the model already streamed successfully.
                 try:
                     await self._record_stream(
-                        config, req, resolved, usage, cost, latency_ms, project_id, task_id, run_id
+                        config,
+                        req,
+                        resolved,
+                        usage,
+                        cost,
+                        latency_ms,
+                        project_id,
+                        task_id,
+                        run_id,
+                        now,
                     )
                 except Exception:
                     logger.warning("llm.stream_metering_failed", exc_info=True)
@@ -422,6 +467,7 @@ class LlmGateway:
         project_id: uuid.UUID | None,
         task_id: uuid.UUID | None,
         run_id: uuid.UUID | None,
+        now: datetime,
     ) -> None:
         metrics.observe_usage(
             provider=resolved.provider,
@@ -455,7 +501,8 @@ class LlmGateway:
                 )
         # Streaming settles its actual cost post-call (no pre-reservation), like
         # embeddings; for a local (zero-cost) model this is a no-op.
-        await self._budget.settle(config.budgets, project_id, task_id, [], Decimal(0), cost)
+        await self._budget.settle(config.budgets, project_id, task_id, [], Decimal(0), cost, now)
+        await self._budget.settle_local_time(config.budgets, task_id, resolved.provider, latency_ms)
 
     async def embed(self, req: EmbeddingsRequest) -> EmbeddingsResponse:
         req = redact_embeddings_request(self._redactor, req)
@@ -469,11 +516,12 @@ class LlmGateway:
             )
         project_id = _uuid_or_none(req.metadata.project_id)
         task_id = _uuid_or_none(req.metadata.task_id)
+        now = self._budget.now()
         # Embeddings honor an active hold (no new spend on a paused budget), but
         # are cheap enough to settle post-call rather than reserve pre-call.
         if self._engine is not None and self._budget.enabled:
             async with self._engine.connect() as conn:
-                held = await self._budget.held_reason(conn, project_id, task_id)
+                held = await self._budget.held_reason(conn, project_id, task_id, now)
             if held is not None:
                 raise BudgetExceededError("hold", f"LLM calls are on budget hold: {held}")
         provider_cfg = router.provider_config(resolved.provider)
@@ -485,7 +533,7 @@ class LlmGateway:
         vectors = [EmbeddingVector(index=i, embedding=vec) for i, vec in enumerate(result.vectors)]
         dimensions = len(vectors[0].embedding) if vectors else (resolved.dimensions or 0)
         cost = self._cost(resolved, result.usage)
-        await self._record_embedding(config, req, resolved, result.usage, cost, latency_ms)
+        await self._record_embedding(config, req, resolved, result.usage, cost, latency_ms, now)
         return EmbeddingsResponse(
             embeddings=vectors,
             dimensions=dimensions,
@@ -504,6 +552,7 @@ class LlmGateway:
         usage: Usage,
         cost: Decimal,
         latency_ms: int,
+        now: datetime,
     ) -> None:
         metrics.observe_usage(
             provider=resolved.provider,
@@ -539,7 +588,8 @@ class LlmGateway:
                 )
         # Embeddings settle their (usually zero) cost toward the caps; no
         # reservation was made, so the full actual cost is added.
-        await self._budget.settle(config.budgets, project_id, task_id, [], Decimal(0), cost)
+        await self._budget.settle(config.budgets, project_id, task_id, [], Decimal(0), cost, now)
+        await self._budget.settle_local_time(config.budgets, task_id, resolved.provider, latency_ms)
 
 
 __all__ = ["LlmGateway", "compute_cost"]

@@ -9,6 +9,7 @@ Pydantic DTOs — never provider payloads — cross this boundary.
 """
 
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -17,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from titan.llm import budget
 from titan.llm import repository as repo
+from titan.llm.budget import GLOBAL_SCOPE_ID, BudgetManager, BudgetNotification, Notifier
 from titan.llm.config import ConfigLoader, GatewayConfig, parse_config
 from titan.llm.errors import (
     AllProvidersDownError,
@@ -85,16 +87,23 @@ def build_gateway(
     client: httpx.AsyncClient | None = None,
     engine: AsyncEngine | None = None,
     redis: Redis | None = None,
+    budget_notifier: Notifier | None = None,
 ) -> LlmGateway:
     """Construct a gateway from settings. Pass ``client`` (e.g. one backed by an
     ``httpx.MockTransport``) to exercise adapters against recorded wire fixtures;
     otherwise the gateway owns a real client closed by :meth:`LlmGateway.aclose`.
     ``engine``/``redis`` enable usage accounting + budget enforcement; omit them
-    (unit tests, zero-config local) and metering degrades to metrics only."""
+    (unit tests, zero-config local) and metering degrades to metrics only.
+
+    ``budget_notifier`` is the composition-root callback the budget manager fires
+    at the 80%/100% crossings (TITAN-SEC-082). The ``llm`` module must not import
+    ``messaging``/``identity`` (module-independence contract), so the caller wires
+    the notifier at the root and injects it here."""
     loader = ConfigLoader(Path(settings.models_config_path))
     pricebook = PriceBook(Path(settings.prices_config_path))
     http = client if client is not None else httpx.AsyncClient(timeout=_CLIENT_TIMEOUT)
-    return LlmGateway(loader, http, pricebook=pricebook, engine=engine, redis=redis)
+    manager = BudgetManager(redis, engine, notify=budget_notifier)
+    return LlmGateway(loader, http, pricebook=pricebook, engine=engine, redis=redis, budget=manager)
 
 
 # --- budget-hold accessors (TITAN-OPS-021, wired into the state machines) ----
@@ -103,30 +112,60 @@ def build_gateway(
 async def active_budget_hold(
     conn: AsyncConnection, *, project_id: uuid.UUID | None, task_id: uuid.UUID | None
 ) -> str | None:
-    """The reason a project OR task is on budget hold, else None. The Phase-41
-    scheduler and pipeline consult this to PAUSE work at 100% budget (no new LLM
-    calls) without losing the underlying resumable state (§ budget_hold)."""
-    row = await repo.get_hold(conn, project_id=project_id, task_id=task_id)
+    """The reason a project OR task is on budget hold in the CURRENT period, else
+    None — across every TITAN-SEC-082 tier (task, project, project/day,
+    global/month, local-time). The Phase-41 scheduler and pipeline consult this to
+    PAUSE work at 100% budget (no new LLM calls) without losing the underlying
+    resumable state (§ budget_hold). A windowed hold from a past day/month is a
+    different scope string, so it is simply never queried — rollover resumes on
+    its own."""
+    candidates = budget.hold_candidates(project_id, task_id, datetime.now(UTC))
+    row = await repo.get_hold(conn, candidates)
     return row.reason if row is not None else None
 
 
 async def raise_budget(
-    conn: AsyncConnection, *, scope: str, scope_id: uuid.UUID, redis: Redis | None = None
+    conn: AsyncConnection,
+    *,
+    scope: str,
+    scope_id: uuid.UUID,
+    redis: Redis | None = None,
+    now: datetime | None = None,
 ) -> None:
     """Clear a persisted budget hold ("raise the budget") so paused work resumes
-    exactly where it paused. ``scope`` is 'project' or 'task'.
+    exactly where it paused. ``scope`` is a tier KIND — 'task', 'project',
+    'local_task', 'project_day', or 'org_month'; the windowed kinds are
+    period-qualified against ``now`` (default UTC now) so the CURRENT day/month
+    hold + counter are the ones cleared.
 
     Also resets the Redis rolling-spend counter for the scope when ``redis`` is
     given: clearing only the DB hold would leave the counter at cap, so the very
     next ``reserve()`` would re-breach and immediately re-hold — the resume would
     not stick for actual LLM work (TITAN-OPS-021)."""
-    await repo.clear_hold(conn, scope=scope, scope_id=scope_id)
+    resolved = budget.period_scope(scope, now or datetime.now(UTC))
+    await repo.clear_hold(conn, scope=resolved, scope_id=scope_id)
     if redis is not None:
-        key = budget.spend_key(scope, scope_id)
-        await redis.delete(key, f"{key}:notified80")
+        key = budget.spend_key(resolved, scope_id)
+        # Reset the counter AND both once-per-crossing notify flags, so a resumed
+        # budget re-notifies at the next 80%/100% crossing.
+        await redis.delete(key, f"{key}:notified80", f"{key}:notified100")
+
+
+async def raise_global_month_budget(
+    conn: AsyncConnection, *, redis: Redis | None = None, now: datetime | None = None
+) -> None:
+    """Raise the deployment-global monthly ceiling (TITAN-SEC-082): clear the
+    current month's ``org_month`` hold + reset its counter, so tasks paused on the
+    global cap resume. TITAN is single-org, so this is the operator's "raise the
+    org budget" action, keyed on the :data:`GLOBAL_SCOPE_ID` singleton."""
+    await raise_budget(conn, scope="org_month", scope_id=GLOBAL_SCOPE_ID, redis=redis, now=now)
 
 
 __all__ = [
+    "GLOBAL_SCOPE_ID",
+    "BudgetManager",
+    "BudgetNotification",
+    "Notifier",
     "ChatRequest",
     "ChatResponse",
     "ConfigLoader",
@@ -153,4 +192,5 @@ __all__ = [
     "is_transient_error",
     "parse_config",
     "raise_budget",
+    "raise_global_month_budget",
 ]

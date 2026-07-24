@@ -43,6 +43,11 @@ const checks = [
     files: ["lint-fixtures/components/kanban/fetch-violation.ts"],
     rule: "no-restricted-syntax",
   },
+  {
+    name: "TITAN-SEC-072 dangerouslySetInnerHTML ban",
+    files: ["lint-fixtures/components/kanban/dangerous-html-violation.tsx"],
+    rule: "no-restricted-syntax",
+  },
 ];
 
 let ok = true;

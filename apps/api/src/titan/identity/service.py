@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from titan.db import uuid7
 from titan.identity import mfa, passwords, tokens
-from titan.identity.models import ApiKey, LocalCredential, RefreshToken, User
+from titan.identity.models import ApiKey, LocalCredential, RefreshToken, Role, User, UserRole
 from titan.identity.tokens import ACCESS_TTL_SECONDS, KeyRing, TokenInvalid
 
 logger = structlog.get_logger("titan.identity")
@@ -35,6 +35,25 @@ REFRESH_TTL = dt.timedelta(days=7)  # ≤ 14 d per TITAN-SEC-012
 REFRESH_DENY_TTL_SECONDS = int(REFRESH_TTL.total_seconds())
 API_KEY_PREFIX = "titan_ak_"
 REFRESH_PREFIX = "titan_rt_"
+
+# Roles whose holders are "a Maintainer" for operational alerts (TITAN-SEC-082).
+_MAINTAINER_ROLES = ("owner", "admin", "maintainer")
+
+
+async def maintainer_user_ids(conn: AsyncConnection) -> list[uuid.UUID]:
+    """User ids holding a maintainer-tier role (owner/admin/maintainer) — the
+    recipients of budget-threshold and other operational alerts routed to "a
+    Maintainer". Deduplicated and scope-agnostic (org-wide or per-project grant).
+    Exposed on the service facade so the composition-root budget-notifier can
+    resolve recipients without importing identity internals."""
+    rows = await conn.execute(
+        select(UserRole.user_id)
+        .distinct()
+        .select_from(UserRole)
+        .join(Role, Role.id == UserRole.role_id)
+        .where(Role.name.in_(_MAINTAINER_ROLES))
+    )
+    return [r.user_id for r in rows]
 
 
 class AuthenticationFailed(Exception):
@@ -401,6 +420,7 @@ __all__ = [
     "create_api_key",
     "exchange_api_key",
     "login_local",
+    "maintainer_user_ids",
     "resolve_api_key",
     "revoke",
     "rotate_refresh",

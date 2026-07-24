@@ -4,6 +4,7 @@ import { FlatCompat } from "@eslint/eslintrc";
 
 import {
   boundaryZones,
+  DANGEROUS_HTML_SELECTORS,
   FETCH_SELECTORS,
   restrictedSyntax,
   TOKEN_SELECTORS,
@@ -23,7 +24,7 @@ const eslintConfig = [
     // TITAN-FRT-049 (feature boundaries). Violating fixtures proving these rules
     // fail live in lint-fixtures/ (run via `make lint-proofs`).
     rules: {
-      ...restrictedSyntax(TOKEN_SELECTORS, FETCH_SELECTORS),
+      ...restrictedSyntax(TOKEN_SELECTORS, FETCH_SELECTORS, DANGEROUS_HTML_SELECTORS),
       "import/no-restricted-paths": [
         "error",
         { basePath: `${__dirname}/src`, zones: boundaryZones(".") },
@@ -31,11 +32,21 @@ const eslintConfig = [
     },
   },
   {
+    // TITAN-SEC-072 exemption: the root layout's nonce'd theme script is the one
+    // sanctioned inline script. Keep the token + fetch bans; drop only the
+    // dangerouslySetInnerHTML ban, scoped to this single file.
+    files: ["src/app/layout.tsx"],
+    rules: {
+      ...restrictedSyntax(TOKEN_SELECTORS, FETCH_SELECTORS),
+    },
+  },
+  {
     // TITAN-FRT-014 exemption: the BFF route handlers and the browser→BFF client
-    // are the sanctioned places to call the network directly. Token rule stays.
+    // are the sanctioned places to call the network directly. Token +
+    // dangerouslySetInnerHTML bans stay.
     files: ["src/app/api/**/*.{ts,tsx}", "src/lib/bff/**/*.{ts,tsx}"],
     rules: {
-      ...restrictedSyntax(TOKEN_SELECTORS),
+      ...restrictedSyntax(TOKEN_SELECTORS, DANGEROUS_HTML_SELECTORS),
     },
   },
   {
@@ -64,7 +75,7 @@ const eslintConfig = [
       "playwright.storybook.config.ts",
     ],
     rules: {
-      ...restrictedSyntax(TOKEN_SELECTORS),
+      ...restrictedSyntax(TOKEN_SELECTORS, DANGEROUS_HTML_SELECTORS),
       // Playwright's fixture API is `async ({ page }, use) => { await use(x) }`.
       // The React plugin sees a bare `use(...)` call and reads it as React 19's
       // `use` hook in a non-component. It is not — this file has no React in it.

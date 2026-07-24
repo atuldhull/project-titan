@@ -254,10 +254,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 stop=application.state.redaction_stop,
             )
         )
+        # SEC-082: the budget manager alerts Maintainers at the 80%/100% budget
+        # crossings. llm may not import messaging/identity, so the notifier is
+        # built here at the root and injected into the gateway.
+        from titan.budget_alerts import build_budget_notifier
+
         application.state.llm_gateway = llm_service.build_gateway(
             active_settings,
             engine=application.state.engine,
             redis=application.state.redis,
+            budget_notifier=build_budget_notifier(application.state.engine),
         )
         # §6.1 reranker (Phase 36): cross-encoder (RERANKER=on, extra installed),
         # LLM listwise (llm / degraded on), or the zero-latency no-op (off) —

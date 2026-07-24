@@ -7,6 +7,7 @@ import { fileURLToPath } from "url";
 
 import {
   boundaryZones,
+  DANGEROUS_HTML_SELECTORS,
   FETCH_SELECTORS,
   restrictedSyntax,
   TOKEN_SELECTORS,
@@ -23,7 +24,7 @@ export default [
       "import/resolver": { node: { extensions: [".ts", ".tsx", ".js"] } },
     },
     rules: {
-      ...restrictedSyntax(TOKEN_SELECTORS, FETCH_SELECTORS),
+      ...restrictedSyntax(TOKEN_SELECTORS, FETCH_SELECTORS, DANGEROUS_HTML_SELECTORS),
       "import/no-restricted-paths": ["error", { basePath: base, zones: boundaryZones(".") }],
     },
   },

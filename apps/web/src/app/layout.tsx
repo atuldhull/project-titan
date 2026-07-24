@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import localFont from "next/font/local";
 import "./globals.css";
 
@@ -31,15 +32,22 @@ export const metadata: Metadata = {
 const themeScript = `try{if(localStorage.getItem("titan.theme")==="light")document.documentElement.classList.remove("dark");}catch(e){}
 try{if(localStorage.getItem("titan.sidebar")==="collapsed")document.documentElement.dataset.sidebar="collapsed";}catch(e){}`;
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // TITAN-SEC-072: the per-request CSP nonce set by middleware. The theme script
+  // is the ONE first-party inline script; it carries the nonce so a strict
+  // script-src (no 'unsafe-inline') admits it and nothing else.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script
+          nonce={nonce}
+          dangerouslySetInnerHTML={{ __html: themeScript }}
+        />
       </head>
       <body className={`${inter.variable} ${jetbrainsMono.variable} font-sans`}>
         {children}

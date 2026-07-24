@@ -44,6 +44,23 @@ export const FETCH_SELECTORS = [
   },
 ];
 
+/**
+ * TITAN-SEC-072: `dangerouslySetInnerHTML` is banned in app code. All
+ * LLM-derived content is untrusted; it reaches the DOM only through React's
+ * default escaping or the SafeMarkdown (rehype-sanitize) pipeline — never raw
+ * HTML injection. The single sanctioned use is the first-party, nonce'd theme
+ * script in `src/app/layout.tsx`, which the app config exempts by path.
+ */
+const DANGEROUS_HTML_MESSAGE =
+  "dangerouslySetInnerHTML is banned (TITAN-SEC-072) — LLM/agent content is untrusted; render via React escaping or SafeMarkdown (rehype-sanitize), never raw HTML.";
+
+export const DANGEROUS_HTML_SELECTORS = [
+  {
+    selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']",
+    message: DANGEROUS_HTML_MESSAGE,
+  },
+];
+
 /** Build a `no-restricted-syntax` rule entry from one or more selector groups. */
 export function restrictedSyntax(...selectorGroups) {
   return { "no-restricted-syntax": ["error", ...selectorGroups.flat()] };

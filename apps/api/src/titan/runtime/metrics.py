@@ -94,6 +94,20 @@ WATCHDOG_DISCUSSIONS_CLOSED_TOTAL = Counter(
     "ArchitectureDiscussion threads auto-closed past their decision deadline (TITAN-AGT-014)",
 )
 
+# --- loop detection (§9 TITAN-SEC-083) -------------------------------------
+
+AGENT_LOOPS_DETECTED_TOTAL = Counter(
+    "titan_agent_loops_detected_total",
+    "Runaway agent loops halted, by agent role and reason (repeat | step_budget)",
+    ["agent", "reason"],
+)
+
+
+def observe_loop_detected(agent: str, reason: str) -> None:
+    """Record a halted agent loop (TITAN-SEC-083) — the numerator of the loop-rate
+    signal and the trigger for the pause-for-review escalation."""
+    AGENT_LOOPS_DETECTED_TOTAL.labels(agent, reason).inc()
+
 
 def observe_watchdog_restart(agent: str) -> None:
     WATCHDOG_RESTARTS_TOTAL.labels(agent).inc()
@@ -169,6 +183,7 @@ __all__ = [
     "AGENT_ESCALATIONS_TOTAL",
     "AGENT_FIRST_PASS_TOTAL",
     "AGENT_KPI_DECLARED",
+    "AGENT_LOOPS_DETECTED_TOTAL",
     "AGENT_MESSAGES_EMITTED_TOTAL",
     "AGENT_OUTPUT_RETRIES_TOTAL",
     "AGENT_RECOVERY_RUNGS_TOTAL",
@@ -182,6 +197,7 @@ __all__ = [
     "declare_kpis",
     "observe_discussion_closed",
     "observe_escalation",
+    "observe_loop_detected",
     "observe_rung",
     "observe_turn",
     "observe_watchdog_escalation",
