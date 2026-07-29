@@ -248,3 +248,21 @@ def test_api_key_end_to_end_with_only_hash_at_rest(
 
 def test_me_without_credentials_is_401(client: TestClient) -> None:
     assert client.get("/api/v1/auth/me").status_code == 401
+
+
+def test_lockdown_revoke_all_sessions_closes_the_refresh_bypass(
+    client: TestClient, migrated_engine: Any
+) -> None:
+    """SEC-120 review #1: the incident-lockdown session sweep durably revokes refresh
+    tokens, so a held refresh token cannot re-mint privileges after lockdown."""
+    from titan.identity.service import revoke_all_sessions
+
+    pair = _login(client)
+    rotated = client.post("/api/v1/auth/refresh", json={"refresh_token": pair["refresh_token"]})
+    assert rotated.status_code == 200  # works before lockdown
+    fresh_refresh = rotated.json()["refresh_token"]
+
+    run_async(lambda: revoke_all_sessions(migrated_engine))  # lockdown sweep
+
+    denied = client.post("/api/v1/auth/refresh", json={"refresh_token": fresh_refresh})
+    assert denied.status_code == 401  # the bypass is closed

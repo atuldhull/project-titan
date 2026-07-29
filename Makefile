@@ -217,6 +217,19 @@ check-compliance:
 check-exceptions:
 	cd $(API_DIR) && uv run python scripts/check_scan_exceptions.py
 
+# SEC-131: every finding in the register must trace to a live regression test.
+check-redteam-register:
+	cd $(API_DIR) && uv run python scripts/check_redteam_findings.py
+
+# SEC-130: run the LLM red-team corpus against the real controls; non-zero on a
+# regression (an unauthorized tool execution or a secret-bearing gateway payload).
+redteam-run:
+	cd $(API_DIR) && uv run python -m titan.cli redteam run
+
+# SEC-140: verify the §15 secure-defaults checklist against this install.
+security-check:
+	cd $(API_DIR) && uv run python -m titan.cli security check
+
 supply-chain: sast-python audit-python audit-web osv-scan check-compliance check-exceptions lockfile-drift
 
 # --env-file pins the repo-root .env so host-side runs always target THIS

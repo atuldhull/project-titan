@@ -604,7 +604,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(RequestContextMiddleware)
-    app.add_middleware(SecurityHeadersMiddleware, production=production)
+    app.add_middleware(
+        SecurityHeadersMiddleware,
+        production=production,
+        emit_hsts=active_settings.hsts_enabled,
+    )
     app.add_middleware(REDMetricsMiddleware)
 
     register_problem_handlers(app, production=production)

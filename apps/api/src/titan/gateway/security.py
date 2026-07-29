@@ -16,15 +16,19 @@ _DOCS_PATHS = {"/api/docs", "/api/openapi.json"}
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app: object, production: bool) -> None:
+    def __init__(self, app: object, production: bool, *, emit_hsts: bool = True) -> None:
         super().__init__(app)  # type: ignore[arg-type]
         self.production = production
+        # HSTS ships in production AND only when the secure default is on
+        # (settings.hsts_enabled, TITAN-SEC-140). Turning it off is a deliberate,
+        # `titan security check`-visible relaxation, not a silent gap.
+        self.emit_hsts = emit_hsts
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        if self.production:
+        if self.production and self.emit_hsts:
             response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
         return response
 

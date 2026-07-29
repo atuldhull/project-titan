@@ -1,0 +1,70 @@
+# TITAN-SEC-131 — the findings register.
+#
+# Every incident, pen-test, and adversarial-review finding becomes a PERMANENT
+# regression test, traceable from finding to test id. `apps/api/scripts/
+# check_redteam_findings.py` (Makefile `check-redteam-register`, run in CI) asserts
+# every `test:` here resolves to a `def <test>(` in the suite — so deleting the
+# regression test for a known exploit fails the build.
+#
+# Schema (each list item): id, source, severity, summary, test (the pytest function).
+findings:
+  - id: F-2024-0001
+    source: adversarial-review
+    severity: high
+    summary: "SEC-104 gate missed HIGH OSV advisories carrying only a CVSS vector string"
+    test: test_cvss_v3_vector_scores_as_high
+  - id: F-2024-0002
+    source: adversarial-review
+    severity: medium
+    summary: "SEC-104 gate failed OPEN on an OSV outage for aged/adopted packages"
+    test: test_resolver_osv_outage_fails_closed
+  - id: F-2024-0003
+    source: adversarial-review
+    severity: high
+    summary: "Direct wheel/tarball URLs bypassed the dependency gate at the mirror"
+    test: test_mirror_gates_direct_artifact_downloads
+  - id: F-2024-0004
+    source: adversarial-review
+    severity: low
+    summary: "Maintainer allowlist failed to match non-PEP-503-normalized names"
+    test: test_allowlist_matches_non_normalized_config_entries
+  - id: F-2024-0005
+    source: adversarial-review
+    severity: medium
+    summary: "compliance-map token resolved inside a comment, defeating the gate"
+    test: test_comment_only_token_does_not_resolve
+  - id: F-2024-0006
+    source: adversarial-review
+    severity: medium
+    summary: "coverage: was an unconstrained escape hatch for a code-backed row"
+    test: test_coverage_escape_hatch_is_closed_for_code_rows
+  - id: F-2024-0007
+    source: adversarial-review
+    severity: high
+    summary: "Egress mirror/fetch buffered the full body before the size cap (OOM DoS)"
+    test: test_read_capped_truncates_and_aborts_oversized_bodies
+  - id: F-2024-0008
+    source: adversarial-review
+    severity: medium
+    summary: "scan-exception registry accepted expired suppressions"
+    test: test_expired_exception_is_flagged
+  - id: F-2024-0009
+    source: adversarial-review
+    severity: high
+    summary: "Lockdown 'force re-auth' was bypassable via a held refresh token / API key"
+    test: test_lockdown_revoke_all_sessions_closes_the_refresh_bypass
+  - id: F-2024-0010
+    source: adversarial-review
+    severity: medium
+    summary: "An audit-write failure aborted the lockdown fan-out before token revocation"
+    test: test_audit_failure_does_not_abort_the_lockdown_fanout
+  - id: F-2024-0011
+    source: adversarial-review
+    severity: high
+    summary: "security check reported code-invariant rows PASS without inspecting the install"
+    test: test_newly_live_rows_can_actually_fail
+  - id: F-2024-0012
+    source: adversarial-review
+    severity: low
+    summary: "red-team secret oracle missed a leaked key fragment (full-substring only)"
+    test: test_harness_flags_a_secret_that_survives_redaction

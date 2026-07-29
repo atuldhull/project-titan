@@ -333,6 +333,19 @@ class Settings(BaseSettings):
     ws_max_messages_per_second: int = 20
     ws_message_burst: int = 40  # short bursts tolerated before disconnect
 
+    # --- Secure defaults (Phase 75; Vol 8 §15, TITAN-SEC-140) ---
+    # Declared secure posture verified by `titan security check`. These default
+    # SECURE; flipping one is a deliberate, auditable relaxation the checker flags.
+    # Autonomy: deploy/merge require human approval by default (SEC-033) — the deploy
+    # handoff refuses to auto-act unless the operator turns these on explicitly.
+    auto_deploy_enabled: bool = False
+    auto_merge_enabled: bool = False
+    # Transport: TLS on every non-loopback listener + HSTS on public endpoints
+    # (SEC-060). `hsts_enabled` drives SecurityHeadersMiddleware; `require_tls` is the
+    # posture assertion the checker verifies for non-loopback deployments.
+    require_tls: bool = True
+    hsts_enabled: bool = True
+
     # --- Read-through cache (Phase 70; TITAN-BCK-023) ---
     # Hot GETs (project, board, agents) served read-through from Redis, keyed by
     # a dedicated per-resource version counter bumped on write via the outbox

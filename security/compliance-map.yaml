@@ -163,3 +163,69 @@ owasp_llm_top_10_2025:
     controls: Token budgets, loop detection, rate limits, sandbox caps
     requirements: [SEC-042, SEC-080, SEC-081, SEC-082, SEC-083, SEC-084]
     tests: [TITAN-SEC-042, TITAN-SEC-080, TITAN-SEC-082, TITAN-SEC-083]
+
+# --- TITAN-SEC-140: the §15 Secure Defaults Checklist -------------------------
+# The 15 rows `titan security check` verifies against a live install. `check` is a
+# stable key the checker (titan.security) binds to a probe; `ref` are the SEC IDs.
+# Row definitions live here (single source) so the CLI and docs cannot drift.
+secure_defaults:
+  - id: 1
+    default: "Sandbox egress: deny-all (proxy allowlist only)"
+    ref: [SEC-043]
+    check: sandbox_egress_deny_all
+  - id: 2
+    default: "Auto-deploy and auto-merge OFF (human approval required)"
+    ref: [SEC-033]
+    check: deploy_merge_require_approval
+  - id: 3
+    default: "Services bind loopback/internal networks; only UI/API exposed"
+    ref: [SEC-060]
+    check: internal_binding
+  - id: 4
+    default: "First admin: forced password change + MFA prompt at first login"
+    ref: [SEC-015, SEC-017]
+    check: first_admin_mfa
+  - id: 5
+    default: "TLS on all non-loopback listeners; HSTS on public endpoints"
+    ref: [SEC-060]
+    check: tls_and_hsts
+  - id: 6
+    default: "JWT RS256/EdDSA, 15-min expiry; refresh rotation on"
+    ref: [SEC-011, SEC-012]
+    check: jwt_short_lived_rotating
+  - id: 7
+    default: "SOPS+age vault initialized; secret-file patterns excluded from context/RAG"
+    ref: [SEC-050, SEC-055]
+    check: vault_and_secret_exclusion
+  - id: 8
+    default: "Redaction pipeline on gateway, logs, sandbox output"
+    ref: [SEC-054]
+    check: redaction_on_sinks
+  - id: 9
+    default: "Rate limits and LLM budget caps on, conservative defaults"
+    ref: [SEC-080, SEC-082]
+    check: rate_limits_and_budgets
+  - id: 10
+    default: "Audit log on: INSERT-only grants, hash chain active"
+    ref: [SEC-090, SEC-091]
+    check: audit_chain_active
+  - id: 11
+    default: "Containers non-root, read-only rootfs, caps dropped, limits set"
+    ref: [SEC-041, SEC-042]
+    check: sandbox_container_hardening
+  - id: 12
+    default: "Security gates enabled by default in generated projects' pipelines"
+    ref: [SEC-100, SEC-104]
+    check: generated_project_gates
+  - id: 13
+    default: "Memory: per-project namespaces; cross-project retrieval off until promotion"
+    ref: [SEC-056]
+    check: memory_namespace_isolation
+  - id: 14
+    default: "Generic errors + correlation IDs (detail suppression on)"
+    ref: [SEC-076]
+    check: generic_errors_correlation
+  - id: 15
+    default: "Prometheus/Grafana/Loki endpoints auth-protected, not public"
+    ref: [SEC-060]
+    check: observability_auth_protected

@@ -164,13 +164,36 @@ class KeyRing:
             raise TokenInvalid(str(exc)) from exc
 
 
+# Roles that force a re-authentication on an incident-lockdown epoch revocation
+# (TITAN-SEC-120: "force privileged re-auth"). Viewer/operator sessions are not swept.
+_PRIVILEGED_ROLES = frozenset({"owner", "admin", "maintainer"})
+_AGENTS_EPOCH_KEY = "deny:agents:iat_before"
+_PRIVILEGED_EPOCH_KEY = "deny:privileged:iat_before"
+
+
+def _is_privileged(claims: dict[str, Any]) -> bool:
+    return bool(_PRIVILEGED_ROLES.intersection(claims.get("roles") or []))
+
+
 async def is_revoked(redis: Redis, claims: dict[str, Any]) -> bool:
-    """Denylist check on jti and refresh family (TITAN-SEC-014)."""
+    """Denylist check on jti, refresh family, and the incident-lockdown epochs
+    (TITAN-SEC-014/120). A token is revoked if its jti/fam is denied, OR it is an
+    agent token minted before the agents-epoch, OR a privileged token minted before
+    the privileged-epoch — the latter two are the one-flip lockdown fleet sweeps."""
     keys = [f"deny:jti:{claims['jti']}"]
     if claims.get("fam"):
         keys.append(f"deny:fam:{claims['fam']}")
-    hits = await redis.mget(keys)
-    return any(hit is not None for hit in hits)
+    epoch_keys: list[str] = []
+    if claims.get("agent_id"):
+        epoch_keys.append(_AGENTS_EPOCH_KEY)
+    if _is_privileged(claims):
+        epoch_keys.append(_PRIVILEGED_EPOCH_KEY)
+    hits = await redis.mget(keys + epoch_keys)
+    if any(hit is not None for hit in hits[: len(keys)]):
+        return True
+    iat = int(claims.get("iat", 0))
+    # An epoch hit revokes the token if it was minted BEFORE the stored cutoff.
+    return any(hit is not None and iat < int(hit) for hit in hits[len(keys) :])
 
 
 async def revoke_jti(redis: Redis, jti: str, ttl_seconds: int = ACCESS_TTL_SECONDS) -> None:
@@ -179,6 +202,22 @@ async def revoke_jti(redis: Redis, jti: str, ttl_seconds: int = ACCESS_TTL_SECON
 
 async def revoke_family(redis: Redis, family_id: str, ttl_seconds: int = 7 * 86400) -> None:
     await redis.set(f"deny:fam:{family_id}", "1", ex=ttl_seconds)
+
+
+async def revoke_agents_before(
+    redis: Redis, cutoff_epoch: int, ttl_seconds: int = 7 * 86400
+) -> None:
+    """Revoke EVERY agent service token minted before ``cutoff_epoch`` (unix secs) —
+    the incident-lockdown "revoke agent service tokens" fan-out (TITAN-SEC-120)."""
+    await redis.set(_AGENTS_EPOCH_KEY, str(int(cutoff_epoch)), ex=ttl_seconds)
+
+
+async def revoke_privileged_before(
+    redis: Redis, cutoff_epoch: int, ttl_seconds: int = 7 * 86400
+) -> None:
+    """Force re-auth of every privileged (owner/admin/maintainer) session minted
+    before ``cutoff_epoch`` — the lockdown "force privileged re-auth" (TITAN-SEC-120)."""
+    await redis.set(_PRIVILEGED_EPOCH_KEY, str(int(cutoff_epoch)), ex=ttl_seconds)
 
 
 def _load_or_generate(settings: Settings) -> PrivateKeyTypes:

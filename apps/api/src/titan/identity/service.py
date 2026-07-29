@@ -286,6 +286,25 @@ async def revoke(engine: AsyncEngine, redis: Redis, principal: Principal) -> Non
             )
 
 
+async def revoke_all_sessions(engine: AsyncEngine) -> tuple[int, int]:
+    """Durably revoke EVERY outstanding refresh token AND API key — the incident
+    lockdown "force re-authentication" that the access-token epoch alone cannot give
+    (SEC-120 review #1: the epoch only kills <=15-min access tokens; a held 7-day
+    refresh token or API key could otherwise re-mint privileges in one request). The
+    existing rotate_refresh / exchange_api_key checks already deny a revoked_at row,
+    so this closes the bypass; a post-lockdown re-login mints fresh, un-revoked rows.
+    Returns (refresh_revoked, api_keys_revoked)."""
+    now = dt.datetime.now(dt.UTC)
+    async with engine.begin() as conn:
+        rt = await conn.execute(
+            update(RefreshToken).where(RefreshToken.revoked_at.is_(None)).values(revoked_at=now)
+        )
+        ak = await conn.execute(
+            update(ApiKey).where(ApiKey.revoked_at.is_(None)).values(revoked_at=now)
+        )
+    return rt.rowcount, ak.rowcount
+
+
 async def verify_bearer(redis: Redis, keyring: KeyRing, token: str) -> Principal:
     """Static verification + revocation denylist (TITAN-SEC-011/014)."""
     claims = keyring.verify(token)

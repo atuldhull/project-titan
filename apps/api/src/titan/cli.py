@@ -16,19 +16,36 @@ import datetime as dt
 import json
 import os
 import sys
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from titan import clients
+from titan.audit.service import AuditAction, build_audit_client
 from titan.benchmark.egress_guard import EgressGuard, guarded_client
 from titan.benchmark.kpi import KpiReport
 from titan.benchmark.offline_acceptance import AcceptanceRecord, run_offline_acceptance
 from titan.benchmark.runner import BenchmarkRunner
 from titan.benchmark.suite import load_suite
+from titan.flags.service import build_flag_store
+from titan.identity import service as identity_service
+from titan.identity import tokens
+from titan.identity.tokens import ACCESS_TTL_SECONDS
+from titan.incident import IncidentService, LockdownDeps
+from titan.incident.service import PLAYBOOKS
 from titan.llm.service import build_gateway
 from titan.memory import service as memory
 from titan.observability.logging import configure_logging
+from titan.redaction import default_engine
+from titan.redteam import RedTeamHarness
 from titan.runtime.service import build_runtime
-from titan.settings import get_settings
+from titan.security import SecurityContext, evaluate, load_secure_default_rows
+from titan.settings import Settings, get_settings
+from titan.tools.allowlists import allowed_for_role
+from titan.tools.sandbox.policy import SandboxPolicy
+
+# Repo root (apps/api/src/titan/cli.py -> parents[4] == repo root) for the map file.
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_COMPLIANCE_MAP = _REPO_ROOT / "security" / "compliance-map.yaml"
 
 
 async def _rebuild_index() -> int:
@@ -172,6 +189,231 @@ def _acceptance_run(profile: str, output: str | None, confirm: bool) -> int:
     return 0 if ok else 1
 
 
+def _docker_kill_task(task_id: str) -> int:
+    """Destroy EVERY sandbox container labelled titan.task=<id> — the fleet sweep the
+    per-handle Sandbox.destroy() lacks (SEC-120 targeted 'kill sandbox')."""
+    import docker  # lazy: only the CLI host has the Docker SDK/socket
+
+    client = docker.from_env()
+    try:
+        containers = client.containers.list(all=True, filters={"label": f"titan.task={task_id}"})
+        for c in containers:
+            c.remove(force=True)
+        return len(containers)
+    finally:
+        client.close()
+
+
+def _build_incident_service(engine: object, redis: object, *, actor: str) -> IncidentService:
+    """Wire the real lockdown side effects (flags, token epochs, sandbox sweep, audit).
+    Secret rotation + plugin disable have authenticated API endpoints and are not
+    exposed to the offline CLI, so their callbacks refuse rather than half-act."""
+    store = build_flag_store(engine, redis)  # type: ignore[arg-type]
+    audit_client = build_audit_client(engine)  # type: ignore[arg-type]
+    cutoff = int(dt.datetime.now(dt.UTC).timestamp()) + 1  # revoke everything up to now
+
+    async def flip(key: str, enabled: bool, value: str | None) -> None:
+        changes: dict[str, object] = {"enabled": enabled}
+        if value is not None:
+            changes["value"] = value
+        await store.update(key, changes)
+
+    async def audit(resource: str, outcome: str, detail: dict[str, object]) -> None:
+        await audit_client.record(
+            actor=actor,
+            action=AuditAction.INCIDENT_TOGGLE,
+            resource=resource,
+            outcome=outcome,
+            detail=detail,
+        )
+
+    async def kill(task_id: str) -> int:
+        return await asyncio.to_thread(_docker_kill_task, task_id)
+
+    async def revoke_sessions() -> None:
+        await identity_service.revoke_all_sessions(engine)  # type: ignore[arg-type]
+
+    async def _no_plugin(plugin_id: str) -> None:
+        raise NotImplementedError("disable a plugin via the authenticated /plugins API")
+
+    async def _no_rotate(name: str, value: str) -> None:
+        raise NotImplementedError("rotate a secret via the authenticated /secrets API")
+
+    return IncidentService(
+        LockdownDeps(
+            flip_flag=flip,
+            revoke_agents=lambda: tokens.revoke_agents_before(redis, cutoff),  # type: ignore[arg-type]
+            revoke_privileged=lambda: tokens.revoke_privileged_before(redis, cutoff),  # type: ignore[arg-type]
+            revoke_sessions=revoke_sessions,
+            revoke_family=lambda fam: tokens.revoke_family(redis, fam),  # type: ignore[arg-type]
+            kill_sandboxes=kill,
+            disable_plugin=_no_plugin,
+            rotate_secret=_no_rotate,
+            audit=audit,
+        )
+    )
+
+
+async def _run_incident(
+    actor: str, run: Callable[[IncidentService], Awaitable[dict[str, object]]]
+) -> dict[str, object]:
+    engine = clients.create_engine(get_settings())
+    redis = clients.create_redis(get_settings())
+    try:
+        svc = _build_incident_service(engine, redis, actor=actor)
+        return await run(svc)
+    finally:
+        await redis.aclose()
+        await engine.dispose()
+
+
+_LOCKDOWN_WARNING = (
+    "incident lockdown PAUSES ALL AGENT EXECUTION, sets intake read-only, and revokes "
+    "every agent + privileged token on TITAN_DATABASE_URL / TITAN_REDIS_URL. This is a "
+    "containment action for a real incident. Re-run with --confirm to proceed."
+)
+
+
+def _incident_lockdown(reason: str, actor: str, confirm: bool) -> int:
+    if not confirm:
+        print(_LOCKDOWN_WARNING, file=sys.stderr)
+        return 2
+
+    async def run(svc: IncidentService) -> dict[str, object]:
+        return (await svc.full_lockdown(reason=reason, actor=actor)).to_dict()
+
+    report = asyncio.run(_run_incident(actor, run))
+    print(json.dumps(report, indent=2))
+    return 0 if report.get("contained") else 1
+
+
+def _incident_revoke_family(family_id: str, actor: str) -> int:
+    async def run(svc: IncidentService) -> dict[str, object]:
+        r = await svc.revoke_token_family(family_id)
+        return {"action": r.action, "target": r.target, "ok": r.ok, "detail": r.detail}
+
+    r = asyncio.run(_run_incident(actor, run))
+    print(json.dumps(r, indent=2))
+    return 0 if r.get("ok") else 1
+
+
+def _incident_kill_sandbox(task_id: str, actor: str) -> int:
+    async def run(svc: IncidentService) -> dict[str, object]:
+        r = await svc.kill_sandbox(task_id)
+        return {"action": r.action, "target": r.target, "ok": r.ok, "detail": r.detail}
+
+    r = asyncio.run(_run_incident(actor, run))
+    print(json.dumps(r, indent=2))
+    return 0 if r.get("ok") else 1
+
+
+def _redteam_run(output: str | None) -> int:
+    """Run the LLM red-team corpus against the REAL hard controls (model-independent
+    tool authz + redaction). Exit non-zero on ANY unauthorized tool execution or
+    secret-bearing payload, so CI blocks a release on a regression (TITAN-SEC-130)."""
+    engine = default_engine()
+    harness = RedTeamHarness(
+        tool_authorized=allowed_for_role,
+        redact=lambda text: engine.redact(text, sink="redteam"),
+    )
+    report = harness.run()
+    rendered = json.dumps(report.to_dict(), indent=2)
+    if output:
+        Path(output).write_text(rendered, encoding="utf-8")
+    print(rendered)
+    return 0 if report.passed else 1
+
+
+def _incident_playbook(which: str) -> int:
+    if which == "list":
+        print(json.dumps([p.to_dict() for p in PLAYBOOKS.values()], indent=2))
+        return 0
+    playbook = PLAYBOOKS.get(which.upper())
+    if playbook is None:
+        print(f"unknown playbook '{which}'; choose one of {sorted(PLAYBOOKS)}", file=sys.stderr)
+        return 2
+    print(json.dumps(playbook.to_dict(), indent=2))
+    return 0
+
+
+_PUBLIC_BIND = {"0.0.0.0", "::", "*"}  # a listener host that binds all interfaces
+# The egress forward proxy + fetch-gateway bind 0.0.0.0 BY DESIGN: they live inside
+# the sandbox/container network namespace (Phase 20/23), reachable only from the
+# isolated sandbox, never the public internet. Excluding them avoids a false
+# positive; any OTHER *_host set to a wildcard is a real exposure (secure-default #3).
+# egress_forward_host/egress_gateway_host bind 0.0.0.0 inside the container network;
+# sandbox_docker_host is a CLIENT target (the Docker daemon URL the SDK connects TO),
+# not a listener bind — excluding it stops a false reading (review #8).
+_INTERNAL_BY_DESIGN = {"egress_forward_host", "egress_gateway_host", "sandbox_docker_host"}
+
+
+def _hosts_are_internal(settings: Settings) -> bool:
+    """True iff no PUBLIC-facing ``*_host`` listener binds an all-interfaces address.
+    An operator who binds an exposed service to 0.0.0.0 relaxes secure-default #3."""
+    for key, value in settings.model_dump().items():
+        if key in _INTERNAL_BY_DESIGN:
+            continue
+        if key.endswith("_host") and isinstance(value, str) and value.strip() in _PUBLIC_BIND:
+            return False
+    return True
+
+
+def _build_security_context(settings: Settings) -> SecurityContext:
+    """Gather the real signals for `titan security check` from a live install. The
+    flippable, Settings-backed rows are resolved dynamically (an operator relaxation
+    is caught); the built-in controls (audit trigger, sandbox hardening, redaction
+    wiring, memory namespacing) are asserted at their construction-time secure
+    default — each check's detail states exactly what it inspects (TITAN-SEC-140)."""
+    # Resolve the sandbox hardening from the REAL policy default (a code regression
+    # that relaxes it is caught), not a hardcoded True (review #4/#7).
+    policy = SandboxPolicy()
+    sandbox_hardened = (
+        policy.read_only_rootfs and policy.no_new_privileges and policy.drop_all_capabilities
+    )
+    return SecurityContext(
+        sandbox_egress_network=settings.sandbox_egress_network,
+        auto_deploy_enabled=settings.auto_deploy_enabled,
+        auto_merge_enabled=settings.auto_merge_enabled,
+        require_tls=settings.require_tls,
+        hsts_enabled=settings.hsts_enabled,
+        rate_limit_enabled=settings.rate_limit_enabled,
+        access_ttl_seconds=ACCESS_TTL_SECONDS,
+        internal_binding=_hosts_are_internal(settings),
+        # Settings/policy-backed rows resolved dynamically (an operator relaxation or a
+        # code regression is caught); the rest stay at the asserted construction-time
+        # default (see each check's detail + the help text) (review #4/#7).
+        sandbox_hardened=sandbox_hardened,
+        vault_initialized=bool(settings.vault_age_key),
+        budget_caps_configured=bool(settings.prices_config_path),
+        error_detail_suppressed=not settings.debug,
+    )
+
+
+def _security_check(output: str | None) -> int:
+    """Check the §15 secure-defaults checklist against this install (TITAN-SEC-140).
+    Prints a scorecard and exits non-zero on ANY failing row. The Settings/policy-
+    backed rows are VERIFIED dynamically (an operator relaxation is caught); the
+    remaining rows are ASSERTED construction-time invariants, labelled as such in the
+    output so the scorecard never overstates what was inspected (review #4/#7)."""
+    rows = load_secure_default_rows(_COMPLIANCE_MAP)
+    if len(rows) != 15:
+        print(
+            f"security check: expected 15 secure-default rows, found {len(rows)} in "
+            f"{_COMPLIANCE_MAP} — the checklist is incomplete",
+            file=sys.stderr,
+        )
+        return 2
+    card = evaluate(_build_security_context(get_settings()), rows)
+    rendered = json.dumps(card.to_dict(), indent=2)
+    if output:
+        Path(output).write_text(rendered, encoding="utf-8")
+    for r in card.results:
+        mark = "PASS" if r.status.value == "pass" else "FAIL"
+        print(f"[{mark}] {r.row_id:>2}. {r.name} ({', '.join(r.ref)}) — {r.detail}")
+    print(f"\nsecure-defaults: {len(card.results) - len(card.failures)}/{len(card.results)} pass")
+    return 0 if card.passed else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="titan", description="TITAN operator CLI")
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -213,6 +455,47 @@ def build_parser() -> argparse.ArgumentParser:
     acc_run.add_argument(
         "--confirm", action="store_true", help="Acknowledge real local-model turns + DB writes"
     )
+
+    sec_cmd = subcommands.add_parser(
+        "security", help="Security posture verification (Vol 8 §15, TITAN-SEC-140)"
+    )
+    sec_sub = sec_cmd.add_subparsers(dest="security_command", required=True)
+    sec_check = sec_sub.add_parser(
+        "check",
+        help="Check the 15 secure-default rows (Settings-backed verified, invariants "
+        "asserted); exit non-zero on any failure",
+    )
+    sec_check.add_argument("--output", default=None, help="Write the scorecard JSON to this path")
+
+    inc_cmd = subcommands.add_parser(
+        "incident", help="Incident lockdown + AI playbooks (Vol 8 §13, TITAN-SEC-120)"
+    )
+    inc_sub = inc_cmd.add_subparsers(dest="incident_command", required=True)
+    inc_lock = inc_sub.add_parser("lockdown", help="One-command containment (pause agents ≤60s)")
+    inc_lock.add_argument(
+        "--reason", default="manual lockdown", help="Why the lockdown was invoked"
+    )
+    inc_lock.add_argument("--actor", default="cli", help="Who invoked it (audited)")
+    inc_lock.add_argument(
+        "--confirm", action="store_true", help="Acknowledge this halts ALL agents + revokes tokens"
+    )
+    inc_fam = inc_sub.add_parser("revoke-family", help="Revoke one refresh-token family")
+    inc_fam.add_argument("family_id")
+    inc_fam.add_argument("--actor", default="cli")
+    inc_kill = inc_sub.add_parser("kill-sandbox", help="Destroy all sandboxes for a task")
+    inc_kill.add_argument("task_id")
+    inc_kill.add_argument("--actor", default="cli")
+    inc_pb = inc_sub.add_parser("playbook", help="Print an AI-incident playbook (P1–P4 or list)")
+    inc_pb.add_argument("which", help="P1 | P2 | P3 | P4 | list")
+
+    rt_cmd = subcommands.add_parser(
+        "redteam", help="LLM red-team corpus (Vol 8 §14.4, TITAN-SEC-130)"
+    )
+    rt_sub = rt_cmd.add_subparsers(dest="redteam_command", required=True)
+    rt_run = rt_sub.add_parser(
+        "run", help="Run the corpus against the real controls; exit non-zero on a regression"
+    )
+    rt_run.add_argument("--output", default=None, help="Write the scorecard JSON to this path")
     return parser
 
 
@@ -232,6 +515,19 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
     if args.command == "acceptance" and args.acceptance_command == "run":
         return _acceptance_run(args.profile, args.output, args.confirm)
+    if args.command == "security" and args.security_command == "check":
+        return _security_check(args.output)
+    if args.command == "incident":
+        if args.incident_command == "lockdown":
+            return _incident_lockdown(args.reason, args.actor, args.confirm)
+        if args.incident_command == "revoke-family":
+            return _incident_revoke_family(args.family_id, args.actor)
+        if args.incident_command == "kill-sandbox":
+            return _incident_kill_sandbox(args.task_id, args.actor)
+        if args.incident_command == "playbook":
+            return _incident_playbook(args.which)
+    if args.command == "redteam" and args.redteam_command == "run":
+        return _redteam_run(args.output)
     return 2  # unreachable: argparse enforces the subcommand set
 
 
