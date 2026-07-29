@@ -1,0 +1,19 @@
+# TITAN-SEC-100 — the single registry of security-scan exceptions.
+#
+# A HIGH/CRITICAL finding from any supply-chain scanner (bandit, pip-audit, npm
+# audit, osv-scanner, trivy, semgrep) BLOCKS CI. The only sanctioned way to ship
+# past one is a time-boxed, justified entry here — enforced by
+# `apps/api/scripts/check_scan_exceptions.py` (Makefile `check-exceptions`, run in
+# the CI `supply-chain` job), which FAILS the build on any entry that is expired or
+# malformed. There is no permanent suppression: every exception must carry a future
+# `expires` date and a tracking `owner` + `reason`, forcing periodic re-review.
+#
+# Schema (each list item):
+#   tool:     bandit | pip-audit | npm-audit | osv-scanner | trivy | semgrep
+#   id:       the scanner's finding identifier (CVE / GHSA / rule id)
+#   reason:   why it is accepted (e.g. not reachable, no fix available, dev-only)
+#   owner:    the accountable team/person
+#   expires:  YYYY-MM-DD — the build fails once this date passes (max 90 days out)
+#
+# Keep this list EMPTY whenever possible.
+exceptions: []

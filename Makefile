@@ -6,6 +6,8 @@
 API_DIR := apps/api
 WEB_DIR := apps/web
 SCHEMAS_DIR := packages/schemas
+# Overridden in CI with the digest-pinned build tag; a sane default for local runs.
+TITAN_IMAGE ?= titan-api:local
 
 .PHONY: dev test test-web test-schema test-llm-live lint lint-style boundaries route-guards \
         agent-purity typecheck migrate seed generate-types check-types-drift \
@@ -133,19 +135,89 @@ secret-scan:
 # so the fast per-phase `lint` loop stays hermetic — this runs in CI + on demand.
 # --error exits non-zero on any finding. tests/fixtures/ is excluded on purpose:
 # it holds the deliberately-vulnerable positive case the rule self-test fires on.
+# SEC-071 string-built SQL + SEC-073 shell-string exec + SEC-072 dynamic eval/exec.
+# One docker run over all three rules; src/ + alembic/ are clean, tests/fixtures/ is
+# scanned only by the self-test below (it holds the deliberately-vulnerable cases).
 semgrep:
 	MSYS2_ARG_CONV_EXCL='*' docker run --rm -v "$(CURDIR):/repo" semgrep/semgrep:latest \
 		semgrep --config /repo/apps/api/.semgrep/sql-injection.yml \
+		--config /repo/apps/api/.semgrep/no-shell-exec.yml \
+		--config /repo/apps/api/.semgrep/no-dynamic-exec.yml \
 		--error --quiet /repo/apps/api/src /repo/apps/api/alembic
 
-# Proves the SEC-071 rule actually bites (Phase 65/66 vacuous-gate discipline):
-# semgrep MUST find violations in the committed vulnerable fixture, else the rule
-# is inert. Exits 0 only when the fixture trips the rule.
+# Proves each rule actually bites (Phase 65/66 vacuous-gate discipline): semgrep
+# MUST find violations in every committed vulnerable fixture, else the rule is
+# inert. Each config is run against ITS fixture; exit 0 only if all three fire.
 semgrep-selftest:
-	MSYS2_ARG_CONV_EXCL='*' docker run --rm -v "$(CURDIR):/repo" semgrep/semgrep:latest \
-		semgrep --config /repo/apps/api/.semgrep/sql-injection.yml \
-		--error --quiet /repo/apps/api/tests/fixtures/sql_injection_sample.py; \
-		test $$? -ne 0 || { echo "SEC-071 semgrep rule did NOT fire on the vulnerable fixture"; exit 1; }
+	@for pair in \
+		"sql-injection:sql_injection_sample:SEC-071" \
+		"no-shell-exec:shell_exec_sample:SEC-073" \
+		"no-dynamic-exec:dynamic_exec_sample:SEC-072"; do \
+		rule=$${pair%%:*}; rest=$${pair#*:}; fix=$${rest%%:*}; sec=$${rest##*:}; \
+		MSYS2_ARG_CONV_EXCL='*' docker run --rm -v "$(CURDIR):/repo" semgrep/semgrep:latest \
+			semgrep --config /repo/apps/api/.semgrep/$$rule.yml \
+			--error --quiet /repo/apps/api/tests/fixtures/$$fix.py; \
+		test $$? -ne 0 || { echo "$$sec semgrep rule did NOT fire on its fixture ($$fix.py)"; exit 1; }; \
+	done; echo "all 3 semgrep rules fire on their vulnerable fixtures"
+
+# --- TITAN-SEC-100..105: supply-chain scanning (Vol 8 §11) -------------------
+# Each tool runs in CI (its own job) and on demand here. Like semgrep/gitleaks
+# they are Docker/CLI images so the fast per-phase `lint` loop stays hermetic.
+# HIGH/CRITICAL findings block; a documented, expiring exception lives in
+# security/scan-exceptions.yaml (SEC-100).
+
+# SEC-100: Python SAST — bandit over src/ (not tests) at high severity/confidence.
+# uvx runs it ephemerally so it never enters the project lockfile. [tool.bandit] in
+# apps/api/pyproject.toml holds the config.
+sast-python:
+	cd $(API_DIR) && uvx 'bandit[toml]' -q -c pyproject.toml --severity-level high --confidence-level high -r src
+
+# SEC-103: known-vulnerable Python deps from the FROZEN lockfile (not the loose
+# manifest). Export the resolved runtime set to a requirements file, then audit it.
+audit-python:
+	cd $(API_DIR) && uv export --frozen --no-emit-project --no-dev -o "$(CURDIR)/titan-req.txt"
+	uvx pip-audit --strict --desc -r "$(CURDIR)/titan-req.txt"
+	rm -f "$(CURDIR)/titan-req.txt"
+
+# SEC-103: known-vulnerable JS deps (web + client packages), high+ only.
+audit-web:
+	cd $(WEB_DIR) && npm audit --omit=dev --audit-level=high
+
+# SEC-104/105: cross-ecosystem OSV scan of the committed lockfiles.
+osv-scan:
+	MSYS2_ARG_CONV_EXCL='*' docker run --rm -v "$(CURDIR):/repo" ghcr.io/google/osv-scanner:latest \
+		scan --lockfile=/repo/apps/api/uv.lock --lockfile=/repo/apps/web/package-lock.json
+
+# SEC-101: SBOM (CycloneDX) for the repo, emitted as a CI artifact.
+sbom:
+	MSYS2_ARG_CONV_EXCL='*' docker run --rm -v "$(CURDIR):/repo" anchore/syft:latest \
+		scan dir:/repo -o cyclonedx-json=/repo/sbom.cdx.json
+
+# SEC-101: container image vuln scan (built image), HIGH/CRITICAL block. No
+# --ignore-unfixed (SEC-104 review #6): an unfixed HIGH/CRITICAL CVE is not a free
+# pass — accepting one requires a time-boxed security/scan-exceptions.yaml entry,
+# not a blanket flag that silently ships every unpatched vuln.
+image-scan:
+	MSYS2_ARG_CONV_EXCL='*' docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+		aquasec/trivy:latest image --severity HIGH,CRITICAL --exit-code 1 \
+		$(TITAN_IMAGE)
+
+# SEC-102: the committed lockfiles must be in sync with the manifests — a drifted
+# lockfile means an unreviewed dependency change slipped in. Re-resolving must
+# produce zero diff.
+lockfile-drift:
+	cd $(API_DIR) && uv lock --check
+	cd $(WEB_DIR) && npm ci --ignore-scripts --dry-run >/dev/null
+
+# SEC-110: OWASP compliance-map ↔ suite consistency (removing a mapped test fails).
+check-compliance:
+	cd $(API_DIR) && uv run python scripts/check_compliance_map.py
+
+# SEC-100: fail on any expired/malformed security-scan exception.
+check-exceptions:
+	cd $(API_DIR) && uv run python scripts/check_scan_exceptions.py
+
+supply-chain: sast-python audit-python audit-web osv-scan check-compliance check-exceptions lockfile-drift
 
 # --env-file pins the repo-root .env so host-side runs always target THIS
 # project's containers (ports may be remapped there), never defaults.

@@ -170,10 +170,12 @@ def test_revocation_closes_the_socket(monkeypatch: pytest.MonkeyPatch) -> None:
         ws = _FakeWS(_app(redis, keyring))
         task = asyncio.create_task(_serve(ws, principal, token))
         await asyncio.sleep(0.02)
-        await redis.set(f"deny:jti:{principal.jti}", "1")  # TITAN-SEC-016 revocation
+        await redis.set(f"deny:jti:{principal.jti}", "1")  # revoke mid-connection
         await _wait_for(ws, lambda f: f["payload"].get("code") == "token_expired")
         await asyncio.wait_for(task, timeout=2.0)
-        assert ws.closed is not None and ws.closed[0] == 1008
+        assert ws.closed is not None and ws.closed[0] == 1008, (
+            "TITAN-SEC-016: a revoked jti must force the live socket closed"
+        )
         await redis.aclose()
 
     run_async(scenario)

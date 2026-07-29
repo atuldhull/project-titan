@@ -206,6 +206,11 @@ class Settings(BaseSettings):
     # a local fixture in hermetic tests).
     egress_pypi_upstream: str = "https://pypi.org"
     egress_npm_upstream: str = "https://registry.npmjs.org"
+    # SEC-104 agent-dependency gate at the mirror. Enabled routes every pip/npm
+    # first-contact through existence/typosquat/adoption/OSV checks; the allowlist
+    # is the Maintainer bypass for the age/adoption bar (never for typosquat/vuln).
+    dependency_gate_enabled: bool = True
+    dependency_allowlist: list[str] = []
 
     # --- LLM gateway (Phase 15; Vol 7 §8.2, ADR-007) ---
     # Path to config/models.yaml (hot-reloadable). The container mounts the repo

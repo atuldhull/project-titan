@@ -141,7 +141,7 @@ def test_network_is_deny_all(controller: SandboxController, workspace: Workspace
                 limits=ResourceLimits(timeout_s=10),
             )
         )
-        assert not result.ok
+        assert not result.ok, "TITAN-SEC-043: the sandbox network must be deny-all"
     finally:
         run_async(sbx.destroy)
 

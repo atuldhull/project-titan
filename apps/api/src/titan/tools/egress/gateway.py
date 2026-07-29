@@ -20,6 +20,7 @@ and allowlisted the sandbox.
 import asyncio
 import hmac
 import socket
+from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
@@ -28,12 +29,46 @@ import structlog
 from fastapi import FastAPI, Header, HTTPException, Request
 
 from titan.tools.constraints import host_is_blocked
+from titan.tools.egress import dependency_gate as depgate
 from titan.tools.egress.cache import CachedResponse, ResponseCache
 from titan.tools.egress.search import SearchBackend
+
+# Injected at the composition root (egress/__main__): record one install
+# decision (allow OR block) to the audit ledger. Keeps this standalone service
+# decoupled from the DB (tests pass a recorder; prod appends to tool_audit).
+InstallDecisionHook = Callable[[str, str, depgate.GateDecision], Awaitable[None]]
 
 logger = structlog.get_logger("titan.tools.egress.gateway")
 
 _MAX_BODY_BYTES = 8 * 1024 * 1024
+# A hard ceiling on how many bytes we will read from ANY upstream before aborting.
+# The shared egress process is the sole internet hop for every tenant, so a hostile
+# or compromised upstream streaming a multi-GB body would OOM it for everyone. The
+# mirror serves legit-but-large registry metadata (> _MAX_BODY_BYTES) whole, so the
+# stream ceiling sits well above the cache cap while still bounding memory.
+_MAX_STREAM_BYTES = 64 * 1024 * 1024
+
+
+class _BodyTooLarge(Exception):
+    """An upstream response exceeded _MAX_STREAM_BYTES while being read."""
+
+
+async def _read_capped(response: httpx.Response, limit: int, *, truncate: bool) -> bytes:
+    """Read a STREAMING response, bounding peak memory. With ``truncate`` we stop at
+    ``limit`` and return the prefix (the research-fetch behaviour); otherwise we
+    raise :class:`_BodyTooLarge` once ``limit`` is exceeded (the mirror)."""
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.aiter_bytes():
+        total += len(chunk)
+        chunks.append(chunk)
+        if total >= limit:
+            if truncate:
+                return b"".join(chunks)[:limit]
+            raise _BodyTooLarge
+    return b"".join(chunks)
+
+
 # SEC-074: redirects are followed MANUALLY so each hop is SSRF-checked BEFORE it
 # is contacted. `follow_redirects=True` would let httpx connect to an internal
 # host on an intermediate hop (triggering side effects) while only the first and
@@ -47,9 +82,14 @@ class _SsrfBlocked(Exception):
     """A hop targeted a private/metadata address or a non-http(s) scheme."""
 
 
-async def _fetch_following_redirects(client: httpx.AsyncClient, start_url: str) -> httpx.Response:
+async def _fetch_following_redirects(
+    client: httpx.AsyncClient, start_url: str
+) -> tuple[httpx.Response, bytes]:
     """GET ``start_url``, validating EVERY hop's host against the SSRF block
-    before connecting (TITAN-SEC-074 "re-validate on every redirect hop")."""
+    before connecting (TITAN-SEC-074 "re-validate on every redirect hop"), and
+    return the final response together with its body read under a SIZE CAP (the
+    body is streamed and truncated at _MAX_BODY_BYTES so a huge response can never
+    be fully buffered into memory)."""
     current = start_url
     for _ in range(_MAX_REDIRECTS + 1):
         parts = urlsplit(current)
@@ -58,13 +98,14 @@ async def _fetch_following_redirects(client: httpx.AsyncClient, start_url: str) 
         default_port = 443 if parts.scheme == "https" else 80
         if await _resolves_to_blocked(parts.hostname, parts.port or default_port):
             raise _SsrfBlocked("redirected to a private/metadata address")
-        response = await client.get(current, follow_redirects=False, timeout=20.0)
-        if response.status_code in _REDIRECT_CODES:
-            location = response.headers.get("location")
-            if location:
-                current = urljoin(current, location)
-                continue
-        return response
+        async with client.stream("GET", current, follow_redirects=False, timeout=20.0) as response:
+            if response.status_code in _REDIRECT_CODES:
+                location = response.headers.get("location")
+                if location:
+                    current = urljoin(current, location)
+                    continue
+            body = await _read_capped(response, _MAX_BODY_BYTES, truncate=True)
+            return response, body
     raise _SsrfBlocked("too many redirects")
 
 
@@ -104,10 +145,39 @@ def build_gateway_app(
     internal_token: str,
     pypi_upstream: str,
     npm_upstream: str,
+    dependency_resolver: depgate.MetadataResolver | None = None,
+    dependency_allowlist: frozenset[str] = frozenset(),
+    on_install_decision: InstallDecisionHook | None = None,
 ) -> FastAPI:
     app = FastAPI(title="titan-egress-gateway", docs_url=None, redoc_url=None, openapi_url=None)
     pypi = pypi_upstream.rstrip("/")
     npm = npm_upstream.rstrip("/")
+    # Normalize allowlist entries with the SAME PEP-503 rule the request names go
+    # through, so a config entry like `My_Internal_Pkg` still matches (SEC-104 review).
+    normalized_allowlist = frozenset(depgate.normalize_name(a) for a in dependency_allowlist)
+
+    async def _gate(name: str, ecosystem: str, top: frozenset[str]) -> None:
+        """SEC-104: run the agent-dependency gate on a first-contact request (index
+        OR direct artifact). Blocked -> 403 (+ audit); allowed -> pass (+ audit).
+        No resolver wired (unit rigs) -> pass-through."""
+        if dependency_resolver is None:
+            return
+        meta = await dependency_resolver.resolve(ecosystem, name)
+        allowlisted = depgate.normalize_name(name) in normalized_allowlist
+        decision = depgate.evaluate(name, meta, top=top, allowlisted=allowlisted)
+        if on_install_decision is not None:
+            await on_install_decision(name, ecosystem, decision)
+        if not decision.allowed:
+            logger.warning(
+                "egress.dependency_blocked",
+                package=name,
+                ecosystem=ecosystem,
+                reason=decision.reason.value,
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=f"dependency gate blocked '{name}': {decision.detail} (TITAN-SEC-104)",
+            )
 
     def _authorize(authorization: str | None) -> None:
         # Fail closed: a blank configured token means the gateway is not wired for
@@ -142,13 +212,12 @@ def build_gateway_app(
             # internal host. A block raises 403, which the tool host maps to an
             # audited SANDBOX_VIOLATION (tools/web/session.py) — the "blocked
             # attempts audited" clause.
-            response = await _fetch_following_redirects(client, url)
+            response, body = await _fetch_following_redirects(client, url)
         except _SsrfBlocked as exc:
             logger.warning("egress.ssrf_blocked", url=url, reason=str(exc))
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         except httpx.HTTPError as exc:
             raise HTTPException(status_code=502, detail=f"fetch failed: {exc}") from exc
-        body = response.content[:_MAX_BODY_BYTES]
         entry = CachedResponse(
             status=response.status_code,
             content_type=response.headers.get("content-type", ""),
@@ -184,10 +253,18 @@ def build_gateway_app(
 
     @app.get("/pypi/{path:path}")
     async def pypi_mirror(path: str) -> Any:
+        # Gate the SIMPLE index request AND a direct wheel/sdist download — a
+        # malicious agent must not bypass the gate by fetching the artifact URL.
+        name = depgate.parse_pypi_name(path) or depgate.parse_pypi_artifact_name(path)
+        if name is not None:
+            await _gate(name, "pypi", depgate.TOP_PYPI)
         return await _pull_through(client, cache, f"{pypi}/{path}")
 
     @app.get("/npm/{path:path}")
     async def npm_mirror(path: str) -> Any:
+        name = depgate.parse_npm_name(path) or depgate.parse_npm_artifact_name(path)
+        if name is not None:  # packument OR direct tarball → gate it
+            await _gate(name, "npm", depgate.TOP_NPM)
         return await _pull_through(client, cache, f"{npm}/{path}")
 
     return app
@@ -233,25 +310,33 @@ async def _pull_through(client: httpx.AsyncClient, cache: ResponseCache, upstrea
             media_type=cached.content_type or "application/octet-stream",
             headers={"x-titan-cache": "HIT"},
         )
+    # Registry metadata must be served WHOLE — a truncated packument/index is
+    # invalid JSON/HTML and breaks the install — so the body is streamed and read
+    # up to a hard _MAX_STREAM_BYTES ceiling (well above legit metadata) rather
+    # than truncated, but a hostile upstream streaming beyond it is aborted (502)
+    # instead of buffered into RAM. Only bodies <= _MAX_BODY_BYTES are cached.
     try:
-        response = await client.get(upstream_url, follow_redirects=True, timeout=30.0)
+        async with client.stream(
+            "GET", upstream_url, follow_redirects=True, timeout=30.0
+        ) as response:
+            content_type = response.headers.get("content-type", "application/octet-stream")
+            status_code = response.status_code
+            final_url = str(response.url)
+            body = await _read_capped(response, _MAX_STREAM_BYTES, truncate=False)
+    except _BodyTooLarge as exc:
+        raise HTTPException(
+            status_code=502, detail="upstream response exceeds the mirror size ceiling"
+        ) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"mirror fetch failed: {exc}") from exc
-    # Registry metadata must be served WHOLE — a truncated packument/index is
-    # invalid JSON/HTML and breaks the install. Serve the full body; if it
-    # exceeds the cap, do NOT poison the cache with a partial copy.
-    body = response.content
-    content_type = response.headers.get("content-type", "application/octet-stream")
-    if response.status_code == 200 and len(body) <= _MAX_BODY_BYTES:
+    if status_code == 200 and len(body) <= _MAX_BODY_BYTES:
         cache.put(
             upstream_url,
-            CachedResponse(
-                status=200, content_type=content_type, body=body, final_url=str(response.url)
-            ),
+            CachedResponse(status=200, content_type=content_type, body=body, final_url=final_url),
         )
     return Response(
         content=body,
-        status_code=response.status_code,
+        status_code=status_code,
         media_type=content_type,
         headers={"x-titan-cache": "MISS"},
     )

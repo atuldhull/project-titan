@@ -8,6 +8,9 @@ rows (SEC-093); the search + verify endpoints are audit:read-gated (SEC-094).
 
 The audit_events chain is GLOBAL and the schema DB is shared across the session,
 so tests that tamper restore, and the retention test truncates for isolation.
+
+Compliance-map (TITAN-SEC-110) tokens 090/091/093 are carried in the assertions
+below, not this docstring.
 """
 
 import datetime
@@ -78,7 +81,7 @@ def test_update_and_delete_are_rejected_at_the_db_layer(api: dict[str, Any]) -> 
     with pytest.raises(Exception, match="append-only"):
         run_async(do_delete)
     # The row is untouched.
-    assert _row(api, appended.id).actor == "tester"
+    assert _row(api, appended.id).actor == "tester", "TITAN-SEC-091: audit rows are immutable"
 
 
 # --- SEC-091: a corrupted row breaks chain verification --------------------
@@ -140,7 +143,7 @@ def test_catalog_every_action_produces_a_schema_valid_chained_row(api: dict[str,
             detail={"note": action.value},
         )
         row = _row(api, appended.id)
-        assert row is not None, action
+        assert row is not None, f"TITAN-SEC-090: {action} produced no schema-valid row"
         # SEC-090 envelope present + typed.
         assert row.action == action.value
         assert row.outcome == "success"
@@ -223,7 +226,7 @@ def test_retention_prunes_only_aged_sealed_rows(api: dict[str, Any]) -> None:
     removed = run_async(
         lambda: audit_service.apply_retention(api["engine"], now=now, online_days=400)
     )
-    assert removed == 1  # the aged, now-sealed row
+    assert removed == 1, "TITAN-SEC-093: retention prunes only the aged, sealed row"
     assert _row(api, aged.id) is None  # pruned from the hot table
     assert _row(api, fresh.id) is not None  # inside the window → kept
     # The remaining online chain still verifies (verify trusts the first online

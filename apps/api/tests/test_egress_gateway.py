@@ -200,3 +200,31 @@ def test_pypi_mirror_pull_through_caches() -> None:
         await outbound.aclose()
 
     run_async(scenario)
+
+
+def test_read_capped_truncates_and_aborts_oversized_bodies() -> None:
+    # SEC-104 review #8/#9: the body cap must bound PEAK memory, not slice a copy
+    # after the full body is already buffered. _read_capped stops reading at the
+    # limit (truncate) or aborts (mirror) rather than materializing an unbounded body.
+    import httpx as _httpx
+
+    from titan.tools.egress.gateway import _BodyTooLarge, _read_capped
+
+    async def scenario() -> None:
+        # truncate=True: return exactly the first `limit` bytes and stop.
+        out = await _read_capped(_httpx.Response(200, content=b"A" * 1000), 100, truncate=True)
+        assert out == b"A" * 100
+
+        # truncate=False: abort once the limit is exceeded (the mirror ceiling).
+        raised = False
+        try:
+            await _read_capped(_httpx.Response(200, content=b"B" * 1000), 100, truncate=False)
+        except _BodyTooLarge:
+            raised = True
+        assert raised
+
+        # A small body under the limit is returned whole.
+        whole = await _read_capped(_httpx.Response(200, content=b"C" * 50), 100, truncate=False)
+        assert whole == b"C" * 50
+
+    run_async(scenario)

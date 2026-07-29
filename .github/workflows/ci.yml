@@ -265,6 +265,57 @@ jobs:
       - run: make semgrep
       - run: make semgrep-selftest
 
+  # TITAN-SEC-100/110: Python SAST (bandit, high/high), the OWASP compliance-map
+  # consistency check (removing a mapped test fails here), and lockfile drift —
+  # all fast, no Docker, so they gate every PR.
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: cd apps/api && uv sync --frozen
+      - run: make sast-python
+      - run: make check-compliance
+      - run: make check-exceptions
+      - run: make lockfile-drift
+
+  # TITAN-SEC-103/104/105: known-vulnerable dependency scanning across ecosystems
+  # (pip-audit from the frozen lockfile, npm audit high+, OSV over both lockfiles).
+  # HIGH/CRITICAL findings fail the job; expiring exceptions live in
+  # security/scan-exceptions.yaml (SEC-100).
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: cd apps/web && npm ci
+      - run: make audit-python
+      - run: make audit-web
+      - run: make osv-scan
+
+  # TITAN-SEC-101: a CycloneDX SBOM is generated and retained as a build artifact
+  # for every commit (release images are additionally signed + attested via cosign
+  # in the publish workflow).
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make sbom
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+
   # Live-provider conformance (TITAN-INT-060 item 4): a SEPARATE, NON-BLOCKING
   # job so real API divergence is surfaced without failing the main pipeline.
   # Each provider leg self-skips when its secret is absent, so this is a no-op

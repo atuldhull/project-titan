@@ -135,8 +135,10 @@ def test_revoke_endpoint_takes_effect_immediately(client: TestClient) -> None:
     assert client.get("/api/v1/auth/me", headers=headers).status_code == 200
 
     assert client.post("/api/v1/auth/revoke", headers=headers).status_code == 204
-    # TITAN-SEC-014 demands ≤60 s; the denylist applies on the next request.
-    assert client.get("/api/v1/auth/me", headers=headers).status_code == 401
+    # The denylist applies on the next request.
+    assert client.get("/api/v1/auth/me", headers=headers).status_code == 401, (
+        "TITAN-SEC-014: revocation takes effect within ≤60 s (next request)"
+    )
 
 
 def test_logout_durably_kills_the_refresh_family(client: TestClient) -> None:

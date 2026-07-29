@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from titan.tools.egress.allowlist import Allowlist
 from titan.tools.egress.cache import ResponseCache
+from titan.tools.egress.dependency_gate import MetadataResolver
 from titan.tools.egress.forward_proxy import ForwardProxy
-from titan.tools.egress.gateway import build_gateway_app
+from titan.tools.egress.gateway import InstallDecisionHook, build_gateway_app
 from titan.tools.egress.search import SearchBackend, build_search_backend
 from titan.tools.egress.tokens import TokenClaims, mint_task_token, verify_task_token
 
@@ -32,6 +33,9 @@ def build_gateway(
     pypi_upstream: str,
     npm_upstream: str,
     cache: ResponseCache | None = None,
+    dependency_resolver: MetadataResolver | None = None,
+    dependency_allowlist: frozenset[str] = frozenset(),
+    on_install_decision: InstallDecisionHook | None = None,
 ) -> FastAPI:
     return build_gateway_app(
         client=client,
@@ -40,6 +44,9 @@ def build_gateway(
         internal_token=internal_token,
         pypi_upstream=pypi_upstream,
         npm_upstream=npm_upstream,
+        dependency_resolver=dependency_resolver,
+        dependency_allowlist=dependency_allowlist,
+        on_install_decision=on_install_decision,
     )
 
 

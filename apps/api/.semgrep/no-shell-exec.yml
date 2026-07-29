@@ -1,0 +1,26 @@
+rules:
+  - id: titan-no-shell-string-exec
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Shell-string command execution is banned (TITAN-SEC-073). Every command in
+      this codebase is run argv-only through the sandbox controller
+      (sandbox.exec([...])) — never a shell that re-parses a string. os.system,
+      os.popen, and subprocess(..., shell=True) splice their argument through
+      /bin/sh, so any agent- or request-derived substring becomes command
+      injection. Build an argv list and run it without a shell.
+    metadata:
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 - Injection"
+      llm: "LLM05:2025 - Improper Output Handling"
+    patterns:
+      - pattern-either:
+          - pattern: os.system(...)
+          - pattern: os.popen(...)
+          - pattern: subprocess.run(..., shell=True, ...)
+          - pattern: subprocess.call(..., shell=True, ...)
+          - pattern: subprocess.check_call(..., shell=True, ...)
+          - pattern: subprocess.check_output(..., shell=True, ...)
+          - pattern: subprocess.Popen(..., shell=True, ...)
+          - pattern: subprocess.getoutput(...)
+          - pattern: subprocess.getstatusoutput(...)

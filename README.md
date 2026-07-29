@@ -10,6 +10,11 @@ and is the single source of truth for every decision.** The build is executed
 phase by phase per
 [`Project-TITAN-Docs/TITAN-BUILD-PHASES.md`](Project-TITAN-Docs/TITAN-BUILD-PHASES.md).
 
+**Security:** to report a vulnerability, see [`SECURITY.md`](SECURITY.md)
+(private reporting, response SLAs, 90-day coordinated disclosure). Control
+traceability is machine-readable in
+[`security/compliance-map.yaml`](security/compliance-map.yaml) (TITAN-SEC-110).
+
 ## Repository layout (ADR-001, Vol 3 §13.2)
 
 ```

@@ -1,0 +1,165 @@
+# TITAN-SEC-110 — machine-readable OWASP compliance traceability.
+#
+# Source of truth: Project-TITAN-Docs/08-Volume-8-Security.md §12. Each row maps an
+# OWASP category to the TITAN requirement IDs that address it and to the test tokens
+# (`TITAN-SEC-NNN`) that PROVE those requirements in the suite. `apps/api/scripts/
+# check_compliance_map.py` (Makefile `check-compliance`, run in CI) asserts every
+# listed token resolves to at least one test under `test_roots` — so removing a
+# mapped test fails the build, exactly as §12's acceptance criterion requires.
+#
+# Rows whose control is a design/process/CI artifact rather than a unit test carry an
+# explicit `coverage:` marker instead of `tests:` — the check forbids a row that is
+# silently BOTH testless and unmarked (that would be an untracked gap), and only the
+# design/process rows (A04, A05, LLM04, LLM08, LLM09) are permitted to use `coverage:`
+# at all, so a code-backed row cannot quietly drop its proving test.
+#
+# Token resolution ignores `#`/`//` comments (a token must ride in a real string —
+# an assert message, a test-id constant, or a docstring). Residual: a token in a
+# MODULE docstring still resolves, so deleting/renaming a test module fails the gate
+# (§12's acceptance) but gutting a test body while keeping its docstring does not;
+# newer rows (e.g. A06/A09/LLM03) carry their token in an assertion to close even that.
+
+meta:
+  owner: security
+  spec: Project-TITAN-Docs/08-Volume-8-Security.md#12
+  # Roots the checker scans for `TITAN-SEC-NNN` tokens.
+  test_roots:
+    - apps/api/tests
+    - apps/web/tests
+
+owasp_top_10_2021:
+  - id: A01
+    name: Broken Access Control
+    controls: Central RBAC middleware, object-level checks, agent allowlists, approval tokens
+    requirements: [SEC-030, SEC-031, SEC-032, SEC-033, SEC-034]
+    tests: [TITAN-SEC-030, TITAN-SEC-031, TITAN-SEC-032]
+
+  - id: A02
+    name: Cryptographic Failures
+    controls: TLS everywhere, storage + field encryption, Argon2id, key rotation
+    requirements: [SEC-017, SEC-060, SEC-061, SEC-062, SEC-063, SEC-064]
+    tests: [TITAN-SEC-017, TITAN-SEC-063]
+
+  - id: A03
+    name: Injection
+    controls: Pydantic validation, parameterized SQL, argv-only shell, sanitized rendering, CSP
+    requirements: [SEC-070, SEC-071, SEC-072, SEC-073]
+    tests: [TITAN-SEC-070, TITAN-SEC-071, TITAN-SEC-072, TITAN-SEC-073]
+
+  - id: A04
+    name: Insecure Design
+    controls: Living STRIDE + AI threat model, ADRs, defense in depth
+    requirements: [SEC-003, SEC-004]
+    coverage: design  # threat-model + ADR documents, not a unit test
+
+  - id: A05
+    name: Security Misconfiguration
+    controls: Secure-defaults checklist, PodSecurity restricted, CSP/HSTS
+    requirements: [SEC-045, SEC-060]
+    coverage: config  # secure-defaults checklist + k8s manifests, enforced in §15 hardening
+
+  - id: A06
+    name: Vulnerable and Outdated Components
+    controls: CI dep/image scanning, lockfiles, weekly rescans, dependency gate
+    requirements: [SEC-100, SEC-101, SEC-102, SEC-103, SEC-104, SEC-105]
+    tests: [TITAN-SEC-104, TITAN-SEC-105]  # SEC-100..103 are CI scan jobs (see ci: below)
+    ci: [bandit, pip-audit, npm-audit, osv-scanner, trivy, syft-sbom, cosign]
+
+  - id: A07
+    name: Identification and Authentication Failures
+    controls: OIDC+PKCE, MFA, rotation + reuse detection, throttling, WSS auth
+    requirements: [SEC-010, SEC-011, SEC-012, SEC-013, SEC-014, SEC-015, SEC-016, SEC-017]
+    tests:
+      - TITAN-SEC-010
+      - TITAN-SEC-011
+      - TITAN-SEC-014
+      - TITAN-SEC-015
+      - TITAN-SEC-016
+      - TITAN-SEC-017
+
+  - id: A08
+    name: Software and Data Integrity Failures
+    controls: Signed images + admission verification, signed envelopes, hash-chained audit
+    requirements: [SEC-020, SEC-091, SEC-101]
+    tests: [TITAN-SEC-020, TITAN-SEC-091]  # SEC-101 image signing is a CI job (cosign)
+    ci: [cosign]
+
+  - id: A09
+    name: Security Logging and Monitoring Failures
+    controls: Full audit catalog, Loki + OTel correlation, tamper evidence
+    requirements: [SEC-090, SEC-091, SEC-092, SEC-093, SEC-094]
+    tests: [TITAN-SEC-090, TITAN-SEC-091, TITAN-SEC-093]
+
+  - id: A10
+    name: Server-Side Request Forgery
+    controls: Egress-deny sandboxes, SSRF guard, metadata-IP blocklist
+    requirements: [SEC-043, SEC-074]
+    tests: [TITAN-SEC-043]
+
+owasp_llm_top_10_2025:
+  - id: LLM01
+    name: Prompt Injection
+    controls: Untrusted-content tagging, model-independent tool authz, approval gates, egress deny
+    requirements: [SEC-001, SEC-031, SEC-033, SEC-043]
+    tests: [TITAN-SEC-031, TITAN-SEC-043]
+
+  - id: LLM02
+    name: Sensitive Information Disclosure
+    controls: Redaction pipeline, secret-file exclusion, local-model routing
+    requirements: [SEC-050, SEC-051, SEC-052, SEC-053, SEC-054, SEC-055, SEC-056]
+    tests:
+      - TITAN-SEC-050
+      - TITAN-SEC-051
+      - TITAN-SEC-052
+      - TITAN-SEC-053
+      - TITAN-SEC-054
+      - TITAN-SEC-055
+
+  - id: LLM03
+    name: Supply Chain
+    controls: Dependency gate, registry mirror, SBOM + signing
+    requirements: [SEC-100, SEC-101, SEC-102, SEC-103, SEC-104, SEC-105]
+    tests: [TITAN-SEC-104, TITAN-SEC-105]
+    ci: [osv-scanner, syft-sbom, cosign]
+
+  - id: LLM04
+    name: Data and Model Poisoning
+    controls: Memory provenance tiers, namespace isolation, promotion review
+    requirements: [SEC-056]
+    coverage: design  # Vol 5 memory provenance / §2.3 namespace isolation
+
+  - id: LLM05
+    name: Improper Output Handling
+    controls: Output sanitization, tool-arg validation, sandbox-only execution
+    requirements: [SEC-072, SEC-073, SEC-040]
+    tests: [TITAN-SEC-072, TITAN-SEC-073, TITAN-SEC-040]
+
+  - id: LLM06
+    name: Excessive Agency
+    controls: Per-agent allowlists, task-scoped tokens, approval tokens
+    requirements: [SEC-018, SEC-031, SEC-033]
+    tests: [TITAN-SEC-031]
+
+  - id: LLM07
+    name: System Prompt Leakage
+    controls: No secrets in prompts by construction; prompts treated as non-secret config
+    requirements: [SEC-053, SEC-054]
+    tests: [TITAN-SEC-053, TITAN-SEC-054]
+
+  - id: LLM08
+    name: Vector and Embedding Weaknesses
+    controls: Per-project Qdrant namespaces, authz on retrieval, provenance filtering
+    requirements: []
+    coverage: design  # §2.3 per-project namespaces / Vol 5 retrieval authz
+
+  - id: LLM09
+    name: Misinformation
+    controls: Reviewer/QA/Security agent pipeline, tests before merge, human approval
+    requirements: [SEC-033]
+    coverage: process  # Vol 6 delivery pipeline gates
+
+  - id: LLM10
+    name: Unbounded Consumption
+    controls: Token budgets, loop detection, rate limits, sandbox caps
+    requirements: [SEC-042, SEC-080, SEC-081, SEC-082, SEC-083, SEC-084]
+    tests: [TITAN-SEC-042, TITAN-SEC-080, TITAN-SEC-082, TITAN-SEC-083]

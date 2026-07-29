@@ -99,7 +99,11 @@ src = ["src", "tests"]
 # The SEC-071 semgrep fixture is DELIBERATELY vulnerable (string-built SQL) — it
 # exists only for the rule to fire on and is never imported/run, so linting it is
 # noise (UP031 %-format, etc.).
-extend-exclude = ["tests/fixtures/sql_injection_sample.py"]
+extend-exclude = [
+    "tests/fixtures/sql_injection_sample.py",
+    "tests/fixtures/shell_exec_sample.py",
+    "tests/fixtures/dynamic_exec_sample.py",
+]
 
 [tool.ruff.lint]
 # ASYNC = flake8-async blocking-call detection (TITAN-BCK-002 acceptance).
@@ -122,12 +126,22 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "TID", "ASYNC"]
 # not code. (This was failing `make lint-style` unnoticed since Phase 43.)
 "alembic/versions/0021_constitution_and_clarification.py" = ["E501"]
 
+[tool.bandit]
+# TITAN-SEC-100: SAST over production code only. Run at high severity + high
+# confidence in CI (`make sast-python`) so it flags real issues, not asserts in
+# tests. No blanket `skips` (SEC-104 review #6: a permanent skip is an unpoliced,
+# non-expiring suppression that bypasses the security/scan-exceptions.yaml
+# registry) — B608 (assembled SQL) is MEDIUM severity and so is already below the
+# high threshold, and is separately + more strictly banned by the SEC-071 semgrep
+# rule over src AND migrations.
+exclude_dirs = ["tests", "alembic"]
+
 [tool.mypy]
 strict = true
 python_version = "3.12"
 files = ["src", "tests", "scripts"]
 # The SEC-071 semgrep fixture is deliberately-vulnerable, never-run code.
-exclude = ["tests/fixtures/sql_injection_sample\\.py$"]
+exclude = ["tests/fixtures/(sql_injection|shell_exec|dynamic_exec)_sample\\.py$"]
 mypy_path = "src"
 plugins = ["pydantic.mypy"]
 

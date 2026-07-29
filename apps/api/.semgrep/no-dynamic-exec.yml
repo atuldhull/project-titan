@@ -1,0 +1,20 @@
+rules:
+  - id: titan-no-dynamic-code-exec
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Dynamic code execution is banned (TITAN-SEC-072). eval()/exec() run arbitrary
+      Python; when their argument derives from a model response, a tool result, or
+      request data they are remote code execution. This platform never evaluates
+      generated code in-process — agent code runs only inside the sandbox. Use
+      explicit parsing (json.loads, ast.literal_eval for literals) instead. This
+      matches the BUILTINS eval/exec only; the sandbox controller's own .exec()
+      METHOD (argv execution in a container) is a different, allowed API.
+    metadata:
+      cwe: "CWE-95: Eval Injection"
+      owasp: "A03:2021 - Injection"
+      llm: "LLM05:2025 - Improper Output Handling"
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: exec(...)
