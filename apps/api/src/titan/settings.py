@@ -375,6 +375,16 @@ class Settings(BaseSettings):
     # boundary (a lost queue is rebuilt by ops/scripts/requeue-from-ledger.py).
     stream_maxlen: int = 1_000_000
 
+    # --- Audit ledger (Phase 73; Vol 8 §10, SEC-091/093) ---
+    # Object-storage root for daily age-sealed audit segments (MinIO/S3 in prod;
+    # a local directory here). Days are sealed to `{root}/audit/<day>.jsonl.age`.
+    audit_archive_root: str = "audit-archive"
+    # Online window: audit rows older than this AND sealed are removed from the
+    # hot table (they live on in the sealed archive — 2y retention, §10.1).
+    audit_online_days: int = 400
+    # How often the worker walks the chain (SEC-091), seals past days, and prunes.
+    audit_maintenance_interval_seconds: int = 24 * 60 * 60
+
     # CORS allowlist (§9.1; dev default per spec). Env: comma-separated or
     # JSON list in TITAN_CORS_ORIGINS. NoDecode: the validator below owns
     # parsing (pydantic-settings would otherwise demand JSON and crash on

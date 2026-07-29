@@ -14,6 +14,9 @@ gauges are scrapeable (TITAN-BCK-011).
 
 import asyncio
 import contextlib
+from collections.abc import Callable
+from datetime import UTC, datetime
+from pathlib import Path
 
 import structlog
 from prometheus_client import start_http_server
@@ -21,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from titan import clients
 from titan.artifacts import service as artifacts
+from titan.audit import service as audit_service
 from titan.clarification import service as clarification
 from titan.events import service as events
 from titan.events.consumers import run_domain_consumer, run_drainer, run_reaper
@@ -29,6 +33,7 @@ from titan.flags import service as flags_service
 from titan.llm.service import build_gateway
 from titan.memory import service as memory
 from titan.observability.logging import configure_logging
+from titan.observability.metrics import AUDIT_CHAIN_INTACT
 from titan.orchestrator import service as orchestrator
 from titan.planning import service as planning
 from titan.realtime import service as realtime
@@ -45,6 +50,7 @@ from titan.runs.live_executor import LiveExecutor, make_role_resolver
 from titan.runs.storage import FilesystemStorage
 from titan.runtime.service import build_runtime
 from titan.settings import get_settings
+from titan.vault import age as vault_age
 from titan.vault import alerts as vault_alerts
 from titan.vault import bootstrap as vault_bootstrap
 from titan.vault import inventory as vault_inventory
@@ -163,6 +169,44 @@ async def run_secret_expiry_monitor(  # pragma: no cover — periodic orchestrat
         await _sleep_or_stop(stop, interval)
 
 
+async def run_audit_maintenance(  # pragma: no cover — live-verified daily loop
+    engine: AsyncEngine,
+    *,
+    encrypt: "Callable[[bytes], bytes] | None",
+    archive: audit_service.Archiver,
+    stop: asyncio.Event,
+    interval: float,
+    online_days: int,
+) -> None:
+    """SEC-091/093: walk the audit hash chain (a break drives the intact gauge to
+    0 → the AuditChainBroken page), seal past days to the age-encrypted archive,
+    and prune sealed rows past the online window. Self-healing — a transient error
+    is logged and retried, never propagated."""
+    while not stop.is_set():
+        try:
+            now = datetime.now(UTC)
+            broken = await audit_service.verify_chain(engine)
+            AUDIT_CHAIN_INTACT.set(0.0 if broken is not None else 1.0)
+            if broken is not None:
+                logger.error("audit.chain_broken", broken_seq=broken)
+            if encrypt is not None:
+                sealed = await audit_service.seal_days(
+                    engine, encrypt=encrypt, archive=archive, now=now
+                )
+                if sealed.events_sealed:
+                    logger.info(
+                        "audit.sealed", days=sealed.days_sealed, events=sealed.events_sealed
+                    )
+                pruned = await audit_service.apply_retention(
+                    engine, now=now, online_days=online_days
+                )
+                if pruned:
+                    logger.info("audit.retention_pruned", removed=pruned)
+        except Exception:
+            logger.exception("audit.maintenance_error")
+        await _sleep_or_stop(stop, interval)
+
+
 async def run() -> None:  # pragma: no cover — live-verified orchestration loop
     """Start the worker's stream-processing loops until interrupted."""
     settings = get_settings()
@@ -235,6 +279,24 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
         executor = StubExecutor()
     ingest_relay = memory.IngestRelay(engine, bus)
     embedder = memory.MemoryEmbedder(engine, bus, memory.QdrantIndex(qdrant_http), llm_gateway)
+    # Phase 73: the audit sealer reuses the vault's age key (SEC-093). Without a
+    # key (local dev) sealing is skipped — verify still runs and retention prunes
+    # nothing (an unsealed row is never removed).
+    audit_encrypt: Callable[[bytes], bytes] | None = None
+    if settings.vault_age_key:
+        _audit_recipient = vault_age.parse_identity(settings.vault_age_key).public_key()
+
+        def _audit_seal(plaintext: bytes) -> bytes:
+            return vault_age.encrypt(plaintext, _audit_recipient)
+
+        audit_encrypt = _audit_seal
+    _audit_root = Path(settings.audit_archive_root)
+
+    def _audit_archive(ref: str, data: bytes) -> None:
+        target = _audit_root / ref
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+
     stop = asyncio.Event()
     consumer_name = "titan-worker-1"
     # The reaper must only reclaim GENUINELY dead workers: a live worker holds an
@@ -313,6 +375,16 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
         asyncio.create_task(run_blocker_sweeper(engine, stop=stop)),
         asyncio.create_task(run_artifact_reconciler(engine, stop=stop)),
         asyncio.create_task(run_secret_expiry_monitor(engine, stop=stop)),
+        asyncio.create_task(
+            run_audit_maintenance(
+                engine,
+                encrypt=audit_encrypt,
+                archive=_audit_archive,
+                stop=stop,
+                interval=settings.audit_maintenance_interval_seconds,
+                online_days=settings.audit_online_days,
+            )
+        ),
         asyncio.create_task(
             vault_inventory.run_redaction_maintenance(
                 engine,

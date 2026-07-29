@@ -125,6 +125,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Audit
+         * @description SEC-094 admin search over actor / action / resource / time, newest first.
+         */
+        get: operations["search_audit_api_v1_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audit/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Verify Audit Chain
+         * @description On-demand tamper check (SEC-091): walk the hash chain and report the first
+         *     broken seq, if any. The daily job runs this and alerts on a break.
+         */
+        get: operations["verify_audit_chain_api_v1_audit_verify_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/api-keys": {
         parameters: {
             query?: never;
@@ -3233,6 +3274,45 @@ export interface components {
              */
             user_overridable: boolean;
         };
+        /** AuditEventOut */
+        AuditEventOut: {
+            /** Action */
+            action: string;
+            /** Actor */
+            actor: string;
+            /** Detail */
+            detail: {
+                [key: string]: unknown;
+            };
+            /** Event Hash */
+            event_hash: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Org */
+            org: string | null;
+            /** Outcome */
+            outcome: string;
+            /** Project Id */
+            project_id: string | null;
+            /** Resource */
+            resource: string;
+            /** Seq */
+            seq: number;
+            /** Source Ip */
+            source_ip: string | null;
+            /** Task Id */
+            task_id: string | null;
+            /** Trace Id */
+            trace_id: string | null;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+        };
         /**
          * Authority
          * @description What the agent decides alone vs. must escalate (§2.1.3).
@@ -3396,6 +3476,13 @@ export interface components {
             category: string;
             /** Channels */
             channels?: string[];
+        };
+        /** ChainStatus */
+        ChainStatus: {
+            /** Broken Seq */
+            broken_seq: number | null;
+            /** Intact */
+            intact: boolean;
         };
         /**
          * ChatRequest
@@ -7432,6 +7519,62 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    search_audit_api_v1_audit_get: {
+        parameters: {
+            query?: {
+                actor?: string | null;
+                action?: string | null;
+                resource?: string | null;
+                since?: string | null;
+                until?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEventOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    verify_audit_chain_api_v1_audit_verify_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChainStatus"];
                 };
             };
         };

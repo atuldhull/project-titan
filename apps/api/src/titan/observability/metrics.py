@@ -60,6 +60,14 @@ DISPATCH_PAUSED = Gauge(
     "1 when agents.pause_all is halting new task dispatch, else 0",
 )
 
+# Audit hash-chain integrity (Vol 8 §10, SEC-091). The daily verification job
+# sets this to 1 when the chain is intact and 0 the moment a row is tampered;
+# a break is a SEV-1 (a broken audit chain, §13.1).
+AUDIT_CHAIN_INTACT = Gauge(
+    "titan_audit_chain_intact",
+    "1 when the audit_events hash chain verified intact on the last run, else 0",
+)
+
 # Memory-ingestion lag: Memory Event commit → chunk searchable in Qdrant
 # (Vol 5 §5.4, TITAN-BRN-007: p95 ≤ 5 s at ≤ 10 events/s). Buckets bracket the
 # 5 s target on both sides so the p95 estimate is meaningful at the threshold.

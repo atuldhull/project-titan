@@ -47,3 +47,19 @@ groups:
             than 300 s for 10 minutes (TITAN-OPS-020). Accepted work is ledgered
             and safe; scale the worker pool or check for a dispatch stall
             (agents.pause_all?).
+  - name: titan-audit
+    rules:
+      # SEC-091 / §13.1: a broken audit hash chain is a SEV-1 (tamper or
+      # corruption of the immutable ledger). The daily verification job sets the
+      # gauge to 0 on any break.
+      - alert: AuditChainBroken
+        expr: titan_audit_chain_intact == 0
+        for: 0m
+        labels:
+          severity: page
+        annotations:
+          summary: "Audit hash chain verification FAILED (possible tamper)"
+          description: >-
+            The daily audit_events chain walk found a broken/altered row
+            (TITAN-SEC-091). Treat as SEV-1: freeze deploys, preserve the ledger,
+            and investigate per RUNBOOK incident response (Vol 8 §13).

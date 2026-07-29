@@ -708,6 +708,125 @@
         "title": "AssumptionOut",
         "type": "object"
       },
+      "AuditEventOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "title": "Detail",
+            "type": "object"
+          },
+          "event_hash": {
+            "title": "Event Hash",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "org": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "resource": {
+            "title": "Resource",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ip"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "seq",
+          "ts",
+          "actor",
+          "org",
+          "project_id",
+          "task_id",
+          "action",
+          "resource",
+          "outcome",
+          "source_ip",
+          "trace_id",
+          "detail",
+          "event_hash"
+        ],
+        "title": "AuditEventOut",
+        "type": "object"
+      },
       "Authority": {
         "additionalProperties": false,
         "description": "What the agent decides alone vs. must escalate (\u00a72.1.3).\n\n``veto`` marks a hard blocking power: only the Security agent (\u00a74.11 / \u00a77.4)\nholds it in the default roster, and the runtime enforces it (TITAN-AGT-011).",
@@ -1143,6 +1262,31 @@
           "category"
         ],
         "title": "CategoryUpdate",
+        "type": "object"
+      },
+      "ChainStatus": {
+        "properties": {
+          "broken_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Broken Seq"
+          },
+          "intact": {
+            "title": "Intact",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "intact",
+          "broken_seq"
+        ],
+        "title": "ChainStatus",
         "type": "object"
       },
       "ChatRequest": {
@@ -10685,6 +10829,160 @@
         "summary": "Resume Agent",
         "tags": [
           "agents"
+        ]
+      }
+    },
+    "/api/v1/audit": {
+      "get": {
+        "description": "SEC-094 admin search over actor / action / resource / time, newest first.",
+        "operationId": "search_audit_api_v1_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "actor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resource"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEventOut"
+                  },
+                  "title": "Response Search Audit Api V1 Audit Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Audit",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/audit/verify": {
+      "get": {
+        "description": "On-demand tamper check (SEC-091): walk the hash chain and report the first\nbroken seq, if any. The daily job runs this and alerts on a break.",
+        "operationId": "verify_audit_chain_api_v1_audit_verify_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChainStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Verify Audit Chain",
+        "tags": [
+          "audit"
         ]
       }
     },

@@ -47,6 +47,7 @@ CONFLICT_TABLES = {"conflicts", "conflict_transitions", "merge_vetoes", "conflic
 # …plus the Orchestrator watchdog's live config added in Phase 32 (migration 0013).
 WATCHDOG_TABLES = {"watchdog_config"}
 FLAGS_TABLES = {"feature_flags"}  # Phase 72 (Vol 9 §5.3)
+AUDIT_TABLES = {"audit_events", "audit_seals"}  # Phase 73 (Vol 8 §10)
 # …plus the per-project delivery-pipeline state machine added in Phase 41
 # (migration 0019, Vol 6 §2.1).
 PIPELINE_TABLES = {"pipeline_states", "pipeline_stage_events"}
@@ -109,6 +110,7 @@ EXPECTED_TABLES = (
     | CONFLICT_TABLES
     | WATCHDOG_TABLES
     | FLAGS_TABLES
+    | AUDIT_TABLES
     | PIPELINE_TABLES
     | HANDOFF_TABLES
     | CONSTITUTION_TABLES

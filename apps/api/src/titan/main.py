@@ -23,6 +23,8 @@ from titan import clients
 from titan.agents import router as agents_router
 from titan.agents import service as agents_service
 from titan.artifacts import router as artifacts_router
+from titan.audit import router as audit_router
+from titan.audit import service as audit_service
 from titan.clarification import router as clarification_router
 from titan.constitution import router as constitution_router
 from titan.debt import router as debt_router
@@ -158,6 +160,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.state.engine = clients.create_engine(active_settings)
         application.state.redis = clients.create_redis(active_settings)
         application.state.http = clients.create_http_client(active_settings)
+        # Phase 73 (Vol 8 §10): the ONE shared audit client every subsystem records
+        # through — the immutable, hash-chained audit_events ledger (SEC-090..092).
+        application.state.audit = audit_service.build_audit_client(application.state.engine)
         # Phase 72 (Vol 9 §5.3, TITAN-OPS-012): self-hosted feature flags + ops
         # kill switches. A two-level cache (in-process + shared Redis snapshot,
         # 10 s TTL) read through by the gateway (llm.provider_override) and the
@@ -194,6 +199,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     source_ip=source_ip,
                     detail=detail,
                 )
+                # Phase 73: also record to the unified immutable audit ledger via
+                # the ONE shared client (SEC-090 §10.2 rate-limit block). Best-
+                # effort — an audit blip must not turn a throttle into a 500.
+                with contextlib.suppress(Exception):
+                    await application.state.audit.record(
+                        actor=str(user_id) if user_id is not None else "anonymous",
+                        action=audit_service.AuditAction.RATELIMIT_BLOCK,
+                        resource=str(detail.get("route", "*")),
+                        outcome=audit_service.Outcome.DENIED,
+                        source_ip=source_ip,
+                        detail=detail,
+                    )
 
             limiter = RateLimiter.build(
                 application.state.redis,
@@ -616,6 +633,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     plugins_router.mount(app)  # /plugins lifecycle + /hooks (HMAC) + /plugin-ui (Vol 7 §3)
     secrets_router.mount(app)  # /secrets — write-only vault management (Vol 8 §6)
     flags_router.mount(app)  # /flags — feature flags + ops kill switches (Vol 9 §5.3)
+    audit_router.mount(app)  # /audit — immutable hash-chained audit ledger (Vol 8 §10)
     otel.instrument_app(active_settings, app)
 
     def custom_openapi() -> dict[str, Any]:

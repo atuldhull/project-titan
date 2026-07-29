@@ -203,6 +203,7 @@ modules = [
     "titan.planning",
     "titan.artifacts",
     "titan.flags",
+    "titan.audit",
 ]
 ignore_imports = ["titan.** -> titan.*.service"]
 unmatched_ignore_imports_alerting = "none"
