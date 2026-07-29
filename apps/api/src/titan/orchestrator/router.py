@@ -17,9 +17,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
 
+from titan.flags import service as flags_service
 from titan.gateway import cache
 from titan.gateway.concurrency import require_if_match, set_etag, version_conflict
 from titan.gateway.pagination import Page, Pagination, keyset_from
+from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import Requires, RequiresAuth, authorize_in_project
 from titan.identity.service import Principal
 from titan.orchestrator import service
@@ -97,8 +99,40 @@ async def create_task(
     response: Response,
     principal: _CreateInProject,
 ) -> TaskOut:
+    # TITAN-OPS-020 admission control. Two independent backpressure controls,
+    # both BEFORE the ledger write so refused work is never half-committed:
+    #  (1) intake.read_only kill switch — the whole platform pauses new intake;
+    #  (2) per-project concurrency quota — one project cannot monopolise workers.
+    # Both answer 4xx/5xx-that-a-client-retries (not a silent drop); accepted work
+    # is always ledgered and simply waits in a queued state (never lost).
+    settings = request.app.state.settings
+    flags = request.app.state.flags
+    # Best-effort: a flag-store blip must not turn intake into a 500 (OPS-020
+    # "zero 5xx on intake") — degrade to accepting + ledgering the work.
+    if await flags.is_enabled_or(flags_service.INTAKE_READ_ONLY, False):
+        raise ProblemException(
+            status=503,
+            title="Intake is read-only",
+            detail="The platform is in read-only mode; new work is paused. Retry later.",
+            problem_type=problem_type("intake-read-only"),
+            headers={"Retry-After": str(max(1, settings.admission_retry_after_seconds))},
+        )
+    quota = settings.per_project_concurrent_task_quota
     async with request.app.state.engine.begin() as conn:
         await projects.get_project(conn, project_id)  # 404 before the FK insert
+        if quota > 0:
+            active = await service.count_active_tasks(conn, project_id)
+            if active >= quota:
+                raise ProblemException(
+                    status=429,
+                    title="Project concurrency quota exceeded",
+                    detail=(
+                        f"This project has {active} tasks in flight (limit {quota}); "
+                        "retry shortly — accepted work is queued, never dropped."
+                    ),
+                    problem_type=problem_type("project-quota-exceeded"),
+                    headers={"Retry-After": str(max(1, settings.admission_retry_after_seconds))},
+                )
         task = await service.create_task(conn, project_id, body, str(principal.sub))
     await _invalidate_board(request, project_id)
     set_etag(response, task.version)

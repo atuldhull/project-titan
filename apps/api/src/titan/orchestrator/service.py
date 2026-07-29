@@ -264,6 +264,20 @@ async def _emit_kanban(
 
 # --- tasks -----------------------------------------------------------------
 
+# Tasks in these states have left the active execution pipeline; every OTHER
+# state (including escalated/blocked/in_loop — genuinely outstanding work) counts
+# against the per-project admission quota (TITAN-OPS-020, Phase 72).
+_TERMINAL_TASK_STATES: tuple[str, ...] = ("done", "cancelled", "merged", "failed")
+
+
+async def count_active_tasks(conn: AsyncConnection, project_id: uuid.UUID) -> int:
+    """Number of non-terminal (outstanding) tasks for a project — the admission
+    quota signal. A SOFT backpressure bound (concurrent creates may momentarily
+    overshoot); accepted work is always ledgered and never lost."""
+    return await repo.count_active_tasks(
+        conn, project_id=project_id, terminal=_TERMINAL_TASK_STATES
+    )
+
 
 async def create_task(
     conn: AsyncConnection, project_id: uuid.UUID, data: TaskCreate, actor: str

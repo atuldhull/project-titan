@@ -29,3 +29,21 @@ groups:
           description: >-
             p95 Memory-Event-commit → searchable latency exceeded the
             TITAN-BRN-007 budget for 5 minutes.
+  - name: titan-backpressure
+    rules:
+      # §7 / §9 (TITAN-OPS-020): the execution tier is saturated when the oldest
+      # unacked task has waited > 300 s. Intake keeps accepting + ledgering
+      # (durable), so this is queue WAIT, never loss — but it pages so an operator
+      # scales workers (KEDA) or lifts a kill switch.
+      - alert: QueueBackpressure
+        expr: titan_queue_oldest_pending_seconds > 300
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "Task queue backpressure — oldest pending > 300s"
+          description: >-
+            {{ $labels.stream }}/{{ $labels.group }} has an unacked task older
+            than 300 s for 10 minutes (TITAN-OPS-020). Accepted work is ledgered
+            and safe; scale the worker pool or check for a dispatch stall
+            (agents.pause_all?).

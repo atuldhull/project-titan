@@ -27,6 +27,7 @@ from titan.agents.service import (
 )
 from titan.conflict.service import vetoing_roles as _vetoing_roles
 from titan.events.service import QueueBus
+from titan.flags.service import FlagStore
 from titan.llm.service import ConfigLoader, build_gateway, effective_profile
 from titan.memory import service as memory_service
 from titan.runtime.binding import (
@@ -105,6 +106,7 @@ def build_runtime(
     tool_bus: ToolBus | None = None,
     http: Any | None = None,
     reranker: Any | None = None,
+    flags: "FlagStore | None" = None,
 ) -> AgentRuntime:
     """Wire the shared Agent Runtime from settings + live infrastructure.
 
@@ -203,6 +205,7 @@ def build_runtime(
         # a blocking veto (Security by default, §7.4) — never a hard-coded id.
         vetoing_roles=_vetoing_roles(registry),
         loop_guard=loop_guard,
+        flags=flags,
     )
 
 

@@ -9,6 +9,7 @@ Pydantic DTOs — never provider payloads — cross this boundary.
 """
 
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -88,6 +89,7 @@ def build_gateway(
     engine: AsyncEngine | None = None,
     redis: Redis | None = None,
     budget_notifier: Notifier | None = None,
+    provider_override: "Callable[[], Awaitable[str | None]] | None" = None,
 ) -> LlmGateway:
     """Construct a gateway from settings. Pass ``client`` (e.g. one backed by an
     ``httpx.MockTransport``) to exercise adapters against recorded wire fixtures;
@@ -103,7 +105,15 @@ def build_gateway(
     pricebook = PriceBook(Path(settings.prices_config_path))
     http = client if client is not None else httpx.AsyncClient(timeout=_CLIENT_TIMEOUT)
     manager = BudgetManager(redis, engine, notify=budget_notifier)
-    return LlmGateway(loader, http, pricebook=pricebook, engine=engine, redis=redis, budget=manager)
+    return LlmGateway(
+        loader,
+        http,
+        pricebook=pricebook,
+        engine=engine,
+        redis=redis,
+        budget=manager,
+        provider_override=provider_override,
+    )
 
 
 # --- budget-hold accessors (TITAN-OPS-021, wired into the state machines) ----

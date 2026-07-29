@@ -28,6 +28,8 @@ from titan.constitution import router as constitution_router
 from titan.debt import router as debt_router
 from titan.deploy import router as deploy_router
 from titan.events import service as events_service
+from titan.flags import router as flags_router
+from titan.flags import service as flags_service
 from titan.gateway.idempotency import IdempotencyMiddleware
 from titan.gateway.middleware import RequestContextMiddleware
 from titan.gateway.openapi import problemify_openapi
@@ -156,6 +158,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.state.engine = clients.create_engine(active_settings)
         application.state.redis = clients.create_redis(active_settings)
         application.state.http = clients.create_http_client(active_settings)
+        # Phase 72 (Vol 9 §5.3, TITAN-OPS-012): self-hosted feature flags + ops
+        # kill switches. A two-level cache (in-process + shared Redis snapshot,
+        # 10 s TTL) read through by the gateway (llm.provider_override) and the
+        # intake/admission path; a pub/sub subscriber busts the local cache so a
+        # flip converges across replicas within ~1 s (the worker reads the SAME
+        # store for agents.pause_all on every dispatch cycle).
+        application.state.flags = flags_service.build_flag_store(
+            application.state.engine,
+            application.state.redis,
+            ttl_seconds=active_settings.cache_flags_ttl_seconds,
+        )
+        application.state.flags_subscriber = flags_service.FlagBustSubscriber(
+            application.state.redis, application.state.flags
+        )
+        await application.state.flags_subscriber.start()
         # Phase 70: the TITAN-BCK-022 / SEC-080 Redis token-bucket rate limiter.
         # Built here so the route→class table sees the fully-mounted app; the
         # audit hook writes security_events without the gateway importing
@@ -264,6 +281,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             engine=application.state.engine,
             redis=application.state.redis,
             budget_notifier=build_budget_notifier(application.state.engine),
+            # TITAN-OPS-012 kill switch: when llm.provider_override is ON, force
+            # every call to the aliased provider. Injected as a callback so llm
+            # never imports titan.flags (the composition-root pattern).
+            provider_override=lambda: application.state.flags.value(
+                flags_service.PROVIDER_OVERRIDE
+            ),
         )
         # §6.1 reranker (Phase 36): cross-encoder (RERANKER=on, extra installed),
         # LLM listwise (llm / degraded on), or the zero-latency no-op (off) —
@@ -427,6 +450,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 redis=application.state.redis,
                 llm=application.state.llm_gateway,
                 tool_bus=application.state.tool_bus,
+                flags=application.state.flags,
                 # Phase 38 (§13): the real packet provider + working-memory
                 # coordinator ride on the same Qdrant client and reranker the
                 # packet endpoint uses — one retrieval stack, two entrances.
@@ -439,6 +463,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     application.state.redis,
                     signer=application.state.bus_signer,
                     on_invalid=application.state.bus_invalid_hook,
+                    maxlen=active_settings.stream_maxlen,
                 ),
             )
             watchdog.register()
@@ -483,6 +508,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await asyncio.wait_for(application.state.redaction_task, timeout=10.0)
             redaction_runtime.default_engine().set_reporter(None)
             await application.state.ws_subscriber.stop()  # stop pub/sub subscriber first
+            if getattr(application.state, "flags_subscriber", None) is not None:
+                await application.state.flags_subscriber.stop()  # flag-bust subscriber
             if application.state.plugin_health_task is not None:
                 application.state.plugin_health_stop.set()
                 application.state.plugin_health_task.cancel()
@@ -588,6 +615,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     artifacts_router.mount(app)  # /projects/{id}/artifacts — the six derived §5 artifacts
     plugins_router.mount(app)  # /plugins lifecycle + /hooks (HMAC) + /plugin-ui (Vol 7 §3)
     secrets_router.mount(app)  # /secrets — write-only vault management (Vol 8 §6)
+    flags_router.mount(app)  # /flags — feature flags + ops kill switches (Vol 9 §5.3)
     otel.instrument_app(active_settings, app)
 
     def custom_openapi() -> dict[str, Any]:

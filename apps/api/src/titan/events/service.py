@@ -32,6 +32,7 @@ def build_bus(
     *,
     signer: Signer | None = None,
     on_invalid: InvalidEnvelopeHook | None = None,
+    maxlen: int | None = None,
 ) -> QueueBus:
     """Construct the QueueBus. The backend is Redis Streams; a future NATS
     JetStream implementation (ADR-BCK-02) swaps in behind this same Protocol
@@ -41,7 +42,13 @@ def build_bus(
 
     ``signer`` enables TITAN-SEC-020 envelope signing: publish signs, consume/
     reap verify and DROP + audit (via ``on_invalid``) a bad/missing signature.
-    Both are injected here so ``titan.events`` never imports the vault."""
+    Both are injected here so ``titan.events`` never imports the vault.
+
+    ``maxlen`` caps every stream's XADD MAXLEN ~N (approximate trim, TITAN-OPS-020,
+    default ~1M in production via settings.stream_maxlen); None keeps the
+    RedisStreamBus default (100k) for tests/zero-config."""
+    if maxlen is not None:
+        return RedisStreamBus(redis, maxlen=maxlen, signer=signer, on_invalid=on_invalid)
     return RedisStreamBus(redis, signer=signer, on_invalid=on_invalid)
 
 

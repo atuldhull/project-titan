@@ -75,6 +75,10 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # no plaintext read for any role. `read` here is METADATA only.
         "secret:read",
         "secret:write",
+        # Feature flags + ops kill switches (Vol 9 §5.3, Phase 72). `flag:read`
+        # rides `*:read`; `flag:write` (flip a kill switch, create/retire a flag)
+        # is an operator act — Owner (via "*") and Admin only, like settings:write.
+        "flag:write",
         "*:read",
     ],
     "maintainer": [

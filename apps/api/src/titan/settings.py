@@ -336,6 +336,10 @@ class Settings(BaseSettings):
     cache_enabled: bool = True
     cache_project_ttl_seconds: int = 300
     cache_agents_ttl_seconds: int = 60
+    # Feature-flag snapshot TTL (Phase 72, Vol 9 §5.3). Short: a flag flip must
+    # take effect within 15 s even if the pub/sub bust is missed, so the TTL is
+    # the fallback propagation bound.
+    cache_flags_ttl_seconds: int = 10
 
     # --- Inbound webhooks (Phase 70; TITAN-SEC-075) ---
     # Reject deliveries whose signed timestamp is older than this (skew). Applies
@@ -356,6 +360,20 @@ class Settings(BaseSettings):
     loop_detection_enabled: bool = True
     loop_max_repeats: int = 3
     loop_step_budget: int = 120
+
+    # --- Admission control & backpressure (Phase 72; TITAN-OPS-020) ---
+    # Per-project concurrency quota: a project with this many non-terminal tasks
+    # (the ledger's outstanding work) gets 429 + Retry-After on new intake, so one
+    # project can never monopolise the execution tier. Accepted work is always
+    # ledgered and waits in a queued state (never lost). 0 disables the quota.
+    per_project_concurrent_task_quota: int = 25
+    # Retry-After (seconds) advertised when the quota is hit — a client backs off
+    # and retries; the durable ledger loses nothing.
+    admission_retry_after_seconds: int = 30
+    # Redis Streams XADD MAXLEN cap (~1M, TITAN-OPS-020). The backpressure chain
+    # bounds queue growth here; the ledger, not the stream, is the durability
+    # boundary (a lost queue is rebuilt by ops/scripts/requeue-from-ledger.py).
+    stream_maxlen: int = 1_000_000
 
     # CORS allowlist (§9.1; dev default per spec). Env: comma-separated or
     # JSON list in TITAN_CORS_ORIGINS. NoDecode: the validator below owns

@@ -376,6 +376,46 @@ def test_switching_provider_is_config_only(tmp_path: Path) -> None:
     assert after.model_id == "qwen3-coder:30b"
 
 
+# --- llm.provider_override kill switch (TITAN-OPS-012, Phase 72) ------------
+
+
+def test_provider_override_forces_the_alias(tmp_path: Path) -> None:
+    """When llm.provider_override yields an alias, EVERY chat is forced onto it
+    (e.g. switch to local during an incident), overriding routing.default — the
+    same request and code, a different provider, driven by a flag not config."""
+    path = _write_config(tmp_path)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(_make_handler()))
+    override: dict[str, str | None] = {"alias": None}
+
+    async def cb() -> str | None:
+        return override["alias"]
+
+    gateway = LlmGateway(ConfigLoader(path), client, provider_override=cb)
+    req = ChatRequest(messages=[Message(role="user", content="hi")], max_tokens=64)
+
+    # OFF (None) → normal routing lands on the default (anthropic).
+    assert run_async(lambda: gateway.chat(req)).provider == "anthropic"
+    # ON → forced onto the local alias (ollama). If the chat path did not consult
+    # the override, this would still be anthropic — so this assertion is the bite.
+    override["alias"] = "local-default"
+    assert run_async(lambda: gateway.chat(req)).provider == "ollama"
+
+
+def test_provider_override_is_best_effort_passthrough(tmp_path: Path) -> None:
+    path = _write_config(tmp_path)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(_make_handler()))
+
+    async def boom() -> str | None:
+        raise RuntimeError("flag store is down")
+
+    # A flag-store hiccup must degrade to normal routing, never fail the call.
+    gw = LlmGateway(ConfigLoader(path), client, provider_override=boom)
+    assert run_async(lambda: gw._override_alias("coding-default")) == "coding-default"
+    # No callback at all → passthrough of the requested alias.
+    plain = LlmGateway(ConfigLoader(path), client)
+    assert run_async(lambda: plain._override_alias("x")) == "x"
+
+
 # --- embeddings round-trip: 768-d, zero-key local profile ------------------
 
 

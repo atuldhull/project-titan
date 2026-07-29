@@ -427,6 +427,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/flags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Flags */
+        get: operations["list_flags_api_v1_flags_get"];
+        put?: never;
+        /** Create Flag */
+        post: operations["create_flag_api_v1_flags_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/flags/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Flag */
+        get: operations["get_flag_api_v1_flags__key__get"];
+        /** Update Flag */
+        put: operations["update_flag_api_v1_flags__key__put"];
+        post?: never;
+        /** Delete Flag */
+        delete: operations["delete_flag_api_v1_flags__key__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/healthz": {
         parameters: {
             query?: never;
@@ -3967,6 +4004,119 @@ export interface components {
              * @default false
              */
             watchdog_restart: boolean;
+        };
+        /** FlagCreate */
+        FlagCreate: {
+            /** Allowlist */
+            allowlist?: string[];
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /** Expires At */
+            expires_at?: string | null;
+            /**
+             * Flag Class
+             * @enum {string}
+             */
+            flag_class: "release" | "ops" | "experiment";
+            /**
+             * Flag Type
+             * @enum {string}
+             */
+            flag_type: "boolean" | "percentage" | "allowlist";
+            /** Key */
+            key: string;
+            /** Owner */
+            owner: string;
+            /** Percentage */
+            percentage?: number | null;
+            /**
+             * Scope
+             * @default global
+             * @enum {string}
+             */
+            scope: "global" | "org" | "project";
+            /** Value */
+            value?: string | null;
+        };
+        /** FlagOut */
+        FlagOut: {
+            /** Allowlist */
+            allowlist: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Expires At */
+            expires_at: string | null;
+            /**
+             * Flag Class
+             * @enum {string}
+             */
+            flag_class: "release" | "ops" | "experiment";
+            /**
+             * Flag Type
+             * @enum {string}
+             */
+            flag_type: "boolean" | "percentage" | "allowlist";
+            /** Key */
+            key: string;
+            /** Owner */
+            owner: string;
+            /** Percentage */
+            percentage: number | null;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "global" | "org" | "project";
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Value */
+            value: string | null;
+        };
+        /**
+         * FlagUpdate
+         * @description Partial update — only the fields the client SENDS are applied
+         *     (``model_dump(exclude_unset=True)``), so ``{"value": null}`` clears the value
+         *     while omitting it leaves it unchanged.
+         */
+        FlagUpdate: {
+            /** Allowlist */
+            allowlist?: string[] | null;
+            /** Description */
+            description?: string | null;
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Flag Class */
+            flag_class?: ("release" | "ops" | "experiment") | null;
+            /** Flag Type */
+            flag_type?: ("boolean" | "percentage" | "allowlist") | null;
+            /** Owner */
+            owner?: string | null;
+            /** Percentage */
+            percentage?: number | null;
+            /** Scope */
+            scope?: ("global" | "org" | "project") | null;
+            /** Value */
+            value?: string | null;
         };
         /** GateEvaluationOut */
         GateEvaluationOut: {
@@ -7772,6 +7922,154 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DeploymentOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_flags_api_v1_flags_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlagOut"][];
+                };
+            };
+        };
+    };
+    create_flag_api_v1_flags_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlagCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlagOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_flag_api_v1_flags__key__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlagOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    update_flag_api_v1_flags__key__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlagUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlagOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    delete_flag_api_v1_flags__key__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

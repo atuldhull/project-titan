@@ -99,10 +99,16 @@ class LlmGateway:
         retry: RetryPolicy | None = None,
         budget: BudgetManager | None = None,
         redactor: RedactionEngine | None = None,
+        provider_override: "Callable[[], Awaitable[str | None]] | None" = None,
     ) -> None:
         self._loader = loader
         self._client = client
         self._engine = engine
+        # TITAN-OPS-012 kill switch (llm.provider_override): a composition-root
+        # callback returning an alias to force EVERY chat/stream onto (e.g. a
+        # local model during a provider incident), or None for normal routing.
+        # Injected, never imported — llm must not depend on titan.flags.
+        self._provider_override = provider_override
         # SEC-054 sink (a): every request is redacted before ANY adapter sees
         # it. Defaults to the process-global engine (patterns + entropy always
         # on, inventory once the vault loads) so a gateway built without
@@ -140,6 +146,20 @@ class LlmGateway:
     def _router(self) -> ModelRouter:
         return ModelRouter(self._loader.get())
 
+    async def _override_alias(self, requested: str | None) -> str | None:
+        """Apply the llm.provider_override kill switch (TITAN-OPS-012): when the
+        callback yields an alias, force the request onto it; else route as asked.
+        Best-effort — a flag-store hiccup falls back to normal routing rather than
+        failing the call."""
+        if self._provider_override is None:
+            return requested
+        try:
+            override = await self._provider_override()
+        except Exception:
+            logger.warning("llm.provider_override_check_failed")
+            return requested
+        return override or requested
+
     # --- pricing helpers ---------------------------------------------------
 
     def _cost(self, resolved: ResolvedModel, usage: Usage) -> Decimal:
@@ -157,7 +177,8 @@ class LlmGateway:
         req = redact_chat_request(self._redactor, req)
         config = self._loader.get()
         router = ModelRouter(config)
-        primary = router.resolve_chat(model_alias=req.model_alias, agent_id=req.metadata.agent_id)
+        alias = await self._override_alias(req.model_alias)
+        primary = router.resolve_chat(model_alias=alias, agent_id=req.metadata.agent_id)
         project_id = _uuid_or_none(req.metadata.project_id)
         task_id = _uuid_or_none(req.metadata.task_id)
         candidates = self._chain(router, primary)
@@ -405,7 +426,8 @@ class LlmGateway:
         req = redact_chat_request(self._redactor, req)
         config = self._loader.get()
         router = ModelRouter(config)
-        resolved = router.resolve_chat(model_alias=req.model_alias, agent_id=req.metadata.agent_id)
+        alias = await self._override_alias(req.model_alias)
+        resolved = router.resolve_chat(model_alias=alias, agent_id=req.metadata.agent_id)
         adapter = self._chat_adapters.get(resolved.provider)
         if adapter is None:
             raise ProviderNotConfiguredError(f"no adapter for '{resolved.provider}'")

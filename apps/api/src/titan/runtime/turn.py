@@ -55,6 +55,7 @@ from titan.agents.service import (
     compose_system_prompt,
 )
 from titan.conflict.service import capture_veto_verdict
+from titan.flags.service import FlagStore
 from titan.llm.service import (
     ChatRequest,
     ChatResponse,
@@ -203,6 +204,11 @@ class AgentRuntime:
     # Roles holding a §7.4 blocking veto (``{"security"}`` by default) — when one of
     # them emits a veto verdict, the runtime records the pipeline veto (TITAN-AGT-018).
     vetoing_roles: frozenset[str] = frozenset()
+    # Phase 72 (Vol 9 §5.3): the feature-flag store, the "orchestrator context"
+    # through which flags reach agents. The supervised inbox worker consults it
+    # for the agents.pause_all kill switch (TITAN-OPS-012); None in a bare runtime
+    # (unit rigs, cli) leaves turn processing ungated.
+    flags: FlagStore | None = None
     # TITAN-SEC-083: per-task loop detector (≥N near-identical consecutive tool
     # calls, or step budget). Default is a disabled guard so a bare runtime (unit
     # rigs) never trips; build_runtime installs the live one from settings.

@@ -125,6 +125,13 @@ KNOWN_SCOPES: frozenset[str] = frozenset(
         # non-sensitive resource and leak through `*:read`.
         "secret:read",
         "secret:write",
+        # Feature flags (Vol 9 §5.3, Phase 72). `flag` is deliberately NOT in
+        # SENSITIVE_RESOURCES: `flag:read` must ride `*:read` so the frontend AND
+        # agents (via the orchestrator context) can read flags. `flag:write` is
+        # the explicit Owner/Admin gate — flipping a kill switch is an operator
+        # act, never an agent's — mirroring settings:write.
+        "flag:read",
+        "flag:write",
     }
 )
 

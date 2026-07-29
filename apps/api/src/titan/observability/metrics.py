@@ -39,6 +39,27 @@ STREAM_DEPTH = Gauge(
     ["stream", "group"],
 )
 
+# Age of the oldest unacked entry per group — the backpressure signal §9 alerts
+# on (QueueBackpressure: > 300 s for 10 m). Refreshed by the run reapers.
+QUEUE_OLDEST_PENDING = Gauge(
+    "titan_queue_oldest_pending_seconds",
+    "Age in seconds of the oldest unacked entry per stream consumer group",
+    ["stream", "group"],
+)
+
+# Dispatch-rate signal (Phase 72, TITAN-OPS-012): every run pulled from
+# stream:runs.execute into an executor slot. Flipping agents.pause_all halts the
+# dispatch loop, so this counter's rate drops to zero within 15 s — the OPS-012
+# acceptance metric. `titan_dispatch_paused` is the live kill-switch state.
+TASKS_DISPATCHED = Counter(
+    "titan_tasks_dispatched_total",
+    "Runs dispatched from stream:runs.execute to an executor slot",
+)
+DISPATCH_PAUSED = Gauge(
+    "titan_dispatch_paused",
+    "1 when agents.pause_all is halting new task dispatch, else 0",
+)
+
 # Memory-ingestion lag: Memory Event commit → chunk searchable in Qdrant
 # (Vol 5 §5.4, TITAN-BRN-007: p95 ≤ 5 s at ≤ 10 events/s). Buckets bracket the
 # 5 s target on both sides so the p95 estimate is meaningful at the threshold.

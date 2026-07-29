@@ -14,9 +14,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
 
+from titan.flags import service as flags_service
 from titan.gateway import cache
 from titan.gateway.concurrency import require_if_match, set_etag, version_conflict
 from titan.gateway.pagination import Page, Pagination, keyset_from
+from titan.gateway.problems import ProblemException, problem_type
 from titan.gateway.rbac import Requires
 from titan.identity.service import Principal
 from titan.intake import service as intake
@@ -54,6 +56,18 @@ async def create_project(
     request: Request, body: ProjectCreate, response: Response, principal: _WriteOrg
 ) -> ProjectOut:
     app = request.app
+    # TITAN-OPS-012 intake.read_only also covers project creation — it launches
+    # the CEO auto-intake (brief -> tasks), the other new-work entry point besides
+    # POST /tasks. Best-effort (OPS-020 "zero 5xx on intake"): a flag-store blip
+    # degrades to accepting the work, never a 500.
+    if await app.state.flags.is_enabled_or(flags_service.INTAKE_READ_ONLY, False):
+        raise ProblemException(
+            status=503,
+            title="Intake is read-only",
+            detail="The platform is in read-only mode; new work is paused. Retry later.",
+            problem_type=problem_type("intake-read-only"),
+            headers={"Retry-After": str(max(1, app.state.settings.admission_retry_after_seconds))},
+        )
     async with app.state.engine.begin() as conn:
         project = await service.create_project(conn, body, principal.sub)
     set_etag(response, project.version)

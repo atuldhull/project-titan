@@ -112,3 +112,9 @@ class QueueBus(Protocol):
         """Number of pending (delivered, unacked) messages for a group —
         the backpressure signal exported as titan_stream_depth."""
         ...
+
+    async def oldest_pending_age_seconds(self, topic: str, group: str) -> float:
+        """Age in seconds of the OLDEST unacked message for a group (0.0 if none
+        pending) — the §9 backpressure signal exported as
+        titan_queue_oldest_pending_seconds, alerted at > 300 s."""
+        ...

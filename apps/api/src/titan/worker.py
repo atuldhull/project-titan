@@ -25,6 +25,7 @@ from titan.clarification import service as clarification
 from titan.events import service as events
 from titan.events.consumers import run_domain_consumer, run_drainer, run_reaper
 from titan.events.outbox import OutboxDrainer
+from titan.flags import service as flags_service
 from titan.llm.service import build_gateway
 from titan.memory import service as memory
 from titan.observability.logging import configure_logging
@@ -191,7 +192,18 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
             payload_digest=rejection.payload_sha256,
         )
 
-    bus = events.build_bus(redis, signer=signer, on_invalid=_audit_invalid_envelope)
+    # TITAN-OPS-020: cap every stream at ~1M (approximate trim); the ledger, not
+    # the stream, is the durability boundary.
+    bus = events.build_bus(
+        redis, signer=signer, on_invalid=_audit_invalid_envelope, maxlen=settings.stream_maxlen
+    )
+    # Phase 72: the worker reads the SAME feature-flag store the API writes. The
+    # dispatch loop consults agents.pause_all every cycle; a pub/sub subscriber
+    # busts the local snapshot so a flip halts dispatch within ~1 s (no restart).
+    flags = flags_service.build_flag_store(
+        engine, redis, ttl_seconds=settings.cache_flags_ttl_seconds
+    )
+    flags_subscriber = flags_service.FlagBustSubscriber(redis, flags)
     drainer = OutboxDrainer(engine, bus)
     ws_fanout = realtime.build_fanout(redis, org=settings.org)
     storage = FilesystemStorage(settings.artifact_root)
@@ -205,13 +217,19 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
     from titan.budget_alerts import build_budget_notifier
 
     llm_gateway = build_gateway(
-        settings, engine=engine, redis=redis, budget_notifier=build_budget_notifier(engine)
+        settings,
+        engine=engine,
+        redis=redis,
+        budget_notifier=build_budget_notifier(engine),
+        # TITAN-OPS-012: force all model traffic onto the aliased provider when
+        # llm.provider_override is ON (e.g. switch to local during an incident).
+        provider_override=lambda: flags.value(flags_service.PROVIDER_OVERRIDE),
     )
     # Phase 56: the real agent turn as the run executor when enabled (offline
     # acceptance run), else the deterministic placeholder (default CI/cloud).
     executor: LiveExecutor | StubExecutor
     if settings.live_executor:
-        runtime = build_runtime(settings, engine, redis=redis, llm=llm_gateway)
+        runtime = build_runtime(settings, engine, redis=redis, llm=llm_gateway, flags=flags)
         executor = LiveExecutor(runtime, make_role_resolver(engine))
     else:
         executor = StubExecutor()
@@ -223,6 +241,7 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
     # in-flight run's message for up to the soft timeout, so min-idle exceeds it.
     reaper_min_idle_ms = int((settings.run_soft_timeout_seconds + 60.0) * 1000)
 
+    await flags_subscriber.start()  # bust local flag snapshot on cross-replica writes
     start_http_server(METRICS_PORT)  # /metrics for DLQ + stream-depth gauges
     logger.info(
         "worker.start",
@@ -265,6 +284,9 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
                 stop=stop,
                 concurrency=settings.worker_concurrency,
                 soft_timeout=settings.run_soft_timeout_seconds,
+                # TITAN-OPS-012 kill switch: halt new dispatch across all workers
+                # within 15 s when agents.pause_all is flipped (no restart).
+                paused=lambda: flags.is_enabled(flags_service.PAUSE_ALL),
             )
         ),
         asyncio.create_task(
@@ -277,6 +299,8 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
                 stop=stop,
                 soft_timeout=settings.run_soft_timeout_seconds,
                 min_idle_ms=reaper_min_idle_ms,
+                # TITAN-OPS-012: pause_all halts reclaim/re-exec too, not just new dispatch.
+                paused=lambda: flags.is_enabled(flags_service.PAUSE_ALL),
             )
         ),
         asyncio.create_task(run_results_loop(engine, bus, consumer_name, stop=stop)),
@@ -313,6 +337,7 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
             task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.gather(*tasks, return_exceptions=True)
+        await flags_subscriber.stop()
         await llm_gateway.aclose()
         await qdrant_http.aclose()
         await redis.aclose()

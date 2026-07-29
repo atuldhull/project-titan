@@ -10,7 +10,7 @@ SCHEMAS_DIR := packages/schemas
 .PHONY: dev test test-web test-schema test-llm-live lint lint-style boundaries route-guards \
         agent-purity typecheck migrate seed generate-types check-types-drift \
         lint-openapi secret-scan eval-retrieval eval-baseline bench-memory \
-        budget-web e2e-web stories-web visual-web visual-web-update
+        budget-web e2e-web stories-web visual-web visual-web-update check-stale-flags
 
 ## dev: run the API (uvicorn, reload) and the web app (next dev) together.
 ## Docker Compose is the primary dev loop from Phase 2 onward.
@@ -154,6 +154,12 @@ migrate:
 
 seed:
 	cd $(API_DIR) && uv run --env-file $(CURDIR)/.env python scripts/seed.py
+
+# Vol 9 §5.3 (TITAN-OPS-012): CI warns on feature flags older than 90 days —
+# release/experiment flags are debt if they linger (ops kill switches are exempt).
+# Advisory (exit 0); set TITAN_FLAGS_STRICT=1 to make it blocking.
+check-stale-flags:
+	cd $(API_DIR) && uv run $(ENV_FILE_FLAG) python scripts/check_stale_flags.py
 
 # Schema/cycle tests against the disposable test database (never the dev DB).
 test-schema:

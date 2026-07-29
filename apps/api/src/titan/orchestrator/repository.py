@@ -60,6 +60,18 @@ async def task_exists(conn: AsyncConnection, task_id: uuid.UUID) -> bool:
     return result.scalar() is not None
 
 
+async def count_active_tasks(
+    conn: AsyncConnection, *, project_id: uuid.UUID, terminal: Sequence[str]
+) -> int:
+    """Count a project's non-terminal (outstanding) tasks — the per-project
+    admission-quota signal (TITAN-OPS-020). Uses idx_tasks_project_status_priority."""
+    result = await conn.execute(
+        text("SELECT count(*) FROM tasks WHERE project_id = :pid AND status <> ALL(:terminal)"),
+        {"pid": project_id, "terminal": list(terminal)},
+    )
+    return int(result.scalar_one())
+
+
 async def list_tasks_by_project(
     conn: AsyncConnection, *, project_id: uuid.UUID, keyset: Keyset, status: str | None
 ) -> Sequence[Row[Any]]:

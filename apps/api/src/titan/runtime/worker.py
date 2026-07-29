@@ -21,6 +21,7 @@ import structlog
 from pydantic import ValidationError
 
 from titan.events.service import Delivery, QueueBus
+from titan.flags.service import PAUSE_ALL
 from titan.messaging.service import (
     ack_inbox,
     consume_inbox,
@@ -47,7 +48,15 @@ class RuntimeWorker:
         self, *, max_turns: int = 100, block_ms: int = 50
     ) -> list[TurnResult]:
         """Process the messages currently waiting in this agent's inbox (bounded).
-        Returns one :class:`TurnResult` per processed message."""
+        Returns one :class:`TurnResult` per processed message.
+
+        TITAN-OPS-012 kill switch: when agents.pause_all is on, consume nothing —
+        inbox messages stay pending (never lost) so ALL agent turn processing
+        halts, not just the run-executor path. The check is per-call, so a flip
+        halts (and unflip resumes) within the flag's ≤15 s propagation bound."""
+        flags = self.runtime.flags
+        if flags is not None and await flags.is_enabled(PAUSE_ALL):
+            return []
         results: list[TurnResult] = []
         while len(results) < max_turns:
             deliveries = await consume_inbox(
@@ -65,7 +74,14 @@ class RuntimeWorker:
         self, *, min_idle_ms: int = 300_000, consumer: str | None = None
     ) -> list[TurnResult]:
         """Reprocess messages abandoned unacked by a dead worker (the crash-
-        recovery path). Idempotent by construction."""
+        recovery path). Idempotent by construction.
+
+        agents.pause_all halts the reclaim/reprocess too — otherwise the kill
+        switch would leak full agent work through the crash-recovery path
+        (abandoned messages stay pending, reclaimed once unpaused, never lost)."""
+        flags = self.runtime.flags
+        if flags is not None and await flags.is_enabled(PAUSE_ALL):
+            return []
         reclaimed = await reclaim_unacked(
             self.bus,
             self.project_id,

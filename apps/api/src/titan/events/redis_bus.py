@@ -176,6 +176,31 @@ class RedisStreamBus:
         summary = await self._redis.xpending(topic, group)
         return int(cast(Any, summary)["pending"]) if summary else 0
 
+    async def oldest_pending_age_seconds(self, topic: str, group: str) -> float:
+        try:
+            summary = await self._redis.xpending(topic, group)
+        except ResponseError as exc:
+            if "NOGROUP" in str(exc):
+                return 0.0  # group not created yet ⇒ nothing pending
+            raise
+        except IndexError:
+            # An empty PEL: real Redis returns [0, nil, nil, nil], but fakeredis
+            # returns [] and redis-py's parser trips on it — either way nothing
+            # is pending, so the oldest-pending age is 0.
+            return 0.0
+        s = summary or {}
+        if not s.get("pending"):
+            return 0.0
+        oldest_id = s.get("min")
+        if not oldest_id:
+            return 0.0
+        # Redis stream ids are "<ms>-<seq>"; the ms is the entry's server-clock
+        # enqueue time. Age against the Redis TIME (same clock, no host skew).
+        entry_ms = int(str(oldest_id).split("-", 1)[0])
+        clock = await self._redis.time()
+        now_ms = int(clock[0]) * 1000 + int(clock[1]) // 1000
+        return max(0.0, (now_ms - entry_ms) / 1000.0)
+
     async def stream_event_ids(self, topic: str, *, page: int = 1000) -> list[str]:
         """Every event_id currently present in the stream (read or unread, acked or
         not — XACK does not delete the entry). Redis-specific admin helper for the
