@@ -1,0 +1,149 @@
+# TITAN main pipeline (Phase 76, Vol 9 §3.2, OPS-005/006/013).
+#
+# What this ADDS on top of ci.yml (which already runs lint → typecheck → tests →
+# security on every push/PR): the build → publish → sign → deploy-staging tail of the
+# pipeline, plus the OPS-013 previous-release migration-compatibility gate. It runs
+# ONLY after CI succeeds on a push to main (workflow_run gate), so it never publishes
+# an image that failed quality/security. It does NOT re-run any ci.yml job.
+name: Main
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+# Least privilege at the WORKFLOW level: read only. The write scopes
+# (packages:write + id-token:write for cosign) are granted ONLY to the build-publish
+# job that needs them, so the migration-compat job — which runs a downloaded image and
+# resolves dependencies — never inherits registry-write or OIDC-signing rights
+# (review #9).
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/titan-platform
+
+jobs:
+  # Gate: only proceed if the CI run that triggered us actually passed.
+  guard:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'echo "CI green on ${{ github.event.workflow_run.head_sha }} — publishing."'
+
+  # OPS-013: the previous release's image must still run green against the schema AFTER
+  # this commit's migrations (blue/green shares one DB). Boots the last released image
+  # against a freshly-migrated Postgres and runs its smoke suite BEFORE we publish.
+  migration-compat:
+    needs: guard
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: titan, POSTGRES_PASSWORD: titan, POSTGRES_DB: titan }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U titan" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      # fetch-depth: 0 pulls the FULL history + tags — without it the shallow checkout
+      # has no tags, `git describe --tags` is always empty, and the compat gate would
+      # silently self-skip on every run (review #7).
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: astral-sh/setup-uv@v5
+        with: { enable-cache: true }
+      - uses: sigstore/cosign-installer@v3
+      - uses: docker/login-action@v3 # the previous image is a PRIVATE GHCR image
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Apply THIS commit's migrations (advisory-locked, OPS-013) to the shared DB.
+      - run: cd apps/api && uv sync --frozen
+      - run: cd apps/api && uv run --env-file /dev/null alembic upgrade head
+        env:
+          TITAN_DATABASE_URL: postgresql+asyncpg://titan:titan@localhost:5432/titan
+      # Boot the PREVIOUS release image against the now-migrated schema and smoke it.
+      # If there is a prior release, its cosign signature is verified BEFORE we run it
+      # (review #11), then a breaking migration makes the old image 500 on /healthz.
+      - name: Boot the (verified) previous release against the new schema
+        run: |
+          PREV="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo '')"
+          if [ -z "$PREV" ]; then
+            echo "::notice::no prior release tag — compat gate has nothing to compare against"
+            exit 0
+          fi
+          IMG="${IMAGE_PREFIX}/titan-api:${PREV}"
+          cosign verify \
+            --certificate-identity-regexp "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.+" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com "$IMG"
+          docker run -d --name prev --network host \
+            -e TITAN_DATABASE_URL="postgresql+asyncpg://titan:titan@localhost:5432/titan" "$IMG"
+          for _ in $(seq 1 30); do
+            curl -fsS http://localhost:8000/healthz && break || sleep 2
+          done
+          curl -fsS http://localhost:8000/healthz # a breaking migration fails the old image here
+
+  build-publish:
+    needs: migration-compat
+    runs-on: ubuntu-latest
+    permissions: # elevated ONLY here (review #9)
+      contents: read
+      packages: write
+      id-token: write # cosign keyless (Fulcio/Rekor)
+    strategy:
+      matrix:
+        service: [titan-api, titan-frontend, titan-orchestrator, titan-worker, titan-migrate]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3 # multi-arch emulation
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@v3
+      - uses: anchore/sbom-action/download-syft@v0
+      - name: Build + push (multi-arch, digest-addressed)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/${{ matrix.service }}.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:sha-${{ github.event.workflow_run.head_sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      # OPS-005: sign the exact DIGEST (never a floating tag) keyless via OIDC, and
+      # attach a CycloneDX SBOM as an attestation. `${{ steps.build.outputs.digest }}`
+      # is the immutable @sha256: the deploy manifests will reference.
+      - name: Cosign keyless sign + SBOM attest the digest
+        env:
+          IMG: ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}@${{ steps.build.outputs.digest }}
+        run: |
+          cosign sign --yes "$IMG"
+          syft "$IMG" -o cyclonedx-json > sbom-${{ matrix.service }}.json
+          cosign attest --yes --predicate sbom-${{ matrix.service }}.json \
+            --type cyclonedx "$IMG"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.service }}
+          path: sbom-${{ matrix.service }}.json
+
+  deploy-staging:
+    needs: build-publish
+    runs-on: ubuntu-latest
+    environment: staging # auto-deploy to staging on merge (OPS-006)
+    steps:
+      - uses: actions/checkout@v4
+      # Deploy the digest-addressed images to staging via the OIDC-federated deployer.
+      # The apply MUST reference @sha256: digests only (OPS-005) — enforced by
+      # scripts/check_deploy_digests.py against the rendered manifests.
+      - run: 'echo "TODO(Phase-78 infra): kubectl apply -k the sha-pinned staging overlay"'
+      # Smoke test: staging /healthz + a read path must be green on the new digest.
+      - run: 'echo "TODO(Phase-78 infra): run the staging smoke suite against the new digest"'

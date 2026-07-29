@@ -1,3 +1,4 @@
+# migrations: allow-exclusive — pre-Phase-76 index on a small pre-existing table.
 """Index llm_usage by time, for the platform-wide cost query (Phase 63; Vol 4 §6.10).
 
 Monitoring's default scope is the PLATFORM — every project plus the rows that

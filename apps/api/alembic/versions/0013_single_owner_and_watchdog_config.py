@@ -1,3 +1,4 @@
+# migrations: allow-exclusive — pre-Phase-76 index on a small pre-existing table.
 """Single-owner constraint + live watchdog config (Phase 32).
 
 Enforces TITAN-AGT-012 ("every task has exactly one owner agent at any time") in

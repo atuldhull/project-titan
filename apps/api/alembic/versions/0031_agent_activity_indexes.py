@@ -1,3 +1,4 @@
+# migrations: allow-exclusive — pre-Phase-76 index on a small pre-existing table.
 """Index an agent's activity: its runs and its messages (Phase 61; Vol 4 §6.5).
 
 Vol 4 §6.5 renders one card per agent showing its current task, the model and

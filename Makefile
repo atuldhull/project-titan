@@ -221,6 +221,14 @@ check-exceptions:
 check-redteam-register:
 	cd $(API_DIR) && uv run python scripts/check_redteam_findings.py
 
+# OPS-013: migration safety — real downgrades + no unbounded ACCESS EXCLUSIVE locks.
+check-migrations:
+	cd $(API_DIR) && uv run python scripts/check_migrations.py
+
+# OPS-005: deploy manifests must pin @sha256: digests, never floating tags.
+check-deploy-digests:
+	cd $(API_DIR) && uv run python scripts/check_deploy_digests.py
+
 # SEC-130: run the LLM red-team corpus against the real controls; non-zero on a
 # regression (an unauthorized tool execution or a secret-bearing gateway payload).
 redteam-run:

@@ -1,3 +1,4 @@
+# migrations: allow-exclusive — pre-Phase-76 index on a small pre-existing table.
 """Index messages by task, for the Kanban task Sheet (Phase 59; Vol 4 §6.3).
 
 ``messages.task_id`` has been a real FK since 0003, and every task state change

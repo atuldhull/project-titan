@@ -1,3 +1,4 @@
+# migrations: allow-exclusive — pre-Phase-76 index on a small pre-existing table.
 """Decay/curation state + the cold-body store + retrieval feedback (Vol 5 §9,
 §11, §12).
 

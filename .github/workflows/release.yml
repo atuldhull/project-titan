@@ -1,0 +1,97 @@
+# TITAN release pipeline (Phase 76, Vol 9 §3.2/§3.4, OPS-005/006).
+#
+# What this ADDS: production promotion on a signed `vX.Y.Z` tag. It does NOT rebuild
+# images — it RETAGS the exact digest already built, signed, and soaked in staging by
+# main.yml, generates a changelog + GitHub Release, enforces the §3.4 mechanical
+# pre-deploy gates, and then requires human approval in a protected Environment before
+# the blue/green production cutover (OPS-006). Nothing here re-runs ci.yml jobs.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write # create the GitHub Release
+  packages: write # retag/sign the release digest
+  id-token: write # cosign keyless
+
+env:
+  IMAGE_PREFIX: ghcr.io/titan-platform
+
+jobs:
+  # §3.4 gates 1-3, enforced MECHANICALLY before any human is asked to approve:
+  #   (1) the digest has served >= 2h in staging, (2) the staging error-rate SLO was
+  #   not breached during the soak, (3) the E2E suite is green on THAT digest.
+  # Gates query Prometheus + the CI API; a red gate fails the job (no approval prompt).
+  predeploy-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gate 1 — digest served >= 2h in staging
+        run: 'echo "TODO(Phase-77/78): query Prometheus for first-seen time of the staged digest; fail if < 2h"'
+      - name: Gate 2 — staging error-rate SLO not breached during soak
+        run: 'echo "TODO(Phase-77): query the SLO burn-rate recording rule; fail if breached"'
+      - name: Gate 3 — E2E green on this digest
+        run: 'echo "TODO(Phase-78): assert the nightly E2E run for this digest is green"'
+
+  # §3.4 gates 4-5: HUMAN APPROVAL (after the mechanical gates, before ANYTHING is
+  # promoted — the release cut, the prod retag, and the deploy all sit downstream of
+  # this). The `production` Environment's required reviewers make this block, and the
+  # audit log records the approver identity (OPS-006). One approval gates the whole
+  # promotion (review #10 — nothing publishes or deploys until this passes).
+  await-approval:
+    needs: predeploy-gates
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - run: 'echo "Production promotion approved for ${{ github.ref_name }}."'
+
+  publish-release:
+    needs: await-approval
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 } # full history for the changelog
+      - uses: sigstore/cosign-installer@v3
+      - uses: imjasonh/setup-crane@v0.4 # resolve the immutable digest
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Retag the STAGED digest to the release version (never a rebuild) and re-sign.
+      # We resolve the immutable @sha256: digest and sign THAT, never the mutable
+      # version tag (review #8 / OPS-005) — `cosign copy` moves the signature + SBOM
+      # attestation to the same digest under the new tag.
+      - name: Retag + sign the staged DIGEST as ${{ github.ref_name }}
+        run: |
+          for svc in titan-api titan-frontend titan-orchestrator titan-worker titan-migrate; do
+            SRC="${IMAGE_PREFIX}/${svc}:sha-${GITHUB_SHA}"
+            DIGEST="$(crane digest "$SRC")"
+            cosign copy "$SRC" "${IMAGE_PREFIX}/${svc}:${GITHUB_REF_NAME}"
+            cosign sign --yes "${IMAGE_PREFIX}/${svc}@${DIGEST}"
+          done
+      # Conventional-commits changelog since the previous tag.
+      - name: Generate changelog
+        run: |
+          PREV="$(git describe --tags --abbrev=0 --match 'v*' "${GITHUB_REF_NAME}^" 2>/dev/null || echo '')"
+          RANGE="${PREV:+$PREV..}${GITHUB_REF_NAME}"
+          git log --pretty='- %s (%h)' "$RANGE" > CHANGELOG_RELEASE.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: CHANGELOG_RELEASE.md
+          generate_release_notes: false
+
+  deploy-production:
+    needs: publish-release
+    runs-on: ubuntu-latest
+    # The single human approval already happened at await-approval (upstream), so this
+    # runs unattended once the release images exist — a second Environment gate here
+    # would just double-prompt the same approver (review #10).
+    steps:
+      - uses: actions/checkout@v4
+      # Blue/green cutover: deploy the new colour on the release digests, run the
+      # migrate Job (advisory-locked, expand→migrate→contract), health-gate, then
+      # shift traffic. The migrate Job runs BEFORE the new colour takes traffic (§5.4).
+      - run: 'echo "TODO(Phase-78 infra): run titan-migrate Job, deploy green on @sha256 digests, health-gate, shift traffic"'

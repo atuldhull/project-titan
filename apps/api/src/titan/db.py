@@ -7,7 +7,9 @@ keys are UUIDv7, generated app-side. Statuses are text + Pydantic enums —
 never Postgres enums (Vol 3 §6 notes).
 """
 
+import time
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 
 import uuid_utils
@@ -45,3 +47,40 @@ class ConventionsMixin:
         TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
     )
     version: Mapped[int] = mapped_column(nullable=False, server_default=text("1"))
+
+
+def batched_backfill(
+    connection: object,
+    update_stmt: str,
+    *,
+    batch_size: int = 5000,
+    sleep_s: float = 0.5,
+    params: dict[str, object] | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+) -> int:
+    """Run a data backfill in bounded batches so it never holds a long lock or a huge
+    transaction on a live blue/green database (Vol 9 §5.4 / OPS-013: batches of
+    <= 5000 rows with sleeps between them).
+
+    ``update_stmt`` MUST be self-limiting on the ``:batch`` bind and idempotent — it
+    only ever touches not-yet-backfilled rows, e.g.::
+
+        UPDATE t SET c = :val
+        WHERE ctid IN (SELECT ctid FROM t WHERE c IS NULL LIMIT :batch)
+
+    The loop runs it until a batch touches fewer than ``batch_size`` rows (the tail),
+    sleeping ``sleep_s`` between batches. Returns the total rows updated. ``sleep`` is
+    injected so tests run instantly.
+    """
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    total = 0
+    while True:
+        result = connection.execute(  # type: ignore[attr-defined]
+            text(update_stmt), {"batch": batch_size, **(params or {})}
+        )
+        affected = result.rowcount or 0
+        total += affected
+        if affected < batch_size:
+            return total
+        sleep(sleep_s)

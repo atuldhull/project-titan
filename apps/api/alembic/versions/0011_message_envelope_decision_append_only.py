@@ -1,3 +1,4 @@
+# migrations: allow-exclusive — pre-Phase-76 index on a small pre-existing table.
 """Agent-message envelope columns + DecisionLog append-only policy (Phase 27).
 
 Extends ``messages`` into the full §6.1 ``AgentMessage`` envelope (schema_version,

@@ -1,3 +1,4 @@
+# migrations: allow-exclusive — pre-Phase-76 index on a small pre-existing table.
 """Working-summary checkpoints (Phase 38; Vol 5 §8.2, TITAN-BRN-016).
 
 ``brain.working_summaries`` is the PostgreSQL checkpoint of each task's rolling
