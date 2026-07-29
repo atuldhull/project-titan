@@ -234,7 +234,17 @@ services:
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./infra/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./infra/prometheus/rules:/etc/prometheus/rules:ro # Phase 77 SLO + ops rules
       - promdata:/prometheus
+
+  # Phase 77 (OPS-017): routes firing alerts — page→ntfy/PagerDuty, ticket→GitHub issue.
+  alertmanager:
+    image: prom/alertmanager:v0.28.0
+    profiles: ["observability", "obs"]
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - ./infra/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
 
   loki:
     image: grafana/loki:3.3.1

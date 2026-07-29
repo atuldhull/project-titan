@@ -34,9 +34,20 @@ STREAM_DLQ_DEPTH = Gauge(
 )
 
 STREAM_DEPTH = Gauge(
-    "titan_stream_depth",
-    "Pending (unacked) entries per stream consumer group",
+    # Vol 9 §6.1 name titan_queue_depth (Redis Streams pending per consumer group).
+    "titan_queue_depth",
+    "Pending (unacked) entries per stream consumer group (Vol 9 §6.1)",
     ["stream", "group"],
+)
+
+# Vol 9 §6.1 titan_agent_review_rejections_total: the Code Reviewer's REJECTED
+# verdicts at the G9 release-review gate — a quality signal (feeds Volume 10). Defined
+# here in the shared observability library so the handoffs gate can emit it without a
+# cross-domain import (the review rubric itself stays pure).
+REVIEW_REJECTIONS_TOTAL = Counter(
+    "titan_agent_review_rejections_total",
+    "Code Reviewer Agent rejections at the release-review gate (Vol 9 §6.1)",
+    ["agent"],
 )
 
 # Age of the oldest unacked entry per group — the backpressure signal §9 alerts

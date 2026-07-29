@@ -1,0 +1,66 @@
+# TITAN SLO recording rules + multiwindow multi-burn-rate alerts (Phase 77, Vol 9 §7,
+# TITAN-OPS-017). Availability/latency SLOs use multiwindow multi-burn-rate rules
+# (never static thresholds); every `page` carries a runbook_url. The operational
+# alerts (worker/postgres/redis/budget/spend/backup/cert) live in titan-ops.yml;
+# the memory/queue/audit alerts stay in alerts.yml.
+#
+# SLO-API-AVAIL target 99.9% ⇒ error budget = 0.1%. Burn rate = error_ratio / 0.001.
+groups:
+  - name: titan_slo_recording
+    interval: 30s
+    rules:
+      # API 5xx error ratio over the four burn-rate windows (SLI: the RED histogram
+      # count, labelled by status).
+      - record: job:titan_api_error_ratio:rate5m
+        expr: |
+          sum(rate(titan_http_request_duration_seconds_count{status=~"5.."}[5m]))
+          / clamp_min(sum(rate(titan_http_request_duration_seconds_count[5m])), 1e-9)
+      - record: job:titan_api_error_ratio:rate30m
+        expr: |
+          sum(rate(titan_http_request_duration_seconds_count{status=~"5.."}[30m]))
+          / clamp_min(sum(rate(titan_http_request_duration_seconds_count[30m])), 1e-9)
+      - record: job:titan_api_error_ratio:rate1h
+        expr: |
+          sum(rate(titan_http_request_duration_seconds_count{status=~"5.."}[1h]))
+          / clamp_min(sum(rate(titan_http_request_duration_seconds_count[1h])), 1e-9)
+      - record: job:titan_api_error_ratio:rate6h
+        expr: |
+          sum(rate(titan_http_request_duration_seconds_count{status=~"5.."}[6h]))
+          / clamp_min(sum(rate(titan_http_request_duration_seconds_count[6h])), 1e-9)
+      # API p95 latency (non-LLM), SLO-API-LAT < 500 ms.
+      - record: job:titan_api_latency_p95:5m
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(titan_http_request_duration_seconds_bucket[5m])) by (le))
+
+  - name: titan_slo_alerts
+    rules:
+      # SLO-API-AVAIL fast burn: 14.4× the 0.1% budget (>1.44%) over BOTH 1h and 5m
+      # (multiwindow — the short window confirms the burn is current, not stale).
+      - alert: APIErrorBudgetFastBurn
+        expr: |
+          job:titan_api_error_ratio:rate1h > (14.4 * 0.001)
+          and job:titan_api_error_ratio:rate5m > (14.4 * 0.001)
+        for: 2m
+        labels: { severity: page, slo: SLO-API-AVAIL }
+        annotations:
+          summary: "API error budget burning 14.4× (fast) — 2h to exhaustion"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/docs/runbooks/slo.md#api-fast-burn"
+      # Slow burn: 3× the budget over BOTH 6h and 30m.
+      - alert: APIErrorBudgetSlowBurn
+        expr: |
+          job:titan_api_error_ratio:rate6h > (3 * 0.001)
+          and job:titan_api_error_ratio:rate30m > (3 * 0.001)
+        for: 15m
+        labels: { severity: ticket, slo: SLO-API-AVAIL }
+        annotations:
+          summary: "API error budget burning 3× (slow)"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/docs/runbooks/slo.md#api-slow-burn"
+      # SLO-API-LAT: sustained p95 over 500 ms.
+      - alert: APILatencySLOBreach
+        expr: job:titan_api_latency_p95:5m > 0.5
+        for: 10m
+        labels: { severity: ticket, slo: SLO-API-LAT }
+        annotations:
+          summary: "API p95 latency over the 500 ms SLO for 10m"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/docs/runbooks/slo.md#api-latency"

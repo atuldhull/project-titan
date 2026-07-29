@@ -331,7 +331,7 @@ export function MonitoringScreen() {
           §6.10 also specifies API p95, error rate, queue depth and an alert
           list with Ack. Those series exist — the API exports{" "}
           <code className="font-mono">titan_http_request_duration_seconds</code>{" "}
-          and <code className="font-mono">titan_stream_depth</code> among others
+          and <code className="font-mono">titan_queue_depth</code> among others
           — but only as Prometheus text on{" "}
           <code className="font-mono">/metrics</code>. There is no range-query
           API over them and no alerts model, so the honest place to read them

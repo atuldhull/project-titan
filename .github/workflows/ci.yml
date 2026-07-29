@@ -285,6 +285,7 @@ jobs:
       - run: make check-redteam-register
       - run: make check-migrations
       - run: make check-deploy-digests
+      - run: make check-alert-rules
       - run: make redteam-run
       # `make security-check` runs against the Compose profile (secure env), not this
       # bare runner whose env overrides (e.g. rate limits off in tests) it would flag.

@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from titan.handoffs.gates import Gate, GateContext, GateResult
+from titan.observability.metrics import REVIEW_REJECTIONS_TOTAL
 
 _BLOCKING_SEVERITIES = frozenset({"high", "critical"})
 _BLOCKING_DEFECTS = frozenset({"P0", "P1"})
@@ -175,6 +176,7 @@ class ReleaseReviewGate:
         verdict = str(ctx.body.get("verdict", ""))
         reasons: list[str] = []
         if verdict == "REJECTED":
+            REVIEW_REJECTIONS_TOTAL.labels("code_reviewer").inc()  # Vol 9 §6.1 quality signal
             tickets = [str(t) for t in ctx.body.get("rework_tickets", [])]
             reasons.append("G9: the release review REJECTED the integrated diff.")
             reasons.extend(f"G9 rework: {t}" for t in tickets)

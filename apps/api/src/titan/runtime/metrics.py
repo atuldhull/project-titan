@@ -29,6 +29,20 @@ AGENT_TURN_LATENCY_SECONDS = Histogram(
     ["agent"],
 )
 
+# Vol 9 §6.1 spec metrics: an agent turn IS an agent task, exported under the §6.1
+# names {status, per role} for the Agent Operations dashboard.
+AGENT_TASKS_TOTAL = Counter(
+    "titan_agent_tasks_total",
+    "Agent tasks by role and status (Vol 9 §6.1)",
+    ["agent", "status"],
+)
+
+AGENT_TASK_DURATION_SECONDS = Histogram(
+    "titan_agent_task_duration_seconds",
+    "End-to-end agent task latency per role (Vol 9 §6.1)",
+    ["agent"],
+)
+
 AGENT_TOOL_CALLS_TOTAL = Counter(
     "titan_agent_tool_calls_total",
     "Model-requested tool calls seen by the runtime, by agent and disposition",
@@ -164,6 +178,9 @@ def observe_turn(
     """Record one completed (or failed) agent turn across the KPI collectors."""
     AGENT_TURNS_TOTAL.labels(agent, outcome).inc()
     AGENT_TURN_LATENCY_SECONDS.labels(agent).observe(latency_seconds)
+    # Vol 9 §6.1 task-level export (outcome == status).
+    AGENT_TASKS_TOTAL.labels(agent, outcome).inc()
+    AGENT_TASK_DURATION_SECONDS.labels(agent).observe(latency_seconds)
     if outcome == "completed":
         # First-pass acceptance = the agent produced valid output with no
         # self-critique retry. A dedicated series (not derivable from a retry sum).
@@ -189,6 +206,8 @@ __all__ = [
     "AGENT_RECOVERY_RUNGS_TOTAL",
     "AGENT_TOOL_CALLS_TOTAL",
     "AGENT_TOOL_GRANT_DENIALS_TOTAL",
+    "AGENT_TASKS_TOTAL",
+    "AGENT_TASK_DURATION_SECONDS",
     "AGENT_TURNS_TOTAL",
     "AGENT_TURN_LATENCY_SECONDS",
     "WATCHDOG_DISCUSSIONS_CLOSED_TOTAL",

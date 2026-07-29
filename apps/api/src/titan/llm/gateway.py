@@ -314,6 +314,9 @@ class LlmGateway:
             try:
                 result = await self._retry.run(attempt)
             except UpstreamProviderError as exc:
+                # OPS-014: record the provider error by kind at the gateway choke point
+                # so LLMProviderDegraded can compute a per-provider error rate.
+                metrics.observe_error(provider=cand.provider, kind=exc.category)
                 if exc.category == "client_error":
                     # A bad request is not a fallback trigger (§8.3) — fail fast;
                     # every provider would reject it identically.

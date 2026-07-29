@@ -6,6 +6,14 @@ global:
 
 rule_files:
   - /etc/prometheus/alerts.yml
+  - /etc/prometheus/rules/*.yml # Phase 77: SLO recording + burn-rate + ops alerts
+
+# Phase 77 (OPS-017): route firing alerts to Alertmanager (page→ntfy/PagerDuty,
+# ticket→GitHub issue) — the alertmanager service runs under the `obs` profile.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
 
 scrape_configs:
   - job_name: prometheus

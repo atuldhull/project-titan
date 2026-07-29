@@ -110,7 +110,7 @@ class QueueBus(Protocol):
 
     async def pending_depth(self, topic: str, group: str) -> int:
         """Number of pending (delivered, unacked) messages for a group —
-        the backpressure signal exported as titan_stream_depth."""
+        the backpressure signal exported as titan_queue_depth."""
         ...
 
     async def oldest_pending_age_seconds(self, topic: str, group: str) -> float:

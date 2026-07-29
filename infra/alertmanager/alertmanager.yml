@@ -1,0 +1,44 @@
+# TITAN Alertmanager routing (Phase 77, Vol 9 §7, TITAN-OPS-017).
+# severity=page  → the on-call receiver (self-hosted ntfy; PagerDuty in production).
+# severity=ticket → a GitHub issue via webhook.
+# NOTE: Alertmanager does NOT expand ${ENV} in its config, so the URLs below are the
+# plain LOCAL defaults; staging/prod render this file from a template (or mount a
+# per-environment copy) with the real ntfy/PagerDuty + ticket-forwarder endpoints.
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: tickets # default: anything not a page is a ticket
+  group_by: ["alertname", "slo"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: ['severity="page"']
+      receiver: oncall
+      group_wait: 0s
+      repeat_interval: 1h
+    - matchers: ['severity="ticket"']
+      receiver: tickets
+
+receivers:
+  - name: oncall
+    # Self-hosted ntfy (Vol 9 §7 "ntfy self-hosted option"); swap in a
+    # pagerduty_configs block with a routing key in production.
+    webhook_configs:
+      - url: "http://ntfy/titan-oncall"
+        send_resolved: true
+  - name: tickets
+    # Opens/updates a GitHub issue via a webhook receiver (a small forwarder maps
+    # the Alertmanager payload to the GitHub Issues API).
+    webhook_configs:
+      - url: "http://ticket-forwarder/alert"
+        send_resolved: true
+
+# Silence the slow-burn TICKET for an SLO while the fast-burn PAGE for the SAME SLO
+# fires — they are different alertnames but share the `slo` label, so `equal` must be
+# ["slo"], not ["alertname"] (which would never match across the two) (review #9).
+inhibit_rules:
+  - source_matchers: ['severity="page"']
+    target_matchers: ['severity="ticket"']
+    equal: ["slo"]

@@ -229,6 +229,10 @@ check-migrations:
 check-deploy-digests:
 	cd $(API_DIR) && uv run python scripts/check_deploy_digests.py
 
+# OPS-017: every paging alert carries a runbook_url; SLO alerts are multiwindow.
+check-alert-rules:
+	cd $(API_DIR) && uv run python scripts/check_alert_rules.py
+
 # SEC-130: run the LLM red-team corpus against the real controls; non-zero on a
 # regression (an unauthorized tool execution or a secret-bearing gateway payload).
 redteam-run:
