@@ -26,7 +26,7 @@ from titan.benchmark.kpi import KpiReport
 from titan.benchmark.offline_acceptance import AcceptanceRecord, run_offline_acceptance
 from titan.benchmark.runner import BenchmarkRunner
 from titan.benchmark.suite import load_suite
-from titan.flags.service import build_flag_store
+from titan.flags.service import FlagStore, build_flag_store
 from titan.identity import service as identity_service
 from titan.identity import tokens
 from titan.identity.tokens import ACCESS_TTL_SECONDS
@@ -496,7 +496,99 @@ def build_parser() -> argparse.ArgumentParser:
         "run", help="Run the corpus against the real controls; exit non-zero on a regression"
     )
     rt_run.add_argument("--output", default=None, help="Write the scorecard JSON to this path")
+
+    flags_cmd = subcommands.add_parser(
+        "flags", help="Operational feature flags / kill switches (Vol 9 §5.3, TITAN-OPS-012)"
+    )
+    flags_sub = flags_cmd.add_subparsers(dest="flags_command", required=True)
+    flags_sub.add_parser("list", help="List every flag and its state")
+    flags_get = flags_sub.add_parser("get", help="Print one flag's state")
+    flags_get.add_argument("key")
+    flags_set = flags_sub.add_parser(
+        "set",
+        help="Flip a flag on/off (kill switches: agents.pause_all, intake.read_only, "
+        "llm.provider_override)",
+    )
+    flags_set.add_argument("key")
+    flags_set.add_argument("state", help="on|off (also true|false)")
+    flags_set.add_argument(
+        "--value", default=None, help="Optional string payload (e.g. a provider override)"
+    )
+    flags_set.add_argument("--actor", default="cli:operator", help="Audit actor for the change")
     return parser
+
+
+_FLAG_TRUE = {"on", "true", "1", "enabled", "yes"}
+_FLAG_FALSE = {"off", "false", "0", "disabled", "no"}
+
+
+async def _run_flags(run: Callable[[FlagStore, object], Awaitable[int]]) -> int:
+    """Wire a real flag store (Postgres + Redis) for the CLI, mirroring the API's
+    composition, then dispose it — a `titan` invocation is a short-lived process."""
+    engine = clients.create_engine(get_settings())
+    redis = clients.create_redis(get_settings())
+    try:
+        return await run(build_flag_store(engine, redis), engine)
+    finally:
+        await redis.aclose()
+        await engine.dispose()
+
+
+def _flags_list() -> int:
+    async def run(store: FlagStore, _engine: object) -> int:
+        for flag in sorted(await store.list_flags(), key=lambda f: f.key):
+            suffix = f"  value={flag.value}" if flag.value is not None else ""
+            print(f"{'on ' if flag.enabled else 'off'}  {flag.key}{suffix}")
+        return 0
+
+    return asyncio.run(_run_flags(run))
+
+
+def _flags_get(key: str) -> int:
+    async def run(store: FlagStore, _engine: object) -> int:
+        flag = await store.get(key)
+        if flag is None:
+            print(f"flag '{key}' not found", file=sys.stderr)
+            return 1
+        suffix = f"  value={flag.value}" if flag.value is not None else ""
+        print(f"{'on ' if flag.enabled else 'off'}  {flag.key}{suffix}")
+        return 0
+
+    return asyncio.run(_run_flags(run))
+
+
+def _flags_set(key: str, state: str, value: str | None, actor: str) -> int:
+    low = state.strip().lower()
+    if low in _FLAG_TRUE:
+        enabled = True
+    elif low in _FLAG_FALSE:
+        enabled = False
+    else:
+        print(f"state must be on|off (got '{state}')", file=sys.stderr)
+        return 2
+
+    async def run(store: FlagStore, engine: object) -> int:
+        changes: dict[str, object] = {"enabled": enabled}
+        if value is not None:
+            changes["value"] = value
+        flag = await store.update(key, changes)
+        if flag is None:
+            print(f"flag '{key}' not found (seed it via the admin API first)", file=sys.stderr)
+            return 1
+        # A kill-switch flip is a sensitive operational action — audit it like the
+        # incident path does, so the immutable ledger records who toggled what.
+        await build_audit_client(engine).record(  # type: ignore[arg-type]
+            actor=actor,
+            action=AuditAction.INCIDENT_TOGGLE,
+            resource=f"flag:{key}",
+            outcome="success",
+            detail={"enabled": enabled, "value": value},
+        )
+        suffix = f" value={flag.value}" if flag.value is not None else ""
+        print(f"set {key}: enabled={flag.enabled}{suffix}")
+        return 0
+
+    return asyncio.run(_run_flags(run))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -528,6 +620,13 @@ def main(argv: list[str] | None = None) -> int:
             return _incident_playbook(args.which)
     if args.command == "redteam" and args.redteam_command == "run":
         return _redteam_run(args.output)
+    if args.command == "flags":
+        if args.flags_command == "list":
+            return _flags_list()
+        if args.flags_command == "get":
+            return _flags_get(args.key)
+        if args.flags_command == "set":
+            return _flags_set(args.key, args.state, args.value, args.actor)
     return 2  # unreachable: argparse enforces the subcommand set
 
 

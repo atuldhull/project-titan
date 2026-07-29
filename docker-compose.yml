@@ -6,6 +6,9 @@
 # Heavier stacks are opt-in:
 #   --profile local-llm                 adds Ollama (free local models)
 #   --profile observability (or obs)    Prometheus/Grafana/Tempo/Loki/promtail/otel-collector
+#   --profile backup                    MinIO + the encrypted-backup sidecar (Vol 9 §8.2).
+#                                       `.env.example` sets COMPOSE_PROFILES=backup so this
+#                                       is ON for the documented setup; see infra/backup/README.md.
 # To export traces, also set TITAN_OTEL_EXPORTER_OTLP_ENDPOINT in .env
 # (see .env.example). Worker and Keycloak join the core in later phases.
 
@@ -154,6 +157,26 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    # WAL archiving for PITR (Vol 9 §8.2): archive each filled segment to a local staging
+    # volume that the `backup` sidecar (backup profile) ships to object storage and prunes.
+    # archive_timeout=300 forces a switch at least every 5 min so the RPO≤5min holds on an
+    # idle system without the churn of a 60s switch. The archive_command is idempotent —
+    # `test -f dest || cp` returns success if the segment is ALREADY staged (breaking the
+    # retry-forever deadlock a bare `test ! -f && cp` causes when Postgres re-archives a
+    # present file) and propagates a real cp failure (disk full) so Postgres retries.
+    # A LOCAL cp is the parity stand-in; production uses a dedicated archiver (wal-g/
+    # pgBackRest). NOTE: without the backup profile running, nothing drains /wal-archive —
+    # run the backup profile (the default) or expect that staging volume to grow.
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=test -f /wal-archive/%f || cp %p /wal-archive/%f
+      - -c
+      - archive_timeout=300
     ports:
       # Spec default 5432; override POSTGRES_PORT in .env on host conflict.
       - "${POSTGRES_PORT:-5432}:5432"
@@ -163,6 +186,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-titan}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - walarchive:/wal-archive
       - ./infra/docker/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-titan} -d ${POSTGRES_DB:-titan}"]
@@ -202,6 +226,76 @@ services:
       - "11434:11434"
     volumes:
       - ollamamodels:/root/.ollama
+
+  # ---- Backups (Vol 9 §8.2, TITAN-OPS-018, risk R5) -----------------------
+  # In the `backup` profile, which `.env.example` turns ON by default (COMPOSE_PROFILES),
+  # so self-hosters get encrypted backups from the documented `cp .env.example .env &&
+  # docker compose up`. MinIO is the local S3-compatible store; the sidecar runs the
+  # ops/scripts backup loop. Run lean with `COMPOSE_PROFILES= docker compose up`.
+  # One-time: set BACKUP_AGE_RECIPIENT in .env (see infra/backup/README.md) — the sidecar
+  # fails closed until you do (it will not ship unencrypted or fake a success).
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-08T15-41-24Z
+    profiles: ["backup"]
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${BACKUP_S3_ACCESS_KEY:-titan}
+      MINIO_ROOT_PASSWORD: ${BACKUP_S3_SECRET_KEY:-titanminio}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - miniodata:/data
+    # The minio SERVER image ships no `mc` client, so the old `mc ready` check could never
+    # pass. Probe the built-in health endpoint over the bundled TCP stack instead.
+    healthcheck:
+      test: ["CMD-SHELL", "mc --version >/dev/null 2>&1 && mc ready local || curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  backup:
+    build:
+      context: .
+      dockerfile: infra/backup/Dockerfile
+    profiles: ["backup"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # service_started (not _healthy): the sidecar's loop retries each cycle and creates
+      # the bucket itself, so it tolerates minio still warming up without a health gate.
+      minio:
+        condition: service_started
+    environment:
+      # Postgres source
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-titan}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-titan}
+      PGDATABASE: ${POSTGRES_DB:-titan}
+      WAL_ARCHIVE_DIR: /wal-archive
+      QDRANT_URL: http://qdrant:6333
+      REDIS_HOST: redis
+      # Object store (MinIO) — S3-compatible; aws-cli honors these + the custom endpoint.
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-titan-backups}
+      BACKUP_S3_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY:-titan}
+      AWS_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_KEY:-titanminio}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      # Encryption recipient (age PUBLIC key). Empty default so compose never hard-fails
+      # (`:?` would abort EVERY compose command via whole-file interpolation); the sidecar
+      # itself refuses to ship without it (fail closed). PROD sources it from KMS (Vol 8).
+      # The sidecar only ENCRYPTS, so it needs no private key — restore supplies the
+      # identity out-of-band (infra/backup/README.md), never a committed compose secret.
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}
+      BACKUP_TEXTFILE_DIR: /textfile
+    volumes:
+      # read-write: the sidecar deletes each WAL segment after it is confirmed in the
+      # object store (the archive dir is a staging area, not the durability boundary).
+      - walarchive:/wal-archive
+      - backuptextfile:/textfile
+    restart: unless-stopped
 
   # ---- Observability (opt-in profile; ADR-011, Vol 9 §6) ------------------
 
@@ -371,3 +465,6 @@ volumes:
   promdata:
   lokidata:
   grafanadata:
+  walarchive:
+  miniodata:
+  backuptextfile:

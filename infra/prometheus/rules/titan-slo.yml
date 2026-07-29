@@ -45,7 +45,7 @@ groups:
         labels: { severity: page, slo: SLO-API-AVAIL }
         annotations:
           summary: "API error budget burning 14.4× (fast) — 2h to exhaustion"
-          runbook_url: "https://github.com/titan-platform/titan/blob/main/docs/runbooks/slo.md#api-fast-burn"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#api-fast-burn"
       # Slow burn: 3× the budget over BOTH 6h and 30m.
       - alert: APIErrorBudgetSlowBurn
         expr: |
@@ -55,7 +55,7 @@ groups:
         labels: { severity: ticket, slo: SLO-API-AVAIL }
         annotations:
           summary: "API error budget burning 3× (slow)"
-          runbook_url: "https://github.com/titan-platform/titan/blob/main/docs/runbooks/slo.md#api-slow-burn"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#api-slow-burn"
       # SLO-API-LAT: sustained p95 over 500 ms.
       - alert: APILatencySLOBreach
         expr: job:titan_api_latency_p95:5m > 0.5
@@ -63,4 +63,4 @@ groups:
         labels: { severity: ticket, slo: SLO-API-LAT }
         annotations:
           summary: "API p95 latency over the 500 ms SLO for 10m"
-          runbook_url: "https://github.com/titan-platform/titan/blob/main/docs/runbooks/slo.md#api-latency"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#api-latency"

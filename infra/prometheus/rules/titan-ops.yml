@@ -13,7 +13,7 @@ groups:
         labels: { severity: page }
         annotations:
           summary: "titan-worker restarted >3× in 15m (crash loop)"
-          runbook_url: "https://github.com/titan-platform/titan/blob/main/docs/runbooks/ops.md#worker-crashloop"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#worker-crashloop"
 
       - alert: PostgresReplicationLag
         expr: pg_replication_lag_seconds > 30
@@ -21,7 +21,7 @@ groups:
         labels: { severity: page }
         annotations:
           summary: "Postgres replication lag > 30s for 5m"
-          runbook_url: "https://github.com/titan-platform/titan/blob/main/docs/runbooks/ops.md#postgres-lag"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#postgres-lag"
 
       - alert: RedisQueueMemoryHigh
         expr: redis_memory_used_bytes{db="queue"} / clamp_min(redis_memory_max_bytes{db="queue"}, 1) > 0.8
@@ -29,7 +29,7 @@ groups:
         labels: { severity: page }
         annotations:
           summary: "Redis queue DB memory > 80% for 10m (backpressure risk)"
-          runbook_url: "https://github.com/titan-platform/titan/blob/main/docs/runbooks/ops.md#redis-memory"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#redis-memory"
 
       # Provider error rate > 20% over 10m — auto-fallback handles it, so ticket not page.
       # Denominator is TOTAL attempts (errors + successes): request_duration_count only
@@ -45,7 +45,7 @@ groups:
         labels: { severity: ticket }
         annotations:
           summary: "LLM provider {{ $labels.provider }} error rate > 20% over 10m"
-          runbook_url: "https://github.com/titan-platform/titan/blob/main/docs/runbooks/ops.md#provider-degraded"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#provider-degraded"
 
       # Per-project budget within 10% of exhaustion (absolute near-zero; a project
       # budget-total gauge would let this use the spec's remaining/budget < 0.1 ratio).
@@ -55,7 +55,7 @@ groups:
         labels: { severity: ticket }
         annotations:
           summary: "Project {{ $labels.project }} LLM budget near exhaustion"
-          runbook_url: "https://github.com/titan-platform/titan/blob/main/docs/runbooks/ops.md#budget-exhaustion"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#budget-exhaustion"
 
       # Hourly spend > 3× the trailing 7-day hourly median, sustained 2h.
       - alert: GlobalSpendAnomaly
@@ -66,7 +66,7 @@ groups:
         labels: { severity: page }
         annotations:
           summary: "Global LLM spend > 3× the 7-day hourly median for 2h"
-          runbook_url: "https://github.com/titan-platform/titan/blob/main/docs/runbooks/ops.md#spend-anomaly"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#spend-anomaly"
 
       # Backup job failed or missed its schedule (metric emitted by the Phase-78 backup job).
       - alert: BackupFailed
@@ -75,7 +75,7 @@ groups:
         labels: { severity: page }
         annotations:
           summary: "No successful backup in >25h (job failed or missed schedule)"
-          runbook_url: "https://github.com/titan-platform/titan/blob/main/docs/runbooks/ops.md#backup-failed"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/backup-restore.md#backup-failed"
 
       - alert: CertExpirySoon
         expr: (probe_ssl_earliest_cert_expiry - time()) < (14 * 86400)
@@ -83,4 +83,4 @@ groups:
         labels: { severity: ticket }
         annotations:
           summary: "TLS certificate expires in < 14 days"
-          runbook_url: "https://github.com/titan-platform/titan/blob/main/docs/runbooks/ops.md#cert-expiry"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#cert-expiry"

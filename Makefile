@@ -233,6 +233,16 @@ check-deploy-digests:
 check-alert-rules:
 	cd $(API_DIR) && uv run python scripts/check_alert_rules.py
 
+# OPS-025: every alert runbook_url resolves to an existing ops/runbooks anchor.
+check-runbook-links:
+	cd $(API_DIR) && uv run python scripts/check_runbook_links.py
+
+# OPS-018: full PITR round trip in one command — backup → destroy DB → PITR-restore to a
+# target time → validate ledger consistency → smoke. DESTROYS the target DB and needs
+# Postgres+WAL+MinIO, so it is CI/staging only and refuses to run without the confirm env.
+pitr-drill:
+	TITAN_PITR_DRILL_CONFIRM=yes ops/scripts/pitr-drill.sh
+
 # SEC-130: run the LLM red-team corpus against the real controls; non-zero on a
 # regression (an unauthorized tool execution or a secret-bearing gateway payload).
 redteam-run:

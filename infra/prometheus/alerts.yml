@@ -42,7 +42,7 @@ groups:
           severity: page
         annotations:
           summary: "Task queue backpressure — oldest pending > 300s"
-          runbook_url: "https://github.com/titan-platform/titan/blob/main/docs/runbooks/ops.md#queue-backpressure"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#queue-backpressure"
           description: >-
             {{ $labels.stream }}/{{ $labels.group }} has an unacked task older
             than 300 s for 10 minutes (TITAN-OPS-020). Accepted work is ledgered
@@ -60,7 +60,7 @@ groups:
           severity: page
         annotations:
           summary: "Audit hash chain verification FAILED (possible tamper)"
-          runbook_url: "https://github.com/titan-platform/titan/blob/main/docs/runbooks/incident.md#audit-chain-broken"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#audit-chain-broken"
           description: >-
             The daily audit_events chain walk found a broken/altered row
             (TITAN-SEC-091). Treat as SEV-1: freeze deploys, preserve the ledger,

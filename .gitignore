@@ -32,3 +32,6 @@ htmlcov/
 .venv-rerank/
 .hf-cache/
 .models/
+
+# Phase 78: local backup age private key (generate with `age-keygen -o infra/backup/local-age.key`; never commit)
+infra/backup/local-age.key

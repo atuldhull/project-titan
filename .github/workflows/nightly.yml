@@ -70,10 +70,67 @@ jobs:
           echo "TODO(Phase-78 infra): resolve the deployed @sha256 digests from the"
           echo "cluster, then: trivy image --severity HIGH,CRITICAL --exit-code 1 <digest>"
 
-  # §8.2: nightly backup verification stub — restore the latest encrypted backup into a
-  # scratch database and assert the audit hash-chain verifies (fleshed out in Phase 78).
+  # §8.2 / TITAN-OPS-018: nightly restore-verify — a REAL end-to-end PITR check, not a
+  # decrypt-and-log. It runs an ARCHIVING Postgres in the runner (so WAL genuinely exists),
+  # takes a base backup, generates + offloads WAL, then boots a THROWAWAY cluster from the
+  # backup that replays that WAL and asserts the system-of-record tables are present.
+  # `restore.sh verify` fails CLOSED — an unrestorable base or a broken WAL chain exits
+  # non-zero → the job is red → the Phase-77 BackupFailed page fires. No `|| true` masks.
   backup-verify:
     runs-on: ubuntu-latest
+    services:
+      minio:
+        image: minio/minio:RELEASE.2025-04-08T15-41-24Z
+        env:
+          MINIO_ROOT_USER: titan
+          MINIO_ROOT_PASSWORD: titanminio
+        ports:
+          - 9000:9000
+        # No `mc ready` healthcheck: the minio SERVER image has no `mc`. We wait on the
+        # HTTP health endpoint from the runner (which has curl) instead.
+    env:
+      PGHOST: localhost
+      PGUSER: titan
+      PGDATABASE: titan
+      PGPASSWORD: titan
+      WAL_ARCHIVE_DIR: /tmp/wal-archive
+      BACKUP_S3_BUCKET: titan-backups
+      BACKUP_S3_ENDPOINT: http://localhost:9000
+      AWS_ACCESS_KEY_ID: titan
+      AWS_SECRET_ACCESS_KEY: titanminio
+      AWS_DEFAULT_REGION: us-east-1
     steps:
       - uses: actions/checkout@v4
-      - run: 'echo "TODO(Phase-78): restore latest backup to a scratch DB + verify the audit chain"'
+      - name: Install backup tooling (age, awscli, postgres server+client)
+        run: sudo apt-get update && sudo apt-get install -y age awscli postgresql curl
+      - name: Wait for MinIO to be ready
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:9000/minio/health/live && break || sleep 2
+          done
+      - name: Generate a throwaway age keypair for this run
+        run: |
+          age-keygen -o /tmp/age.key 2>/tmp/age.pub
+          echo "BACKUP_AGE_IDENTITY=/tmp/age.key" >> "$GITHUB_ENV"
+          echo "BACKUP_AGE_RECIPIENT=$(grep -oE 'age1[0-9a-z]+' /tmp/age.pub)" >> "$GITHUB_ENV"
+          echo "PG_BIN=$(pg_config --bindir)" >> "$GITHUB_ENV"
+      - name: Start an ARCHIVING primary Postgres in the runner
+        run: |
+          mkdir -p /tmp/wal-archive
+          "$PG_BIN/initdb" -D /tmp/pgprimary -U titan --auth=trust >/dev/null
+          "$PG_BIN/pg_ctl" -D /tmp/pgprimary -w -t 60 -l /tmp/pgprimary.log -o \
+            "-p 5432 -c wal_level=replica -c archive_mode=on -c archive_timeout=5 -c archive_command='test -f /tmp/wal-archive/%f || cp %p /tmp/wal-archive/%f'" \
+            start
+          "$PG_BIN/createdb" -p 5432 -U titan titan
+          # Minimal system-of-record tables so the restore integrity check has real targets.
+          "$PG_BIN/psql" -p 5432 -U titan -d titan -c \
+            "CREATE TABLE tasks(id int primary key); CREATE TABLE audit_events(id int primary key); INSERT INTO tasks VALUES (1);"
+      - name: Take a base backup, generate + offload WAL
+        run: |
+          ops/scripts/backup.sh basebackup
+          # generate WAL AFTER the base so recovery must replay it, then force a segment switch
+          "$PG_BIN/psql" -p 5432 -U titan -d titan -c \
+            "INSERT INTO tasks VALUES (2); INSERT INTO audit_events VALUES (1); CHECKPOINT; SELECT pg_switch_wal();"
+          ops/scripts/backup.sh wal
+      - name: Restore-verify (boots a scratch cluster, replays WAL, asserts — fails closed)
+        run: ops/scripts/restore.sh verify
