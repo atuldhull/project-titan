@@ -1,0 +1,54 @@
+manifest_version: 1
+id: titan.jira
+name: Jira Sync
+version: 1.0.0
+description: >-
+  First-party Jira two-way-sync connector (Vol 7 §6.4, TITAN-INT-043). Mirrors TITAN tasks into
+  Jira issues (outbound) and turns human Jira activity into TITAN events (inbound). A pure
+  plugin: reaches core only through capabilities (secret + publish). Deleting this directory
+  leaves core tests green (TITAN-INT-011).
+  NOTE (honest scope): the connector supplies the tracker I/O, the jira:issue_updated →
+  task.* translation, and the state-map + sync_conflict RESOLVER (INT-043's algorithm). The
+  full two-way ORCHESTRATION (persisting the per-project TITAN⇄Jira mapping, comparing live
+  TITAN task state to Jira) needs a core sync engine or extra plugin capabilities (task-read +
+  storage) the out-of-process connector does not have — see the connector README.
+author: TITAN
+license: Apache-2.0
+homepage: https://developer.atlassian.com/cloud/jira/platform/rest/v3/
+titan_api: ">=1.0,<2.0"
+runtime:
+  type: python
+  entrypoint: jira_plugin:JiraConnector
+permissions:
+  # The Jira Cloud site base URL is per-tenant (JIRA_BASE_URL); the §3.5 sidecar allowlist is
+  # built from it at deploy. A placeholder host is listed so the manifest validates.
+  network: ["https://your-domain.atlassian.net"]
+  secrets:
+    - JIRA_BASE_URL
+    - JIRA_EMAIL
+    - JIRA_API_TOKEN
+    - JIRA_OAUTH_TOKEN
+    - JIRA_WEBHOOK_SECRET
+    - JIRA_STATE_MAP # JSON: {"todo":"To Do","in_progress":"In Progress",...} (config_schema form)
+  events:
+    publish:
+      - task.comment_added
+      - task.remote_status_changed
+      - task.sync_conflict
+  scopes: [task:update]
+contributes:
+  tools:
+    - { name: jira.create_issue, risk: write, description: Create an issue for a TITAN task (stamps the titan_task_id label). }
+    - { name: jira.transition_issue, risk: write, description: Transition an issue to the mapped tracker status. }
+    - { name: jira.add_comment, risk: write, description: Add a comment to an issue. }
+    - { name: jira.get_issue, risk: read, description: Get an issue by key. }
+    - { name: jira.find_by_task, risk: read, description: Find the issue mapped to a TITAN task id (JQL on the titan label). }
+  webhooks:
+    # Core verifies HMAC-SHA256 over the RAW body (its only mode; a bad sig → 401 + logged).
+    # HONEST NOTE (INT-011 kept): Jira webhooks are unsigned by default — the operator fronts
+    # them with a thin proxy that adds x-hub-signature-256 = HMAC(JIRA_WEBHOOK_SECRET, body),
+    # OR uses Jira automation to POST a signed payload. translate() + core's 401 are agnostic
+    # once the frame arrives.
+    - path: /hooks/jira
+      verify: hmac-sha256
+      secret: JIRA_WEBHOOK_SECRET
