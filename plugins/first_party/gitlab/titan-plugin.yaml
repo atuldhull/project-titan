@@ -1,0 +1,67 @@
+manifest_version: 1
+id: titan.gitlab
+name: GitLab
+version: 1.0.0
+description: >-
+  First-party GitLab connector (Vol 7 §6.2, TITAN-INT-041) — a mirror of the GitHub reference
+  mapped to GitLab semantics (merge requests, pipelines). Registers provider-specific tools
+  (gitlab.*) AND the generic vcs.* aliases so Volume-6 workflows stay provider-neutral. A pure
+  plugin: reaches core only through capabilities (secret + publish). Deleting this directory
+  leaves core tests green (TITAN-INT-011).
+author: TITAN
+license: Apache-2.0
+homepage: https://docs.gitlab.com/ee/api/
+titan_api: ">=1.0,<2.0"
+runtime:
+  type: python
+  entrypoint: gitlab_plugin:GitlabConnector
+permissions:
+  # gitlab.com by default; a self-hosted CE instance sets GITLAB_API_URL and the §3.5 sidecar
+  # allowlist is extended with that host at deploy.
+  network: ["https://gitlab.com"]
+  secrets:
+    - GITLAB_TOKEN
+    - GITLAB_API_URL
+    - GITLAB_WEBHOOK_SECRET
+  events:
+    publish:
+      - vcs.pr.opened
+      - vcs.pr.updated
+      - vcs.pr.closed
+      - vcs.pr.merged
+      - vcs.pr.review_requested
+      - vcs.pr.commented
+      - vcs.checks.completed
+      - vcs.push
+  scopes: [workspace:write]
+contributes:
+  tools:
+    # Provider-specific surface (GitLab semantics).
+    - { name: gitlab.create_branch, risk: write, description: Create a branch from a ref. }
+    - { name: gitlab.open_mr, risk: write, description: Open a merge request (source → target). }
+    - { name: gitlab.update_mr, risk: write, description: Update an MR's title/description/state. }
+    - { name: gitlab.approve_mr, risk: write, description: Approve a merge request. }
+    - { name: gitlab.comment_mr, risk: write, description: Comment on a merge request. }
+    - { name: gitlab.merge_mr, risk: admin, description: Merge a merge request (may touch a protected branch). }
+    - { name: gitlab.create_issue, risk: write, description: Open an issue with optional labels. }
+    - { name: gitlab.comment_issue, risk: write, description: Comment on an issue. }
+    - { name: gitlab.get_pipelines, risk: read, description: List pipelines / a commit's statuses (the checks analog). }
+    - { name: gitlab.search, risk: read, description: Search a project's blobs. }
+    # Generic vcs.* aliases (TITAN-INT-041) — provider-neutral workflow surface.
+    - { name: vcs.create_branch, risk: write, description: "vcs alias → gitlab.create_branch." }
+    - { name: vcs.open_change_request, risk: write, description: "vcs alias → gitlab.open_mr." }
+    - { name: vcs.update_change_request, risk: write, description: "vcs alias → gitlab.update_mr." }
+    - { name: vcs.review, risk: write, description: "vcs alias → gitlab.approve_mr / comment." }
+    - { name: vcs.comment, risk: write, description: "vcs alias → gitlab.comment_mr." }
+    - { name: vcs.merge, risk: admin, description: "vcs alias → gitlab.merge_mr." }
+    - { name: vcs.create_issue, risk: write, description: "vcs alias → gitlab.create_issue." }
+    - { name: vcs.get_checks, risk: read, description: "vcs alias → gitlab.get_pipelines." }
+  webhooks:
+    # Core verifies HMAC-SHA256 over the RAW body (its only mode; a bad signature → 401 + logged).
+    # HONEST NOTE (INT-011 kept — no core change): GitLab natively sends a plain X-Gitlab-Token, NOT
+    # an x-hub-signature-256 body HMAC, so a vanilla GitLab CE hook needs a thin proxy that adds
+    # x-hub-signature-256 = HMAC(GITLAB_WEBHOOK_SECRET, body) — OR a future core `verify: token`
+    # method. The translate() below + core's verify/401 are provider-agnostic once the frame arrives.
+    - path: /hooks/gitlab
+      verify: hmac-sha256
+      secret: GITLAB_WEBHOOK_SECRET
