@@ -1,0 +1,23 @@
+# Staging overlay (Vol 9 §2.3): namespace titan-staging, trimmed stateless replicas (cost;
+# staging scales to zero off-hours by schedule), TITAN_ENVIRONMENT=staging. orchestrator and
+# worker already run 1 in the base (single-instance until leader election lands — see
+# workloads.yaml), so only the horizontally-scalable web tiers are trimmed here.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: titan-staging
+
+resources:
+  - ../../base
+  - namespace.yaml
+
+replicas:
+  - { name: frontend, count: 1 }
+  - { name: api, count: 1 }
+  - { name: llm-gateway, count: 1 }
+
+patches:
+  - target: { kind: ConfigMap, name: titan-config }
+    patch: |
+      - op: replace
+        path: /data/TITAN_ENVIRONMENT
+        value: staging

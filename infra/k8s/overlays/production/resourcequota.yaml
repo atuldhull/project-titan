@@ -1,0 +1,16 @@
+# Caps titan-prod totals (Vol 9 §4.4) so a runaway HPA/KEDA scale-out (Phase 80: api→12,
+# worker→50, gateway→8, frontend→6) can't exhaust the cluster. Sized to hold the §4.3 max
+# fan-out plus the stateful tier with head-room.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: titan-prod-quota
+  labels: { app.kubernetes.io/part-of: titan }
+spec:
+  hard:
+    requests.cpu: "24"
+    requests.memory: 48Gi
+    limits.cpu: "64"
+    limits.memory: 96Gi
+    pods: "150"
+    persistentvolumeclaims: "24"

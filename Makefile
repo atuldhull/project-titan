@@ -237,6 +237,20 @@ check-alert-rules:
 check-runbook-links:
 	cd $(API_DIR) && uv run python scripts/check_runbook_links.py
 
+# OPS-002/005/007: K8s manifest security posture (no floating images; datastores are
+# unreachable from the edge). Pure Python, no cluster — gates every PR.
+check-k8s:
+	cd $(API_DIR) && uv run python scripts/check_k8s.py
+
+# OPS-002: schema-lint the K8s manifests. Needs kubeconform on PATH (CI installs it);
+# `kubectl kustomize` renders base + overlays, CRDs (CNPG/Kyverno) skipped by design.
+k8s-validate:
+	@command -v kubeconform >/dev/null 2>&1 || { echo "install kubeconform (https://github.com/yannh/kubeconform)"; exit 1; }
+	kubectl kustomize infra/k8s/base | kubeconform -strict -ignore-missing-schemas -summary
+	kubectl kustomize infra/k8s/overlays/staging | kubeconform -strict -ignore-missing-schemas -summary
+	kubectl kustomize infra/k8s/overlays/production | kubeconform -strict -ignore-missing-schemas -summary
+	kubectl kustomize infra/k8s/policies | kubeconform -ignore-missing-schemas -summary
+
 # OPS-018: full PITR round trip in one command — backup → destroy DB → PITR-restore to a
 # target time → validate ledger consistency → smoke. DESTROYS the target DB and needs
 # Postgres+WAL+MinIO, so it is CI/staging only and refuses to run without the confirm env.

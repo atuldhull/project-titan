@@ -1,0 +1,13 @@
+# Injects default requests/limits (Vol 9 §4.4) so no pod EVER ships without requests —
+# a pod with no request is unschedulable-fair and can starve neighbours. Explicit
+# per-workload resources in the base take precedence; this is the backstop.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: titan-prod-defaults
+  labels: { app.kubernetes.io/part-of: titan }
+spec:
+  limits:
+    - type: Container
+      default: { cpu: 500m, memory: 512Mi }
+      defaultRequest: { cpu: 100m, memory: 128Mi }

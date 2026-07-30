@@ -1,0 +1,36 @@
+# Kyverno image-verification policy (Vol 9 §5, TITAN-OPS-005): every TITAN app image must
+# carry a valid cosign KEYLESS signature produced by this repo's GitHub Actions release
+# workflow. The subject/issuer match main.yml's OIDC keyless signing (Phase 76), so an
+# image not signed by our pipeline is rejected at admission. Unsigned deploy → rejected
+# (the phase DoD's Kyverno test). kubeconform skips the Kyverno CRD schema.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-titan-image-signatures
+  labels: { app.kubernetes.io/part-of: titan }
+  annotations:
+    policies.kyverno.io/title: Verify TITAN image signatures (cosign keyless)
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Enforce
+  webhookTimeoutSeconds: 30
+  background: false
+  rules:
+    - name: verify-cosign-keyless
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [titan-prod, titan-staging]
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/titan-platform/*"
+          attestors:
+            - count: 1
+              entries:
+                - keyless:
+                    # GitHub Actions OIDC identity that signs the digests in main.yml.
+                    subject: "https://github.com/titan-platform/titan/.github/workflows/*"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: "https://rekor.sigstore.dev"

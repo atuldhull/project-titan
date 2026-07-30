@@ -1,0 +1,27 @@
+# TITAN base manifests (Vol 9 §4/§8.1). Overlays (staging/production) set the namespace,
+# replica counts, storage class, quotas, and — in production — rewrite image tags to
+# @sha256 digests at deploy time (release.yml). The `images` list below is the single
+# override point so a digest bump touches one place.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - config.yaml
+  - workloads.yaml
+  - datastores.yaml
+  - migrate-job.yaml
+  - ingress.yaml
+  - pdb.yaml
+  - networkpolicy.yaml
+
+images:
+  - name: ghcr.io/titan-platform/titan-frontend
+    newTag: "0.1.0"
+  - name: ghcr.io/titan-platform/titan-api
+    newTag: "0.1.0"
+  - name: ghcr.io/titan-platform/titan-orchestrator
+    newTag: "0.1.0"
+  - name: ghcr.io/titan-platform/titan-worker
+    newTag: "0.1.0"
+  - name: ghcr.io/titan-platform/titan-migrate
+    newTag: "0.1.0"

@@ -1,0 +1,56 @@
+# PodDisruptionBudgets (Vol 9 §8.1): keep minAvailable during voluntary disruptions
+# (node drains/upgrades). api keeps 2 (it fronts all traffic); every other tier keeps ≥1.
+# CNPG manages its own PDB for Postgres, so there is none here for it.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: frontend, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app.kubernetes.io/component: frontend, app.kubernetes.io/part-of: titan } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: api, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  minAvailable: 2
+  selector: { matchLabels: { app.kubernetes.io/component: api, app.kubernetes.io/part-of: titan } }
+---
+# orchestrator + worker run 1 replica today (see workloads.yaml). maxUnavailable:1 stays
+# drain-safe at 1 replica (minAvailable:1 would block every voluntary eviction) and remains
+# meaningful if they are scaled once their singleton/leader constraints are resolved.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: orchestrator, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  maxUnavailable: 1
+  selector: { matchLabels: { app.kubernetes.io/component: orchestrator, app.kubernetes.io/part-of: titan } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: worker, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  maxUnavailable: 1
+  selector: { matchLabels: { app.kubernetes.io/component: worker, app.kubernetes.io/part-of: titan } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: llm-gateway, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app.kubernetes.io/component: llm-gateway, app.kubernetes.io/part-of: titan } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: redis, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  maxUnavailable: 1
+  selector: { matchLabels: { app.kubernetes.io/component: redis, app.kubernetes.io/part-of: titan } }
+# redis + qdrant run 1 replica today (single-instance — see datastores.yaml HA GAPS);
+# maxUnavailable:1 keeps node drains unblocked.
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: qdrant, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  maxUnavailable: 1
+  selector: { matchLabels: { app.kubernetes.io/component: qdrant, app.kubernetes.io/part-of: titan } }

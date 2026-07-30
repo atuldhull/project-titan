@@ -1,0 +1,167 @@
+# NetworkPolicies (Vol 9 §4.1/§4.2, OPS-007; Vol 8 owns the detail).
+#
+# Design: default-deny INGRESS for EVERY pod (so datastores are unreachable from the edge —
+# OPS-007), plus default-deny EGRESS for the APP TIERS ONLY (api/orchestrator/worker/
+# llm-gateway — the compromise surface). Datastores, the migrate Job, and the CNPG operator
+# pods keep egress open so streaming replication, operator control, and pre-deploy migrations
+# work (imposing default-deny egress on them broke exactly those flows). `check_k8s.py`
+# statically enforces the ingress invariant (datastores accept ONLY in-namespace app pods).
+#
+# App tiers match `app.kubernetes.io/component In (api,orchestrator,worker,llm-gateway)`;
+# CNPG-managed Postgres pods carry `cnpg.io/cluster: postgres`.
+---
+# Deny ALL ingress by default (every pod).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny-ingress, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# Deny egress by default for the app tiers only (datastores/migrate/operator keep egress).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny-egress-apptiers, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/component, operator: In, values: [api, orchestrator, worker, llm-gateway] }
+  policyTypes: [Egress]
+---
+# DNS for every pod (kube-dns in kube-system).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-dns-egress, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+# ingress-nginx → frontend / api ONLY (never a datastore).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-ingress-to-frontend, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/component: frontend } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }
+      ports: [{ protocol: TCP, port: 3000 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-ingress-to-api, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/component: api } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }
+      ports: [{ protocol: TCP, port: 8000 }]
+---
+# App-tier EGRESS: to the datastores + the gateway (the ingress halves are below).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-app-egress-to-datastores, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/component, operator: In, values: [api, orchestrator, worker, llm-gateway] }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ podSelector: { matchLabels: { cnpg.io/cluster: postgres } } }]
+      ports: [{ protocol: TCP, port: 5432 }]
+    - to: [{ podSelector: { matchLabels: { app.kubernetes.io/component: redis } } }]
+      ports: [{ protocol: TCP, port: 6379 }]
+    - to: [{ podSelector: { matchLabels: { app.kubernetes.io/component: qdrant } } }]
+      ports: [{ protocol: TCP, port: 6333 }, { protocol: TCP, port: 6334 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-app-egress-to-gateway, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/component, operator: In, values: [api, orchestrator, worker] }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app.kubernetes.io/component: llm-gateway } } }]
+      ports: [{ protocol: TCP, port: 8000 }]
+---
+# Only the llm-gateway reaches external LLM providers (TCP 443 to non-cluster IPs). The
+# `except` list blocks RFC1918, link-local/IMDS (169.254), and CGNAT/pod ranges (100.64).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-gateway-egress-internet, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/component: llm-gateway } }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10]
+      ports: [{ protocol: TCP, port: 443 }]
+---
+# Datastore INGRESS: from the in-namespace app tiers only (NO namespaceSelector/ipBlock ⇒
+# unreachable from ingress-nginx / the edge — OPS-007, enforced by check_k8s.py).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-postgres-ingress, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  podSelector: { matchLabels: { cnpg.io/cluster: postgres } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/component, operator: In, values: [api, orchestrator, worker, llm-gateway, migrate] }
+      ports: [{ protocol: TCP, port: 5432 }]
+    - from: [{ podSelector: { matchLabels: { cnpg.io/cluster: postgres } } }]  # CNPG intra streaming
+      ports: [{ protocol: TCP, port: 5432 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-redis-ingress, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/component: redis } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/component, operator: In, values: [api, orchestrator, worker, llm-gateway] }
+      ports: [{ protocol: TCP, port: 6379 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-qdrant-ingress, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/component: qdrant } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/component, operator: In, values: [api, orchestrator, worker, llm-gateway] }
+      ports: [{ protocol: TCP, port: 6333 }, { protocol: TCP, port: 6334 }]
+---
+# llm-gateway INGRESS: from api/worker/orchestrator only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-gateway-ingress, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/component: llm-gateway } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/component, operator: In, values: [api, orchestrator, worker] }
+      ports: [{ protocol: TCP, port: 8000 }]

@@ -287,6 +287,7 @@ jobs:
       - run: make check-deploy-digests
       - run: make check-alert-rules
       - run: make check-runbook-links
+      - run: make check-k8s
       - run: make redteam-run
       # `make security-check` runs against the Compose profile (secure env), not this
       # bare runner whose env overrides (e.g. rate limits off in tests) it would flag.
@@ -323,6 +324,25 @@ jobs:
         with:
           name: sbom-cyclonedx
           path: sbom.cdx.json
+
+  # TITAN-OPS-002 (Phase 79): schema-lint the K8s manifests. kustomize renders base +
+  # both overlays + the Kyverno policies; kubeconform validates every built-in kind
+  # (CNPG/Kyverno CRDs are skipped by design). The security posture (no floating images,
+  # datastores edge-unreachable) is enforced separately by `make check-k8s` in supply-chain.
+  k8s-manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kustomize + kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar -xz -C /usr/local/bin kubeconform
+          curl -sSL "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s -- 5.4.3 /usr/local/bin
+      - name: kubeconform base + overlays + policies
+        run: |
+          for t in base overlays/staging overlays/production; do
+            echo "== $t =="; kustomize build "infra/k8s/$t" | kubeconform -strict -ignore-missing-schemas -summary
+          done
+          echo "== policies =="; kustomize build infra/k8s/policies | kubeconform -ignore-missing-schemas -summary
 
   # Live-provider conformance (TITAN-INT-060 item 4): a SEPARATE, NON-BLOCKING
   # job so real API divergence is surfaced without failing the main pipeline.

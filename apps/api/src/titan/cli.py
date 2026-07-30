@@ -497,6 +497,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rt_run.add_argument("--output", default=None, help="Write the scorecard JSON to this path")
 
+    subcommands.add_parser(
+        "health", help="Dependency readiness check (Postgres+Redis) for K8s probes (OPS-008)"
+    )
+
     flags_cmd = subcommands.add_parser(
         "flags", help="Operational feature flags / kill switches (Vol 9 §5.3, TITAN-OPS-012)"
     )
@@ -516,6 +520,38 @@ def build_parser() -> argparse.ArgumentParser:
     )
     flags_set.add_argument("--actor", default="cli:operator", help="Audit actor for the change")
     return parser
+
+
+def _health_check() -> int:
+    """Dependency readiness for K8s exec probes (TITAN-OPS-008): the worker has no HTTP
+    server, so its readiness gates on this — Postgres + Redis reachable → exit 0, else 1
+    naming the failures. Reuses the same checks the api /readyz endpoint runs."""
+    from titan.observability.health import _check_postgres, _check_redis
+
+    async def run() -> int:
+        engine = clients.create_engine(get_settings())
+        redis = clients.create_redis(get_settings())
+        failing: list[str] = []
+        try:
+            try:
+                await _check_postgres(engine)
+            except Exception as exc:  # noqa: BLE001 — any failure means unready
+                failing.append(f"postgres: {exc}")
+            try:
+                await _check_redis(redis)
+            except Exception as exc:  # noqa: BLE001 — any failure means unready
+                failing.append(f"redis: {exc}")
+        finally:
+            await redis.aclose()
+            await engine.dispose()
+        if failing:
+            for item in failing:
+                print(f"UNREADY {item}", file=sys.stderr)
+            return 1
+        print("ready: postgres, redis")
+        return 0
+
+    return asyncio.run(run())
 
 
 _FLAG_TRUE = {"on", "true", "1", "enabled", "yes"}
@@ -620,6 +656,8 @@ def main(argv: list[str] | None = None) -> int:
             return _incident_playbook(args.which)
     if args.command == "redteam" and args.redteam_command == "run":
         return _redteam_run(args.output)
+    if args.command == "health":
+        return _health_check()
     if args.command == "flags":
         if args.flags_command == "list":
             return _flags_list()

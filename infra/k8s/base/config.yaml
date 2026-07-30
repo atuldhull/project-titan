@@ -1,0 +1,17 @@
+# Non-secret runtime config shared by the TITAN app tiers (Vol 9 §4, ADR-008: env-based
+# config only — the SAME images as Compose, reconfigured, never forked). Credentialed
+# values (DATABASE_URL, REDIS_URL, JWT/age/HMAC keys) come from the `titan-secrets` Secret,
+# which is provisioned by external-secrets/KMS (Vol 8) and is NEVER committed here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: titan-config
+  labels:
+    app.kubernetes.io/part-of: titan
+data:
+  TITAN_ENVIRONMENT: production
+  TITAN_LOG_LEVEL: INFO
+  # In-cluster service DNS (ClusterIP). Datastores are never exposed outside the cluster.
+  TITAN_QDRANT_URL: http://qdrant:6333
+  TITAN_OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.titan-observability:4317
+  TITAN_READYZ_BUDGET_SECONDS: "0.5"

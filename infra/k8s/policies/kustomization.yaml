@@ -1,0 +1,8 @@
+# Cluster-scoped Kyverno admission policies (Vol 9 §5, OPS-002/005). Applied on their own
+# (`kubectl apply -k infra/k8s/policies`) after Kyverno is installed — NOT part of the app
+# overlays, since they are cluster-wide.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - disallow-latest.yaml
+  - require-signed-images.yaml

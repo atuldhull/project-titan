@@ -1,0 +1,298 @@
+# Stateless app tiers (Vol 9 §4.2 topology, §4.4 resources, §8.1 HA). Every pod carries
+# liveness+readiness+startup probes (OPS-008): api/orchestrator/llm-gateway readiness is
+# /readyz (503 when Postgres/Redis/Qdrant are down ⇒ a bad DSN STALLS the rollout, never
+# an outage); the worker has no HTTP server, so its readiness is `titan health` (same
+# dep check). Anti-affinity + zone spread keep replicas off one node/zone. Non-root,
+# read-only rootfs, all caps dropped. Images are pinned version tags (never :latest);
+# the release pipeline rewrites them to @sha256 digests at deploy (see overlays/production).
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: frontend, app.kubernetes.io/part-of: titan }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app.kubernetes.io/component: frontend, app.kubernetes.io/part-of: titan }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: frontend, app.kubernetes.io/part-of: titan }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app.kubernetes.io/component: frontend } }
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector: { matchLabels: { app.kubernetes.io/component: frontend } }
+      containers:
+        - name: frontend
+          image: ghcr.io/titan-platform/titan-frontend:0.1.0
+          ports: [{ containerPort: 3000, name: http }]
+          envFrom: [{ configMapRef: { name: titan-config } }]
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+          livenessProbe: { httpGet: { path: /, port: 3000 }, periodSeconds: 10, failureThreshold: 3 }
+          readinessProbe: { httpGet: { path: /, port: 3000 }, periodSeconds: 10, failureThreshold: 3 }
+          startupProbe: { httpGet: { path: /, port: 3000 }, periodSeconds: 3, failureThreshold: 40 }
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  labels: { app.kubernetes.io/part-of: titan }
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/component: frontend, app.kubernetes.io/part-of: titan }
+  ports: [{ name: http, port: 80, targetPort: 3000 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: api, app.kubernetes.io/part-of: titan }
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app.kubernetes.io/component: api, app.kubernetes.io/part-of: titan }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: api, app.kubernetes.io/part-of: titan }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app.kubernetes.io/component: api } }
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector: { matchLabels: { app.kubernetes.io/component: api } }
+      containers:
+        - name: api
+          image: ghcr.io/titan-platform/titan-api:0.1.0
+          ports: [{ containerPort: 8000, name: http }]
+          envFrom:
+            - configMapRef: { name: titan-config }
+            - secretRef: { name: titan-secrets }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+          livenessProbe: { httpGet: { path: /healthz, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
+          readinessProbe: { httpGet: { path: /readyz, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
+          startupProbe: { httpGet: { path: /healthz, port: 8000 }, periodSeconds: 3, failureThreshold: 40 }
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  labels: { app.kubernetes.io/part-of: titan }
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/component: api, app.kubernetes.io/part-of: titan }
+  ports: [{ name: http, port: 8000, targetPort: 8000 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator
+  labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: orchestrator, app.kubernetes.io/part-of: titan }
+spec:
+  # HONEST HA note: at MVP the orchestrator runs the titan-core app (its Dockerfile CMD is
+  # the same uvicorn entrypoint as api — the standalone scheduler is a documented future
+  # extraction), and the app has NO session-level leader election. Scheduling/singleton
+  # loops today live in the worker (see worker below), so the §8.1 "2 replicas, active/
+  # passive, one schedules" story is NOT yet deliverable via manifests. We run 1 replica;
+  # K8s reschedules it on failure. Bumping to 2 is safe only once real leader election lands.
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/component: orchestrator, app.kubernetes.io/part-of: titan }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: orchestrator, app.kubernetes.io/part-of: titan }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app.kubernetes.io/component: orchestrator } }
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector: { matchLabels: { app.kubernetes.io/component: orchestrator } }
+      containers:
+        - name: orchestrator
+          image: ghcr.io/titan-platform/titan-orchestrator:0.1.0
+          ports: [{ containerPort: 8000, name: http }]
+          envFrom:
+            - configMapRef: { name: titan-config }
+            - secretRef: { name: titan-secrets }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+          livenessProbe: { httpGet: { path: /healthz, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
+          readinessProbe: { httpGet: { path: /readyz, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
+          startupProbe: { httpGet: { path: /healthz, port: 8000 }, periodSeconds: 3, failureThreshold: 40 }
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestrator
+  labels: { app.kubernetes.io/part-of: titan }
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/component: orchestrator, app.kubernetes.io/part-of: titan }
+  ports: [{ name: http, port: 8000, targetPort: 8000 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: worker, app.kubernetes.io/part-of: titan }
+spec:
+  # HONEST HA/scaling note: `python -m titan.worker` currently hosts BOTH the scalable task
+  # executors AND singleton loops — the domain-stream→pub/sub fan-out (a single consumer
+  # preserves per-project seq order) and the periodic reconcilers, all under a hardcoded
+  # consumer name. Running >1 replica today would split that ordered consumer and duplicate
+  # WS frames. So base runs 1 replica (K8s reschedules on failure). Horizontal scaling to
+  # §4.3's 2–50 (Phase 80 KEDA) REQUIRES first leader-electing / separating those singleton
+  # loops from the executor loop — a documented app gap, not a manifest one.
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/component: worker, app.kubernetes.io/part-of: titan }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: worker, app.kubernetes.io/part-of: titan }
+    spec:
+      # graceful drain on scale-down: finish the current task, ack, exit (Vol 9 §4.3).
+      terminationGracePeriodSeconds: 120
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app.kubernetes.io/component: worker } }
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector: { matchLabels: { app.kubernetes.io/component: worker } }
+      containers:
+        - name: worker
+          image: ghcr.io/titan-platform/titan-worker:0.1.0
+          ports: [{ containerPort: 9100, name: metrics }]
+          envFrom:
+            - configMapRef: { name: titan-config }
+            - secretRef: { name: titan-secrets }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 2Gi }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+          # no HTTP server ⇒ liveness is the metrics port being up; readiness gates on
+          # dependency health via the CLI (OPS-008), so a bad DSN stalls the rollout.
+          livenessProbe: { tcpSocket: { port: 9100 }, periodSeconds: 10, failureThreshold: 3 }
+          readinessProbe:
+            exec: { command: ["titan", "health"] }
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
+          startupProbe: { tcpSocket: { port: 9100 }, periodSeconds: 3, failureThreshold: 40 }
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+  labels: { app.kubernetes.io/part-of: titan }
+spec:
+  # headless: workers are pull-based (no inbound routing); the Service is for metrics
+  # discovery only.
+  clusterIP: None
+  selector: { app.kubernetes.io/component: worker, app.kubernetes.io/part-of: titan }
+  ports: [{ name: metrics, port: 9100, targetPort: 9100 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-gateway
+  labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: llm-gateway, app.kubernetes.io/part-of: titan }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app.kubernetes.io/component: llm-gateway, app.kubernetes.io/part-of: titan }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: llm-gateway, app.kubernetes.io/part-of: titan }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app.kubernetes.io/component: llm-gateway } }
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector: { matchLabels: { app.kubernetes.io/component: llm-gateway } }
+      containers:
+        - name: llm-gateway
+          # The provider-agnostic gateway is a library invoked in-process; per §4.2 it is
+          # its own Deployment for independent scaling, run from the titan-api image with
+          # the gateway role until a dedicated image exists (ADR-008: reuse images).
+          image: ghcr.io/titan-platform/titan-api:0.1.0
+          args: ["uvicorn", "titan.main:app", "--host", "0.0.0.0", "--port", "8000"]
+          env: [{ name: TITAN_ROLE, value: llm-gateway }]
+          ports: [{ containerPort: 8000, name: http }]
+          envFrom:
+            - configMapRef: { name: titan-config }
+            - secretRef: { name: titan-secrets }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+          livenessProbe: { httpGet: { path: /healthz, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
+          readinessProbe: { httpGet: { path: /readyz, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
+          startupProbe: { httpGet: { path: /healthz, port: 8000 }, periodSeconds: 3, failureThreshold: 40 }
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-gateway
+  labels: { app.kubernetes.io/part-of: titan }
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/component: llm-gateway, app.kubernetes.io/part-of: titan }
+  ports: [{ name: http, port: 8000, targetPort: 8000 }]

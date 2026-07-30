@@ -1,0 +1,49 @@
+# The ONLY ingress into the cluster (Vol 9 §4.1/§4.2): app.titan.dev → frontend,
+# api.titan.dev → api. TLS via cert-manager + Let's Encrypt. The api Ingress carries
+# extended proxy timeouts so long-lived `/ws` WebSocket connections are not cut at the
+# default 60s. Datastores have NO Ingress, ever (OPS-007).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: frontend
+  labels: { app.kubernetes.io/part-of: titan }
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [app.titan.dev]
+      secretName: frontend-tls
+  rules:
+    - host: app.titan.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: frontend, port: { number: 80 } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api
+  labels: { app.kubernetes.io/part-of: titan }
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # WebSockets on /ws: bump read/send timeouts well past the 60s default so idle-but-open
+    # sockets are not severed; the eventing contract (Vol 3) is affinity-less (Redis pub/sub).
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [api.titan.dev]
+      secretName: api-tls
+  rules:
+    - host: api.titan.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: api, port: { number: 8000 } } }

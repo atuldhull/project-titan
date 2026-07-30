@@ -1,0 +1,153 @@
+# Stateful tier (Vol 9 §4.2/§4.4/§8.1, OPS-007): StatefulSet/operator-managed, SSD PVCs,
+# ClusterIP/headless only — NEVER an Ingress or NodePort. Postgres runs on the
+# CloudNativePG operator with a REAL primary+replica (streaming replication + automatic
+# failover). Redis and Qdrant run single-instance here (see the HONEST HA gaps below) —
+# kubeconform skips the CNPG CRD schema.
+#
+# HA GAPS (honest — these need app-level work, not just manifests, so they are NOT claimed
+# as delivered): Redis primary/replica + Sentinel failover (§8.1) requires `replicaof`
+# wiring AND a Sentinel-aware client (titan.clients uses a plain Redis.from_url), and Qdrant
+# replication factor 2 requires Qdrant cluster mode + a cluster-aware client. Until those
+# land, Redis/Qdrant run single-instance with recovery via K8s reschedule (Redis durability
+# is AOF everysec + the Postgres ledger, ADR-BCK-02). Postgres HA is fully real via CNPG.
+#
+# Storage: PVCs use the cluster's DEFAULT StorageClass (kind's local-path works out of the
+# box, so the stack comes up healthy on kind). Production points its default class at SSD
+# (OPS-007) or patches storageClassName in the production overlay.
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+  labels: { app.kubernetes.io/component: postgres, app.kubernetes.io/part-of: titan }
+spec:
+  instances: 2                    # 1 primary + 1 streaming replica (auto-failover)
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+  primaryUpdateStrategy: unsupervised
+  storage:
+    size: 20Gi
+  walStorage:
+    size: 10Gi
+  resources:
+    requests: { cpu: "1", memory: 2Gi }
+    limits: { cpu: "2", memory: 4Gi }
+  postgresql:
+    parameters:
+      shared_buffers: 1GB
+      max_connections: "200"
+  # CNPG publishes `postgres-rw` (primary) and `postgres-ro` (replicas) Services; the app's
+  # TITAN_DATABASE_URL (in the titan-secrets Secret) points at postgres-rw. Continuous WAL
+  # archiving to object storage (Vol 9 §8.2) is added via spec.backup once the object store
+  # is provisioned — it is intentionally NOT in these base manifests (no bucket to target).
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  labels: { app.kubernetes.io/component: redis, app.kubernetes.io/part-of: titan }
+data:
+  redis.conf: |
+    appendonly yes
+    appendfsync everysec
+    maxmemory 1536mb
+    maxmemory-policy noeviction
+    save ""
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: redis, app.kubernetes.io/part-of: titan }
+spec:
+  serviceName: redis
+  replicas: 1                     # single instance — see the HA GAPS note at the top of this file
+  selector:
+    matchLabels: { app.kubernetes.io/component: redis, app.kubernetes.io/part-of: titan }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: redis, app.kubernetes.io/part-of: titan }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 999, fsGroup: 999, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          command: ["redis-server", "/etc/redis/redis.conf"]
+          ports: [{ containerPort: 6379, name: redis }]
+          resources:
+            requests: { cpu: 250m, memory: 1Gi }
+            limits: { cpu: "1", memory: 2Gi }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          livenessProbe: { tcpSocket: { port: 6379 }, periodSeconds: 10, failureThreshold: 3 }
+          readinessProbe: { exec: { command: ["redis-cli", "ping"] }, periodSeconds: 10, failureThreshold: 3 }
+          startupProbe: { tcpSocket: { port: 6379 }, periodSeconds: 3, failureThreshold: 30 }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: config, mountPath: /etc/redis }
+      volumes:
+        - name: config
+          configMap: { name: redis-config, items: [{ key: redis.conf, path: redis.conf }] }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 8Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  labels: { app.kubernetes.io/part-of: titan }
+spec:
+  clusterIP: None                 # headless: stable per-pod DNS
+  selector: { app.kubernetes.io/component: redis, app.kubernetes.io/part-of: titan }
+  ports: [{ name: redis, port: 6379, targetPort: 6379 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: qdrant
+  labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: qdrant, app.kubernetes.io/part-of: titan }
+spec:
+  serviceName: qdrant
+  replicas: 1                     # single instance — see the HA GAPS note at the top of this file
+  selector:
+    matchLabels: { app.kubernetes.io/component: qdrant, app.kubernetes.io/part-of: titan }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: qdrant, app.kubernetes.io/part-of: titan }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: qdrant
+          image: qdrant/qdrant:v1.18.2
+          ports:
+            - { containerPort: 6333, name: http }
+            - { containerPort: 6334, name: grpc }
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { cpu: "2", memory: 4Gi }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          livenessProbe: { tcpSocket: { port: 6333 }, periodSeconds: 10, failureThreshold: 3 }
+          readinessProbe: { httpGet: { path: /readyz, port: 6333 }, periodSeconds: 10, failureThreshold: 3 }
+          startupProbe: { tcpSocket: { port: 6333 }, periodSeconds: 3, failureThreshold: 40 }
+          volumeMounts: [{ name: storage, mountPath: /qdrant/storage }]
+  volumeClaimTemplates:
+    - metadata: { name: storage }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 20Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qdrant
+  labels: { app.kubernetes.io/part-of: titan }
+spec:
+  clusterIP: None
+  selector: { app.kubernetes.io/component: qdrant, app.kubernetes.io/part-of: titan }
+  ports:
+    - { name: http, port: 6333, targetPort: 6333 }
+    - { name: grpc, port: 6334, targetPort: 6334 }

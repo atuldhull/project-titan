@@ -1,0 +1,14 @@
+# Multi-node kind cluster for local HA validation (Vol 9 §8.1 DoD). Three workers across
+# faux zones let podAntiAffinity + topologySpreadConstraints actually place replicas on
+# distinct nodes, and let the pod-kill drill prove recovery when a node/singleton dies.
+#   kind create cluster --config infra/k8s/kind-config.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+  - role: worker
+    labels: { topology.kubernetes.io/zone: zone-a }
+  - role: worker
+    labels: { topology.kubernetes.io/zone: zone-b }
+  - role: worker
+    labels: { topology.kubernetes.io/zone: zone-c }

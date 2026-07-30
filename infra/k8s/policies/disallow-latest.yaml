@@ -1,0 +1,49 @@
+# Kyverno admission policy (Vol 9 §4.4/§5, TITAN-OPS-002/005): reject any Pod whose image
+# floats on :latest or carries no tag at all (untagged ⇒ latest). Digest-pinned or
+# explicitly-version-tagged images only. Cluster-scoped; applied separately from the app
+# overlays. kubeconform skips the Kyverno CRD schema.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag
+  labels: { app.kubernetes.io/part-of: titan }
+  annotations:
+    policies.kyverno.io/title: Disallow :latest
+    policies.kyverno.io/severity: medium
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: forbid-latest-tag
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [titan-prod, titan-staging]
+      validate:
+        message: "Images must not use the ':latest' tag."
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest"
+            # `=(...)` conditional anchors: validate these too, but only when present.
+            =(initContainers):
+              - image: "!*:latest"
+            =(ephemeralContainers):
+              - image: "!*:latest"
+    - name: require-a-tag-or-digest
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [titan-prod, titan-staging]
+      validate:
+        message: "Images must carry an explicit tag or @sha256 digest (no floating refs)."
+        pattern:
+          spec:
+            containers:
+              - image: "*:*"
+            =(initContainers):
+              - image: "*:*"
+            =(ephemeralContainers):
+              - image: "*:*"
