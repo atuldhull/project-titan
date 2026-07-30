@@ -257,6 +257,16 @@ check-bluegreen:
 test-bluegreen-scripts:
 	bash ops/scripts/test_release.sh
 
+# OPS-019 (Vol 9 §8.3): the disaster-recovery drill. --dry-run verifies the step order + report
+# contract with NO infra; the real (destructive) drill needs TITAN_DR_DRILL_CONFIRM=yes + a cluster.
+dr-drill:
+	ops/scripts/dr-drill.sh
+dr-drill-dryrun:
+	bash ops/scripts/dr-drill.sh --dry-run
+# Validate the newest DR report against the §8.3 step order + RTO<=4h / RPO<=5min targets.
+check-dr-report:
+	cd $(API_DIR) && uv run python scripts/check_dr_report.py
+
 # OPS-019 (Vol 9 §2): validate the cloud-agnostic Terraform (fmt + offline init + validate).
 # The reference module impl uses only Terraform builtins, so init needs no providers/network.
 check-terraform:

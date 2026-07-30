@@ -1,0 +1,2 @@
+# Drill run artifacts are not committed (they are per-run evidence archived by staging/CI).
+dr-*.json
