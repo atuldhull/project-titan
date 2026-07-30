@@ -1,0 +1,43 @@
+manifest_version: 1
+id: titan.figma
+name: Figma
+version: 1.0.0
+description: >-
+  First-party Figma READ connector (Vol 7 §6.5, TITAN-INT-044) — design ground truth for the
+  Frontend Engineer agent. Strictly read-only at MVP. A pure plugin: it reaches core only
+  through capabilities (secret for the token + config). Deleting this directory leaves core
+  tests green (TITAN-INT-011). No webhooks — Figma is a pull-only source here.
+author: TITAN
+license: Apache-2.0
+homepage: https://www.figma.com/developers/api
+titan_api: ">=1.0,<2.0"
+runtime:
+  type: python
+  entrypoint: figma_plugin:FigmaConnector
+permissions:
+  network: ["https://api.figma.com"]
+  # A personal access token (FIGMA_TOKEN → X-Figma-Token) OR an OAuth bearer
+  # (FIGMA_OAUTH_TOKEN → Authorization: Bearer). FIGMA_API_URL overrides the base for testing.
+  secrets:
+    - FIGMA_TOKEN
+    - FIGMA_OAUTH_TOKEN
+    - FIGMA_API_URL
+  # No events: a read-only connector publishes nothing.
+  events:
+    publish: []
+  # Read tools require only a read scope (never self-granted).
+  scopes: [workspace:read]
+contributes:
+  tools:
+    - name: figma.get_file
+      risk: read
+      description: Get a file's document node tree (optionally depth-limited).
+    - name: figma.get_node_image
+      risk: read
+      description: Render node(s) to a PNG URL for vision models.
+    - name: figma.get_variables
+      risk: read
+      description: Get local design variables (tokens) — colors map to a Tailwind theme.
+    - name: figma.get_comments
+      risk: read
+      description: List a file's comments.
