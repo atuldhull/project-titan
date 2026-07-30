@@ -13,6 +13,7 @@ resources:
   - ingress.yaml
   - pdb.yaml
   - networkpolicy.yaml
+  - autoscale.yaml
 
 images:
   - name: ghcr.io/titan-platform/titan-frontend

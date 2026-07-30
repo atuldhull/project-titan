@@ -311,6 +311,9 @@ class LlmGateway:
             attempt: Callable[[], Awaitable[ChatResult]] = functools.partial(
                 adapter.chat, self._client, req=req, resolved=cand, provider=provider_cfg
             )
+            # in-flight LLM calls: the llm-gateway HPA scaling signal (Vol 9 §4.3). The
+            # finally decs on every exit — success, fallback continue, or fail-fast return.
+            metrics.LLM_CALLS_IN_FLIGHT.inc()
             try:
                 result = await self._retry.run(attempt)
             except UpstreamProviderError as exc:
@@ -332,6 +335,8 @@ class LlmGateway:
             except ProviderNotConfiguredError as exc:
                 last_error = exc  # e.g. missing key — try the next candidate
                 continue
+            finally:
+                metrics.LLM_CALLS_IN_FLIGHT.dec()
             self._breaker.record_success(cand.provider)
             return cand, result, int((time.perf_counter() - start) * 1000), None, attempts
         return None, None, 0, last_error, attempts

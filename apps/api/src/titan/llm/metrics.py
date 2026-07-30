@@ -57,6 +57,14 @@ PROJECT_BUDGET_REMAINING_USD = Gauge(
     ["project"],
 )
 
+# In-flight upstream LLM calls — the llm-gateway HPA custom scaling signal (Vol 9 §4.3:
+# scale on in-flight LLM calls, target 20/pod). The gateway is "mostly I/O wait" (§4.4), so
+# concurrent-call depth is a far better signal than CPU. Inc/dec around the provider call.
+LLM_CALLS_IN_FLIGHT = Gauge(
+    "titan_llm_calls_in_flight",
+    "In-flight upstream LLM calls (llm-gateway HPA scaling signal, Vol 9 §4.3)",
+)
+
 
 def observe_usage(
     *,
@@ -88,6 +96,7 @@ def observe_error(*, provider: str, kind: str) -> None:
 
 __all__ = [
     "AGENT_TOKENS_TOTAL",
+    "LLM_CALLS_IN_FLIGHT",
     "LLM_COST_USD_TOTAL",
     "LLM_ERRORS_TOTAL",
     "LLM_FALLBACKS_TOTAL",

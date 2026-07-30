@@ -242,6 +242,11 @@ check-runbook-links:
 check-k8s:
 	cd $(API_DIR) && uv run python scripts/check_k8s.py
 
+# OPS-009 (§4.3): autoscaling consistency — HPA custom metrics are real app gauges, the KEDA
+# worker scaler matches the code's stream/group, worker drains, bounds pinned to the spec.
+check-autoscaling:
+	cd $(API_DIR) && uv run python scripts/check_autoscaling.py
+
 # OPS-002: schema-lint the K8s manifests. Needs kubeconform on PATH (CI installs it);
 # `kubectl kustomize` renders base + overlays, CRDs (CNPG/Kyverno) skipped by design.
 k8s-validate:

@@ -20,6 +20,15 @@ REQUEST_DURATION = Histogram(
     ["method", "route", "status"],
 )
 
+# In-flight HTTP requests — the api tier's HPA custom scaling signal (Vol 9 §4.3: scale on
+# http_requests_in_flight, target 50/pod). A truer load signal than CPU for I/O-bound
+# request handling. Inc/dec around every request in REDMetricsMiddleware; a prometheus-adapter
+# exposes it to the HPA custom-metrics API.
+HTTP_REQUESTS_IN_FLIGHT = Gauge(
+    "titan_http_requests_in_flight",
+    "HTTP requests currently being handled (api HPA scaling signal, Vol 9 §4.3)",
+)
+
 READYZ_DEPENDENCY_UP = Gauge(
     "titan_readyz_dependency_up",
     "1 when the dependency passed its last /readyz check, 0 when it failed",
@@ -128,11 +137,13 @@ class REDMetricsMiddleware(BaseHTTPMiddleware):
     ) -> StarletteResponse:
         started = time.perf_counter()
         status = "500"
+        HTTP_REQUESTS_IN_FLIGHT.inc()
         try:
             response = await call_next(request)
             status = str(response.status_code)
             return response
         finally:
+            HTTP_REQUESTS_IN_FLIGHT.dec()
             route = request.scope.get("route")
             if isinstance(route, Route):
                 template = route.path
