@@ -22,8 +22,11 @@ import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable
 
+import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+
+logger = structlog.get_logger("titan.runtime.leader")
 
 # Distinct from the orchestrator's xact dependency-graph key. "titanldr" as a bigint.
 WORKER_LEADER_LOCK_KEY = 0x7469_7461_6E6C_6472
@@ -108,9 +111,23 @@ async def campaign(
     lock = LeaderLock(engine, key)
     try:
         while not stop.is_set():
-            if await lock.try_acquire():
-                await on_elected(lock)
-                return
+            try:
+                if await lock.try_acquire():
+                    try:
+                        await on_elected(lock)  # returns on stop OR leadership loss
+                    finally:
+                        await lock.release()  # step down before re-contesting
+                    continue  # re-check stop; if leadership was merely lost, campaign again
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # Self-healing (like every worker loop): a transient DB/pool error during
+                # acquisition must NOT permanently kill election in this replica — log,
+                # discard any half-open connection, and retry on the next poll. Without
+                # this, a Postgres restart would silently leave the singleton loops dead
+                # until the pod is restarted.
+                logger.warning("leader.campaign_error", exc_info=True)
+                await lock.release()
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(stop.wait(), timeout=poll_seconds)
     finally:

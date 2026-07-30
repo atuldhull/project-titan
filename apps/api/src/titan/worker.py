@@ -14,6 +14,8 @@ gauges are scrapeable (TITAN-BCK-011).
 
 import asyncio
 import contextlib
+import os
+import socket
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -48,6 +50,7 @@ from titan.runs.coordinator import (
 from titan.runs.executor import StubExecutor
 from titan.runs.live_executor import LiveExecutor, make_role_resolver
 from titan.runs.storage import FilesystemStorage
+from titan.runtime.leader import LeaderLock, campaign
 from titan.runtime.service import build_runtime
 from titan.settings import get_settings
 from titan.vault import age as vault_age
@@ -298,7 +301,13 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
         target.write_bytes(data)
 
     stop = asyncio.Event()
-    consumer_name = "titan-worker-1"
+    # Each replica needs a UNIQUE consumer name so the SCALABLE consumer-group loops
+    # (executor slots, results, memory embedder + their reapers) split work across
+    # replicas instead of colliding on one identity (Redis treats same-named consumers
+    # as one). The SINGLETON loops (domain consumer, WS fan-out, outbox/ingest relays,
+    # periodic reconcilers) run in ONLY the elected leader (leader.campaign, §8.1) — a
+    # single consumer preserves per-project ordering and the reconcilers are one-per-cluster.
+    worker_id = f"{socket.gethostname()}-{os.getpid()}"
     # The reaper must only reclaim GENUINELY dead workers: a live worker holds an
     # in-flight run's message for up to the soft timeout, so min-idle exceeds it.
     reaper_min_idle_ms = int((settings.run_soft_timeout_seconds + 60.0) * 1000)
@@ -307,42 +316,46 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
     start_http_server(METRICS_PORT)  # /metrics for DLQ + stream-depth gauges
     logger.info(
         "worker.start",
-        consumers=[
-            "outbox-drainer",
-            "domain-consumer",
-            "reaper",
-            "ws-fanout",
+        worker_id=worker_id,
+        scalable=[
             "runs-executor",
             "runs-execute-reaper",
             "runs-results",
             "runs-results-reaper",
-            "memory-ingest-relay",
             "memory-embedder",
             "memory-ingest-reaper",
+        ],
+        leader_only=[
+            "outbox-drainer",
+            "domain-consumer",
+            "domain-reaper",
+            "ws-fanout",
+            "memory-ingest-relay",
             "pipeline-reconciler",
             "clarification-timeout-reaper",
+            "blocker-sweeper",
+            "artifact-reconciler",
+            "secret-expiry-monitor",
+            "audit-maintenance",
+            "redaction-maintenance",
         ],
         worker_concurrency=settings.worker_concurrency,
         metrics_port=METRICS_PORT,
     )
-    tasks = [
-        asyncio.create_task(
-            run_drainer(drainer, stop=stop, idle_seconds=settings.outbox_drain_idle_seconds)
-        ),
-        asyncio.create_task(
-            run_domain_consumer(engine, bus, consumer_name, stop=stop, redis=redis)
-        ),
-        asyncio.create_task(run_reaper(engine, bus, consumer_name, stop=stop, redis=redis)),
-        asyncio.create_task(
-            realtime.run_ws_fanout(bus, ws_fanout, f"{consumer_name}-ws", stop=stop)
-        ),
+    # ---- SCALABLE loops: run in EVERY replica, each with a UNIQUE consumer name so a
+    # Redis consumer group splits work across replicas (the §4.3 KEDA scaling path).
+    # Parallel results are safe NOT via an advisory lock but via the guarded conditional
+    # UPDATE in transition_status (`WHERE id=:id AND status=:from`): a duplicate/racing
+    # result loses the row-lock race, matches 0 rows, and nacks as a no-op. Reapers use
+    # atomic XAUTOCLAIM (idle reset on claim). Do NOT drop that WHERE-status guard.
+    scalable = [
         asyncio.create_task(
             run_executor_loop(
                 engine,
                 bus,
                 storage,
                 executor,
-                consumer_name,
+                worker_id,
                 stop=stop,
                 concurrency=settings.worker_concurrency,
                 soft_timeout=settings.run_soft_timeout_seconds,
@@ -357,7 +370,7 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
                 bus,
                 storage,
                 executor,
-                consumer_name,
+                worker_id,
                 stop=stop,
                 soft_timeout=settings.run_soft_timeout_seconds,
                 min_idle_ms=reaper_min_idle_ms,
@@ -365,37 +378,71 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
                 paused=lambda: flags.is_enabled(flags_service.PAUSE_ALL),
             )
         ),
-        asyncio.create_task(run_results_loop(engine, bus, consumer_name, stop=stop)),
-        asyncio.create_task(run_results_reaper(engine, bus, consumer_name, stop=stop)),
-        asyncio.create_task(memory.run_ingest_relay(ingest_relay, stop=stop)),
-        asyncio.create_task(memory.run_embedder(embedder, bus, consumer_name, stop=stop)),
-        asyncio.create_task(memory.run_ingest_reaper(embedder, bus, consumer_name, stop=stop)),
-        asyncio.create_task(run_pipeline_reconciler(engine, stop=stop)),
-        asyncio.create_task(run_clarification_timeout_reaper(engine, stop=stop)),
-        asyncio.create_task(run_blocker_sweeper(engine, stop=stop)),
-        asyncio.create_task(run_artifact_reconciler(engine, stop=stop)),
-        asyncio.create_task(run_secret_expiry_monitor(engine, stop=stop)),
-        asyncio.create_task(
-            run_audit_maintenance(
-                engine,
-                encrypt=audit_encrypt,
-                archive=_audit_archive,
-                stop=stop,
-                interval=settings.audit_maintenance_interval_seconds,
-                online_days=settings.audit_online_days,
-            )
-        ),
-        asyncio.create_task(
-            vault_inventory.run_redaction_maintenance(
-                engine,
-                vault_provider,
-                vault_store,
-                redaction_reporter,
-                service="titan-worker",
-                stop=stop,
-            )
-        ),
+        asyncio.create_task(run_results_loop(engine, bus, worker_id, stop=stop)),
+        asyncio.create_task(run_results_reaper(engine, bus, worker_id, stop=stop)),
+        asyncio.create_task(memory.run_embedder(embedder, bus, worker_id, stop=stop)),
+        asyncio.create_task(memory.run_ingest_reaper(embedder, bus, worker_id, stop=stop)),
     ]
+
+    # ---- SINGLETON loops: only the elected leader runs these (§8.1). The domain
+    # consumer + WS fan-out must be a SINGLE consumer to preserve per-project seq order;
+    # the outbox/ingest relays and the periodic reconcilers are one-per-cluster.
+    async def _leader_singletons(lock: LeaderLock) -> None:
+        singletons = [
+            asyncio.create_task(
+                run_drainer(drainer, stop=stop, idle_seconds=settings.outbox_drain_idle_seconds)
+            ),
+            asyncio.create_task(run_domain_consumer(engine, bus, "leader", stop=stop, redis=redis)),
+            asyncio.create_task(run_reaper(engine, bus, "leader", stop=stop, redis=redis)),
+            asyncio.create_task(realtime.run_ws_fanout(bus, ws_fanout, "leader-ws", stop=stop)),
+            asyncio.create_task(memory.run_ingest_relay(ingest_relay, stop=stop)),
+            asyncio.create_task(run_pipeline_reconciler(engine, stop=stop)),
+            asyncio.create_task(run_clarification_timeout_reaper(engine, stop=stop)),
+            asyncio.create_task(run_blocker_sweeper(engine, stop=stop)),
+            asyncio.create_task(run_artifact_reconciler(engine, stop=stop)),
+            asyncio.create_task(run_secret_expiry_monitor(engine, stop=stop)),
+            asyncio.create_task(
+                run_audit_maintenance(
+                    engine,
+                    encrypt=audit_encrypt,
+                    archive=_audit_archive,
+                    stop=stop,
+                    interval=settings.audit_maintenance_interval_seconds,
+                    online_days=settings.audit_online_days,
+                )
+            ),
+            asyncio.create_task(
+                vault_inventory.run_redaction_maintenance(
+                    engine,
+                    vault_provider,
+                    vault_store,
+                    redaction_reporter,
+                    service="titan-worker",
+                    stop=stop,
+                )
+            ),
+        ]
+        logger.info("worker.leader_elected", worker_id=worker_id, singletons=len(singletons))
+        try:
+            # Hold leadership until shutdown OR the lock connection drops. alive() both
+            # heartbeats the held connection and detects a drop, so a silent connection
+            # loss stands us down (campaign then re-contests). A genuine split-brain (two
+            # lock HOLDERS) is impossible — a session advisory lock frees only when the
+            # session ends — so the only failure mode is a stale ex-leader still running
+            # its singletons for up to one poll interval after the lock frees; keep that
+            # window short (2s). Every singleton is idempotent, so the overlap is
+            # self-healing, never persistent corruption.
+            while not stop.is_set() and await lock.alive():
+                await _sleep_or_stop(stop, 2.0)
+        finally:
+            for task in singletons:
+                task.cancel()
+            await asyncio.gather(*singletons, return_exceptions=True)
+
+    leader_task = asyncio.create_task(
+        campaign(engine, _leader_singletons, stop=stop, poll_seconds=10.0)
+    )
+    tasks = [*scalable, leader_task]
     try:
         # return_exceptions: a loop that somehow escapes its own guard cannot
         # cancel its siblings; we log and keep the rest running.

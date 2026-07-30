@@ -84,6 +84,74 @@ def test_campaign_elects_then_stops(migrated_engine: Any, schema_url: str) -> No
     run_async(scenario)
 
 
+def test_campaign_recontests_after_leadership_loss(migrated_engine: Any, schema_url: str) -> None:
+    # if on_elected returns because leadership was LOST (not because stop was set), campaign
+    # must re-acquire — else a single worker never recovers its singleton loops after a blip.
+    async def scenario() -> None:
+        engine = create_async_engine(schema_url, poolclass=NullPool)
+        try:
+            stop, reelected = asyncio.Event(), asyncio.Event()
+            calls = 0
+
+            async def on_elected(_lock: LeaderLock) -> None:
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    return  # simulate a leadership loss without stopping
+                reelected.set()
+                await stop.wait()
+
+            task = asyncio.create_task(
+                campaign(engine, on_elected, stop=stop, key=_KEY, poll_seconds=0.05)
+            )
+            await asyncio.wait_for(reelected.wait(), timeout=5)
+            assert calls >= 2
+            stop.set()
+            await asyncio.wait_for(task, timeout=5)
+        finally:
+            await engine.dispose()
+
+    run_async(scenario)
+
+
+def test_campaign_survives_transient_try_acquire_error(
+    migrated_engine: Any, schema_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A transient DB/pool error during acquisition must NOT permanently kill election in
+    # this replica (else a Postgres restart silently leaves the singleton loops dead).
+    real = LeaderLock.try_acquire
+    calls = {"n": 0}
+
+    async def flaky(self: LeaderLock) -> bool:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("transient DB error")
+        return await real(self)
+
+    monkeypatch.setattr(LeaderLock, "try_acquire", flaky)
+
+    async def scenario() -> None:
+        engine = create_async_engine(schema_url, poolclass=NullPool)
+        try:
+            stop, elected = asyncio.Event(), asyncio.Event()
+
+            async def on_elected(_lock: LeaderLock) -> None:
+                elected.set()
+                await stop.wait()
+
+            task = asyncio.create_task(
+                campaign(engine, on_elected, stop=stop, key=_KEY, poll_seconds=0.05)
+            )
+            await asyncio.wait_for(elected.wait(), timeout=5)  # elected despite the first error
+            assert calls["n"] >= 2
+            stop.set()
+            await asyncio.wait_for(task, timeout=5)
+        finally:
+            await engine.dispose()
+
+    run_async(scenario)
+
+
 def test_campaign_takes_over_after_holder_releases(migrated_engine: Any, schema_url: str) -> None:
     async def scenario() -> None:
         engine = create_async_engine(schema_url, poolclass=NullPool)

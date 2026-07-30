@@ -175,14 +175,14 @@ metadata:
   name: worker
   labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: worker, app.kubernetes.io/part-of: titan }
 spec:
-  # HONEST HA/scaling note: `python -m titan.worker` currently hosts BOTH the scalable task
-  # executors AND singleton loops — the domain-stream→pub/sub fan-out (a single consumer
-  # preserves per-project seq order) and the periodic reconcilers, all under a hardcoded
-  # consumer name. Running >1 replica today would split that ordered consumer and duplicate
-  # WS frames. So base runs 1 replica (K8s reschedules on failure). Horizontal scaling to
-  # §4.3's 2–50 (Phase 80 KEDA) REQUIRES first leader-electing / separating those singleton
-  # loops from the executor loop — a documented app gap, not a manifest one.
-  replicas: 1
+  # HA/scaling: `python -m titan.worker` runs the SCALABLE consumer-group loops (executor
+  # slots, results, memory embedder + reapers) in EVERY replica with a per-replica consumer
+  # name, and the SINGLETON loops (domain-stream→pub/sub fan-out preserving per-project
+  # order; the periodic reconcilers) in ONLY the elected leader via a Postgres advisory-lock
+  # leader election (titan.runtime.leader). So >1 replica is safe — 2 as a baseline; Phase
+  # 80's KEDA scales it to §4.3's 2–50 on queue depth. A dead leader's lock frees and a
+  # surviving replica takes over the singletons automatically.
+  replicas: 2
   selector:
     matchLabels: { app.kubernetes.io/component: worker, app.kubernetes.io/part-of: titan }
   template:
