@@ -75,11 +75,17 @@ jobs:
     env:
       # Disposable DB for the schema/cycle suites (pytest -m schema)
       TITAN_TEST_DATABASE_URL: postgresql+asyncpg://titan:titan@localhost:5432/titan_test
+      # NATS JetStream QueueBus conformance (Phase 81, FND-051): with this set + a server
+      # up, tests/test_events_nats_live.py RUNS (not skips) against a real broker.
+      TITAN_TEST_NATS_URL: nats://127.0.0.1:4222
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      # A service container can't pass `-js`, so start NATS with JetStream as a step.
+      - name: Start NATS JetStream
+        run: docker run -d --name nats -p 4222:4222 nats:2.10-alpine -js
       - run: cd apps/api && uv sync --frozen
       # pytest carries the coverage gate: --cov-fail-under=80 (TITAN-FND-064)
       - run: make test

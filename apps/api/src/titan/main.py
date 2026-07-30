@@ -460,6 +460,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.state.watchdog = None
         application.state.watchdog_stop = None
         application.state.watchdog_task = None
+        application.state.watchdog_bus = None
         if active_settings.watchdog_enabled:
             agent_runtime = runtime_service.build_runtime(
                 active_settings,
@@ -474,15 +475,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 http=application.state.http,
                 reranker=application.state.memory_reranker,
             )
-            watchdog = runtime_service.build_watchdog(
-                agent_runtime,
-                events_service.build_bus(
-                    application.state.redis,
-                    signer=application.state.bus_signer,
-                    on_invalid=application.state.bus_invalid_hook,
-                    maxlen=active_settings.stream_maxlen,
-                ),
+            # QUEUE_BACKEND selects Redis Streams (default) or NATS JetStream (FND-051).
+            application.state.watchdog_bus = await events_service.connect_bus(
+                backend=active_settings.queue_backend,
+                redis=application.state.redis,
+                nats_url=active_settings.nats_url,
+                signer=application.state.bus_signer,
+                on_invalid=application.state.bus_invalid_hook,
+                maxlen=active_settings.stream_maxlen,
             )
+            watchdog = runtime_service.build_watchdog(agent_runtime, application.state.watchdog_bus)
             watchdog.register()
             application.state.watchdog = watchdog
             application.state.watchdog_stop = asyncio.Event()
@@ -516,6 +518,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await application.state.watchdog_task
                 await application.state.watchdog.stop()
+                _wbus_aclose = getattr(application.state.watchdog_bus, "aclose", None)
+                if _wbus_aclose is not None:
+                    await _wbus_aclose()  # close the NATS connection (Redis: n/a)
             for task in list(application.state.intake_tasks):  # cancel in-flight CEO turns
                 task.cancel()
             # Stop the redaction maintenance loop via its event (NOT cancel):

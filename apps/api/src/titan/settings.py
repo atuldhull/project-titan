@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     qdrant_url: str = "http://localhost:6333"
 
+    # QueueBus backend (ADR-005 / FND-051): "redis" (Redis Streams, MVP default) or "nats"
+    # (NATS JetStream, the documented scale-out past ~5,000 tasks/min, §9). A config-only swap —
+    # identical Envelope + QueueBus Protocol, no domain-code change.
+    queue_backend: str = "redis"
+    nats_url: str = "nats://localhost:4222"
+
     # §6.1 reranker mode (TITAN_RERANKER). "on" = in-process bge-reranker-v2-m3
     # cross-encoder (needs the optional `rerank` extra). "llm" = listwise rerank
     # through the gateway's cheapest chat model (§6.1's stated fallback). "off"

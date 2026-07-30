@@ -241,8 +241,15 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
 
     # TITAN-OPS-020: cap every stream at ~1M (approximate trim); the ledger, not
     # the stream, is the durability boundary.
-    bus = events.build_bus(
-        redis, signer=signer, on_invalid=_audit_invalid_envelope, maxlen=settings.stream_maxlen
+    # QUEUE_BACKEND selects Redis Streams (default) or NATS JetStream (FND-051) — same
+    # Protocol/envelopes, so every loop below is backend-agnostic.
+    bus = await events.connect_bus(
+        backend=settings.queue_backend,
+        redis=redis,
+        nats_url=settings.nats_url,
+        signer=signer,
+        on_invalid=_audit_invalid_envelope,
+        maxlen=settings.stream_maxlen,
     )
     # Phase 72: the worker reads the SAME feature-flag store the API writes. The
     # dispatch loop consults agents.pause_all every cycle; a pub/sub subscriber
@@ -457,6 +464,9 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.gather(*tasks, return_exceptions=True)
         await flags_subscriber.stop()
+        _bus_aclose = getattr(bus, "aclose", None)
+        if _bus_aclose is not None:
+            await _bus_aclose()  # close the NATS connection when QUEUE_BACKEND=nats (Redis: n/a)
         await llm_gateway.aclose()
         await qdrant_http.aclose()
         await redis.aclose()
