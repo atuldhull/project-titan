@@ -1,23 +1,36 @@
-# Stateless app tiers (Vol 9 §4.2 topology, §4.4 resources, §8.1 HA). Every pod carries
-# liveness+readiness+startup probes (OPS-008): api/orchestrator/llm-gateway readiness is
-# /readyz (503 when Postgres/Redis/Qdrant are down ⇒ a bad DSN STALLS the rollout, never
-# an outage); the worker has no HTTP server, so its readiness is `titan health` (same
-# dep check). Anti-affinity + zone spread keep replicas off one node/zone. Non-root,
-# read-only rootfs, all caps dropped. Images are pinned version tags (never :latest);
-# the release pipeline rewrites them to @sha256 digests at deploy (see overlays/production).
+# Stateless app tiers (Vol 9 §4.2 topology, §4.4 resources, §8.1 HA; §5.1 blue/green).
+# Every pod carries liveness+readiness+startup probes (OPS-008): api/orchestrator/llm-gateway
+# readiness is /readyz (503 when Postgres/Redis/Qdrant are down ⇒ a bad DSN STALLS the
+# rollout, never an outage); the worker has no HTTP server, so its readiness is `titan health`
+# (same dep check). Anti-affinity + zone spread keep replicas off one node/zone. Non-root,
+# read-only rootfs, all caps dropped. Images are pinned version tags (never :latest); the
+# release pipeline rewrites them to @sha256 digests at deploy (see overlays/production).
+#
+# BLUE/GREEN (§5.1, OPS-010): each stateless tier is deployed per COLOR. The git-canonical
+# active color is BLUE, so every Deployment here is `<svc>-blue` and carries `color: blue` in
+# its metadata labels, its Deployment `selector.matchLabels`, and its pod template labels. The
+# color is IN the selector so blue and green Deployments own DISJOINT pod sets (two Deployments
+# sharing a selector would fight over the same pods). The stable Service selects the ACTIVE
+# color (`color: blue` here); `ops/scripts/release.sh` renders the idle color, flips the stable
+# Service selector atomically, then scales the old color to zero. PDBs/NetworkPolicies select on
+# the COMPONENT label only (no color) so they apply to BOTH colors — correct, both need the same
+# budgets and network rules. The GREEN Deployments + per-color preview Services live nowhere in
+# git by default: green is script-rendered from the live blue Deployment at deploy time and
+# scaled to zero between releases (§5.1 "manifests kept" = the blue template is the source).
+# Preview Services (both colors, for idle-color smoke tests) are in bluegreen.yaml.
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: frontend
-  labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: frontend, app.kubernetes.io/part-of: titan }
+  name: frontend-blue
+  labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: frontend, app.kubernetes.io/part-of: titan, color: blue }
 spec:
   replicas: 2
   selector:
-    matchLabels: { app.kubernetes.io/component: frontend, app.kubernetes.io/part-of: titan }
+    matchLabels: { app.kubernetes.io/component: frontend, app.kubernetes.io/part-of: titan, color: blue }
   template:
     metadata:
-      labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: frontend, app.kubernetes.io/part-of: titan }
+      labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: frontend, app.kubernetes.io/part-of: titan, color: blue }
     spec:
       securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
       topologySpreadConstraints:
@@ -53,22 +66,23 @@ metadata:
   name: frontend
   labels: { app.kubernetes.io/part-of: titan }
 spec:
+  # Stable Service — selects the ACTIVE color (release.sh patches .spec.selector.color at flip).
   type: ClusterIP
-  selector: { app.kubernetes.io/component: frontend, app.kubernetes.io/part-of: titan }
+  selector: { app.kubernetes.io/component: frontend, app.kubernetes.io/part-of: titan, color: blue }
   ports: [{ name: http, port: 80, targetPort: 3000 }]
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: api
-  labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: api, app.kubernetes.io/part-of: titan }
+  name: api-blue
+  labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: api, app.kubernetes.io/part-of: titan, color: blue }
 spec:
   replicas: 3
   selector:
-    matchLabels: { app.kubernetes.io/component: api, app.kubernetes.io/part-of: titan }
+    matchLabels: { app.kubernetes.io/component: api, app.kubernetes.io/part-of: titan, color: blue }
   template:
     metadata:
-      labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: api, app.kubernetes.io/part-of: titan }
+      labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: api, app.kubernetes.io/part-of: titan, color: blue }
     spec:
       securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
       topologySpreadConstraints:
@@ -107,14 +121,14 @@ metadata:
   labels: { app.kubernetes.io/part-of: titan }
 spec:
   type: ClusterIP
-  selector: { app.kubernetes.io/component: api, app.kubernetes.io/part-of: titan }
+  selector: { app.kubernetes.io/component: api, app.kubernetes.io/part-of: titan, color: blue }
   ports: [{ name: http, port: 8000, targetPort: 8000 }]
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: orchestrator
-  labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: orchestrator, app.kubernetes.io/part-of: titan }
+  name: orchestrator-blue
+  labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: orchestrator, app.kubernetes.io/part-of: titan, color: blue }
 spec:
   # HONEST HA note: at MVP the orchestrator runs the titan-core app (its Dockerfile CMD is
   # the same uvicorn entrypoint as api — the standalone scheduler is a documented future
@@ -124,10 +138,10 @@ spec:
   # K8s reschedules it on failure. Bumping to 2 is safe only once real leader election lands.
   replicas: 1
   selector:
-    matchLabels: { app.kubernetes.io/component: orchestrator, app.kubernetes.io/part-of: titan }
+    matchLabels: { app.kubernetes.io/component: orchestrator, app.kubernetes.io/part-of: titan, color: blue }
   template:
     metadata:
-      labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: orchestrator, app.kubernetes.io/part-of: titan }
+      labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: orchestrator, app.kubernetes.io/part-of: titan, color: blue }
     spec:
       securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
       topologySpreadConstraints:
@@ -166,14 +180,14 @@ metadata:
   labels: { app.kubernetes.io/part-of: titan }
 spec:
   type: ClusterIP
-  selector: { app.kubernetes.io/component: orchestrator, app.kubernetes.io/part-of: titan }
+  selector: { app.kubernetes.io/component: orchestrator, app.kubernetes.io/part-of: titan, color: blue }
   ports: [{ name: http, port: 8000, targetPort: 8000 }]
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: worker
-  labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: worker, app.kubernetes.io/part-of: titan }
+  name: worker-blue
+  labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: worker, app.kubernetes.io/part-of: titan, color: blue }
 spec:
   # HA/scaling: `python -m titan.worker` runs the SCALABLE consumer-group loops (executor
   # slots, results, memory embedder + reapers) in EVERY replica with a per-replica consumer
@@ -181,13 +195,15 @@ spec:
   # order; the periodic reconcilers) in ONLY the elected leader via a Postgres advisory-lock
   # leader election (titan.runtime.leader). So >1 replica is safe — 2 as a baseline; Phase
   # 80's KEDA scales it to §4.3's 2–50 on queue depth. A dead leader's lock frees and a
-  # surviving replica takes over the singletons automatically.
+  # surviving replica takes over the singletons automatically. Blue/green: the worker flips
+  # by scaling the new color up (its KEDA scaler) and draining the old to zero — NOT via a
+  # Service selector (workers are pull-based), so the worker Service stays color-agnostic.
   replicas: 2
   selector:
-    matchLabels: { app.kubernetes.io/component: worker, app.kubernetes.io/part-of: titan }
+    matchLabels: { app.kubernetes.io/component: worker, app.kubernetes.io/part-of: titan, color: blue }
   template:
     metadata:
-      labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: worker, app.kubernetes.io/part-of: titan }
+      labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: worker, app.kubernetes.io/part-of: titan, color: blue }
     spec:
       # graceful drain on scale-down: finish the current task, ack, exit (Vol 9 §4.3).
       terminationGracePeriodSeconds: 120
@@ -234,7 +250,7 @@ metadata:
   labels: { app.kubernetes.io/part-of: titan }
 spec:
   # headless: workers are pull-based (no inbound routing); the Service is for metrics
-  # discovery only.
+  # discovery only. Color-AGNOSTIC on purpose — Prometheus scrapes BOTH colors during a flip.
   clusterIP: None
   selector: { app.kubernetes.io/component: worker, app.kubernetes.io/part-of: titan }
   ports: [{ name: metrics, port: 9100, targetPort: 9100 }]
@@ -242,15 +258,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: llm-gateway
-  labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: llm-gateway, app.kubernetes.io/part-of: titan }
+  name: llm-gateway-blue
+  labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: llm-gateway, app.kubernetes.io/part-of: titan, color: blue }
 spec:
   replicas: 2
   selector:
-    matchLabels: { app.kubernetes.io/component: llm-gateway, app.kubernetes.io/part-of: titan }
+    matchLabels: { app.kubernetes.io/component: llm-gateway, app.kubernetes.io/part-of: titan, color: blue }
   template:
     metadata:
-      labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: llm-gateway, app.kubernetes.io/part-of: titan }
+      labels: { app.kubernetes.io/name: titan, app.kubernetes.io/component: llm-gateway, app.kubernetes.io/part-of: titan, color: blue }
     spec:
       securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
       topologySpreadConstraints:
@@ -270,6 +286,10 @@ spec:
           # The provider-agnostic gateway is a library invoked in-process; per §4.2 it is
           # its own Deployment for independent scaling, run from the titan-api image with
           # the gateway role until a dedicated image exists (ADR-008: reuse images).
+          # HONEST SCOPE: TITAN_ROLE is NOT yet read by the app (settings has no `role` field),
+          # so these pods run the FULL titan-api app, not a scoped gateway — the env var is a
+          # forward-declaration for the eventual gateway extraction (see the netpol egress gap).
+          # `args` restates the Dockerfile CMD (harmless/explicit).
           image: ghcr.io/titan-platform/titan-api:0.1.0
           args: ["uvicorn", "titan.main:app", "--host", "0.0.0.0", "--port", "8000"]
           env: [{ name: TITAN_ROLE, value: llm-gateway }]
@@ -294,5 +314,5 @@ metadata:
   labels: { app.kubernetes.io/part-of: titan }
 spec:
   type: ClusterIP
-  selector: { app.kubernetes.io/component: llm-gateway, app.kubernetes.io/part-of: titan }
+  selector: { app.kubernetes.io/component: llm-gateway, app.kubernetes.io/part-of: titan, color: blue }
   ports: [{ name: http, port: 8000, targetPort: 8000 }]

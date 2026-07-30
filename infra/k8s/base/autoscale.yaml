@@ -9,18 +9,23 @@
 # custom-metrics API (a cluster prereq); the KEDA ScaledObject requires the KEDA operator.
 # kubeconform validates the built-in HPAs; the KEDA CRD is skipped by design.
 #
-# BLUE/GREEN interaction (Phase 80 part 2, §5.1): these scaleTargetRefs are the single
-# Deployment names. When Deployments split by color, the autoscalers must be templated
-# per-color (targeting <svc>-<color>) AND the idle color's autoscaler removed at flip, or an
-# HPA minReplicas will re-inflate the color that STEP-4 scales to zero. Handle at the split.
+# BLUE/GREEN (§5.1, OPS-010; the Phase-80-part-1 F4 fix): the autoscalers are TEMPLATED
+# PER-COLOR. Each targets the concrete `<svc>-<color>` Deployment (a bare `scaleTargetRef:
+# api` would NOT resolve now that the Deployments are `api-blue`/`api-green`), and each carries
+# a `color` label so `release.sh` can drop the retired color's autoscaler with
+# `kubectl delete hpa,scaledobject -l color=<old>` — which it MUST do BEFORE scaling that color
+# to zero, or the HPA's minReplicas would immediately re-inflate the color STEP-4 is retiring.
+# Only the ACTIVE (blue) color's autoscalers are committed; `release.sh` renders the idle
+# color's from these at flip time and deletes them again at scale-down. So the committed set is
+# self-consistent (no autoscaler ever points at an idle, replicas-0 color).
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: frontend
-  labels: { app.kubernetes.io/part-of: titan }
+  name: frontend-blue
+  labels: { app.kubernetes.io/part-of: titan, color: blue }
 spec:
-  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: frontend }
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: frontend-blue }
   minReplicas: 2
   maxReplicas: 6
   metrics:
@@ -33,10 +38,10 @@ spec:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: api
-  labels: { app.kubernetes.io/part-of: titan }
+  name: api-blue
+  labels: { app.kubernetes.io/part-of: titan, color: blue }
 spec:
-  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: api }
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: api-blue }
   minReplicas: 3
   maxReplicas: 12
   metrics:
@@ -53,10 +58,10 @@ spec:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: llm-gateway
-  labels: { app.kubernetes.io/part-of: titan }
+  name: llm-gateway-blue
+  labels: { app.kubernetes.io/part-of: titan, color: blue }
 spec:
-  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: llm-gateway }
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: llm-gateway-blue }
   minReplicas: 2
   maxReplicas: 8
   # CPU-only — HONEST scoping. The provider-agnostic gateway is an in-process LIBRARY
@@ -80,11 +85,11 @@ spec:
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: worker
-  labels: { app.kubernetes.io/part-of: titan }
+  name: worker-blue
+  labels: { app.kubernetes.io/part-of: titan, color: blue }
 spec:
   scaleTargetRef:
-    name: worker
+    name: worker-blue
   minReplicaCount: 2
   maxReplicaCount: 50
   cooldownPeriod: 300

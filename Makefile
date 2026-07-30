@@ -247,6 +247,16 @@ check-k8s:
 check-autoscaling:
 	cd $(API_DIR) && uv run python scripts/check_autoscaling.py
 
+# OPS-010/011 (§5.1): blue/green topology consistency — Deployments color-partitioned, stable/
+# preview Services consistent, every autoscaler resolves to a colored Deployment (the F4 fix).
+check-bluegreen:
+	cd $(API_DIR) && uv run python scripts/check_bluegreen.py
+
+# OPS-010/011: behavioural test of the blue/green scripts (release/rollback/slo-watch) against a
+# fake kubectl — atomic single flip, F4 delete-before-scale ordering, auto-rollback + fail-safe.
+test-bluegreen-scripts:
+	bash ops/scripts/test_release.sh
+
 # OPS-002: schema-lint the K8s manifests. Needs kubeconform on PATH (CI installs it);
 # `kubectl kustomize` renders base + overlays, CRDs (CNPG/Kyverno) skipped by design.
 k8s-validate:

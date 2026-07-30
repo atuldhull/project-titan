@@ -23,17 +23,23 @@
    ```
 2. **Migrate (expand).** The `titan-migrate` pre-deploy job applies additive migrations under
    the advisory lock (Phase 76). Confirm it succeeded before any pod flips.
-3. **Roll out the idle color (green).** The pipeline deploys green at the signed digests
-   (never `:latest`). Watch pods reach Ready — readiness gates on DB/Redis health, so a bad
+3. **Roll out the idle color (green).** `ops/scripts/release.sh <version>` renders the idle
+   color from the live active color at the signed digest (never `:latest`), applies it with its
+   per-color autoscalers, and waits for rollout — readiness gates on DB/Redis health, so a bad
    config **stalls** here instead of taking traffic.
-4. **Smoke on the preview URL.** The pipeline runs the smoke suite against green's preview
-   service before any user traffic. Confirm green in the run.
-5. **Approve the flip.** With smoke green, approve the environment gate. The Service selector
-   flips atomically from blue → green.
-6. **Watch the SLO burn panel for 30 minutes** (SLO dashboard). Deploy annotation should show
-   on Platform Overview; error rate and p95 flat.
-7. **Scale down the old color** once the window is clean; the idle color scales toward zero
-   between releases (2× capacity is only held during the window — ADR-OPS-1).
+4. **Smoke on the preview URL.** `release.sh` runs the smoke suite against green's preview
+   Service (`<svc>-green`) before any user traffic; a smoke failure aborts with **no flip** and
+   retires the idle color. Confirm green in the run.
+5. **Flip.** With smoke green, `release.sh` patches each stable Service selector — an atomic,
+   sub-second flip from blue → green (one `kubectl patch svc` per tier, visible in the log).
+6. **Watch the SLO burn panel for 30 minutes** (SLO dashboard). `release.sh` runs
+   `slo-watch.sh` for the window; a **confirmed fast-burn auto-rolls-back** via `rollback.sh`
+   (no human action) and the release exits non-zero. Deploy annotation shows on Platform
+   Overview; error rate and p95 flat.
+7. **Scale down the old color.** Once the window is clean, `release.sh` retires the old color —
+   it **deletes that color's autoscalers first, then scales its Deployments to 0** (order
+   matters: a live HPA would re-inflate the color being retired). 2× capacity is only held
+   during the window (ADR-OPS-1).
 
 ## Verification
 

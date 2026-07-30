@@ -10,10 +10,11 @@ resources:
   - ../../base
   - namespace.yaml
 
+# Deployments are color-suffixed (blue/green, §5.1) — the git-canonical active color is blue.
 replicas:
-  - { name: frontend, count: 1 }
-  - { name: api, count: 1 }
-  - { name: llm-gateway, count: 1 }
+  - { name: frontend-blue, count: 1 }
+  - { name: api-blue, count: 1 }
+  - { name: llm-gateway-blue, count: 1 }
 
 patches:
   - target: { kind: ConfigMap, name: titan-config }

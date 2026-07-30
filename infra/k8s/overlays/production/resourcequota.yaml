@@ -1,6 +1,15 @@
 # Caps titan-prod totals (Vol 9 §4.4) so a runaway HPA/KEDA scale-out (Phase 80: api→12,
 # worker→50, gateway→8, frontend→6) can't exhaust the cluster. Sized to hold the §4.3 max
 # fan-out plus the stateful tier with head-room.
+#
+# BLUE/GREEN CAPACITY (ADR-OPS-1 accepts 2× during a deploy): during a release BOTH colors run,
+# and — because both worker ScaledObjects trigger on the SAME `stream:runs.execute` lag (KEDA has
+# no cross-object awareness) — the worker fleet can transiently approach 2× the single-color max.
+# This quota budgets roughly ONE color's max fan-out, NOT two. Operational guidance until per-
+# color consumer groups land (an app change): run releases at low queue depth, or temporarily
+# raise this quota / cap the idle color's worker maxReplicaCount for the release window. A
+# quota-rejected worker (403 FailedCreate) stalls throughput during the SLO window and can itself
+# trip a burn — so this is a real release-time constraint, tracked, not a silent assumption.
 apiVersion: v1
 kind: ResourceQuota
 metadata:

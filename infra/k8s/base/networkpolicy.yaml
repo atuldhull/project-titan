@@ -96,6 +96,17 @@ spec:
 ---
 # Only the llm-gateway reaches external LLM providers (TCP 443 to non-cluster IPs). The
 # `except` list blocks RFC1918, link-local/IMDS (169.254), and CGNAT/pod ranges (100.64).
+#
+# HONEST GAP (needs an architecture decision, not just a manifest — the "scout the code" lesson):
+# §6.1/OPS-014 want the gateway to be the SOLE provider-egress choke point, and this policy
+# encodes that (only component=llm-gateway may egress to 0.0.0.0/0:443). But TODAY the gateway is
+# an IN-PROCESS library (titan.llm.service.build_gateway) invoked inside the worker/api pods —
+# so with this policy applied, the worker's own LLM/embedding calls to api.anthropic.com:443 are
+# DENIED (worker egress is DNS + datastores + llm-gateway:8000 only). Two coherent fixes, pick
+# one before enabling in prod: (a) EXTRACT the gateway into the real out-of-process service its
+# Deployment implies and route all app-tier LLM calls through it (preserves OPS-014); or
+# (b) grant the in-process-gateway tiers (worker/api) provider egress (weakens the OPS-014 choke
+# point). Not resolved here — flagged so the policy isn't switched on as-is.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: allow-gateway-egress-internet, labels: { app.kubernetes.io/part-of: titan } }
@@ -165,3 +176,22 @@ spec:
             matchExpressions:
               - { key: app.kubernetes.io/component, operator: In, values: [api, orchestrator, worker] }
       ports: [{ protocol: TCP, port: 8000 }]
+---
+# Observability scraping: let a namespace labelled `titan.sh/monitoring: "true"` (where Prometheus
+# + prometheus-adapter run, per Vol 8) reach the APP tiers' metrics ports — api/orchestrator/
+# llm-gateway expose /metrics on 8000, the worker on 9100. WITHOUT this, default-deny-ingress
+# blocks scraping, prometheus-adapter can't publish `titan_http_requests_in_flight`, and the api
+# custom-metric HPA silently degrades to CPU-only (the "decorative metric" Phase-80-part-1 trap).
+# Selects app tiers only (never a datastore), so check_k8s's edge-unreachable invariant holds.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-monitoring-scrape-apptiers, labels: { app.kubernetes.io/part-of: titan } }
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/component, operator: In, values: [api, orchestrator, worker, llm-gateway] }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { titan.sh/monitoring: "true" } }
+      ports: [{ protocol: TCP, port: 8000 }, { protocol: TCP, port: 9100 }]

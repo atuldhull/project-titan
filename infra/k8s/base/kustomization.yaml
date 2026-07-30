@@ -8,6 +8,7 @@ kind: Kustomization
 resources:
   - config.yaml
   - workloads.yaml
+  - bluegreen.yaml
   - datastores.yaml
   - migrate-job.yaml
   - ingress.yaml
