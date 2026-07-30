@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars and set for your environment. Cloud-agnostic — `cloud` only selects
+# which per-cloud module implementation an operator wires behind each interface.
+cloud              = "aws"
+environment        = "production"
+region             = "us-east-1"
+cluster_name       = "titan"
+kubernetes_version = "1.30"
+dns_zone           = "titan.example.com"
+
+# node_pools / backup_buckets / dns_records default to the §4.4/§8.2 sets in variables.tf;
+# override here only to change capacity, retention, or hostnames.

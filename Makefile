@@ -257,6 +257,13 @@ check-bluegreen:
 test-bluegreen-scripts:
 	bash ops/scripts/test_release.sh
 
+# OPS-019 (Vol 9 §2): validate the cloud-agnostic Terraform (fmt + offline init + validate).
+# The reference module impl uses only Terraform builtins, so init needs no providers/network.
+check-terraform:
+	terraform -chdir=infra/terraform fmt -check -recursive
+	terraform -chdir=infra/terraform init -backend=false -input=false
+	terraform -chdir=infra/terraform validate
+
 # OPS-002: schema-lint the K8s manifests. Needs kubeconform on PATH (CI installs it);
 # `kubectl kustomize` renders base + overlays, CRDs (CNPG/Kyverno) skipped by design.
 k8s-validate:

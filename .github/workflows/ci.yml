@@ -353,6 +353,17 @@ jobs:
           done
           echo "== policies =="; kustomize build infra/k8s/policies | kubeconform -ignore-missing-schemas -summary
 
+  # TITAN-OPS-019 (Phase 81, Vol 9 §2): validate the cloud-agnostic Terraform. fmt + an offline
+  # init (the reference module impl uses only Terraform builtins → no providers) + validate.
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+      - run: make check-terraform
+
   # Live-provider conformance (TITAN-INT-060 item 4): a SEPARATE, NON-BLOCKING
   # job so real API divergence is surfaced without failing the main pipeline.
   # Each provider leg self-skips when its secret is absent, so this is a no-op
