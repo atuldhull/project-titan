@@ -1,0 +1,49 @@
+manifest_version: 1
+id: titan.linear
+name: Linear Sync
+version: 1.0.0
+description: >-
+  First-party Linear two-way-sync connector (Vol 7 §6.4, TITAN-INT-043) — the GraphQL sibling of
+  the Jira connector. Mirrors TITAN tasks into Linear issues (outbound) and turns human Linear
+  activity into TITAN events (inbound). A pure plugin: reaches core only through capabilities
+  (secret + publish). Deleting this directory leaves core tests green (TITAN-INT-011).
+  NOTE (honest scope): supplies the tracker I/O, the webhook → task.* translation, and the
+  state-map + sync_conflict RESOLVER; the two-way ORCHESTRATION (mapping/last-synced persistence,
+  live TITAN task read) needs a core sync engine — see the connector README.
+author: TITAN
+license: Apache-2.0
+homepage: https://developers.linear.app/docs/graphql/working-with-the-graphql-api
+titan_api: ">=1.0,<2.0"
+runtime:
+  type: python
+  entrypoint: linear_plugin:LinearConnector
+permissions:
+  network: ["https://api.linear.app"]
+  secrets:
+    - LINEAR_API_KEY
+    - LINEAR_OAUTH_TOKEN
+    - LINEAR_API_URL
+    - LINEAR_TEAM_ID
+    - LINEAR_STATE_MAP # JSON: {"todo":"<stateId>","in_progress":"<stateId>",...}
+    - LINEAR_WEBHOOK_SECRET
+  events:
+    publish:
+      - task.comment_added
+      - task.remote_status_changed
+      - task.sync_conflict
+  scopes: [task:update]
+contributes:
+  tools:
+    - { name: linear.create_issue, risk: write, description: Create an issue for a TITAN task (embeds the titan-task marker). }
+    - { name: linear.update_issue, risk: write, description: Update an issue's state/title/description (state = transition). }
+    - { name: linear.add_comment, risk: write, description: Add a comment to an issue. }
+    - { name: linear.get_issue, risk: read, description: Get an issue by id. }
+    - { name: linear.find_by_task, risk: read, description: Find the issue mapped to a TITAN task id (description marker). }
+  webhooks:
+    # Core verifies HMAC-SHA256 over the RAW body (its only mode; a bad sig → 401 + logged).
+    # HONEST NOTE (INT-011 kept): Linear DOES HMAC-SHA256 the body — but in a `Linear-Signature`
+    # header, not the `x-hub-signature-256` core reads. A thin proxy copies the header (same
+    # scheme + secret), OR a future core `verify` header-name option. translate() is agnostic.
+    - path: /hooks/linear
+      verify: hmac-sha256
+      secret: LINEAR_WEBHOOK_SECRET
