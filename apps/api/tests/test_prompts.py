@@ -13,11 +13,13 @@ import pytest
 
 from titan.agents.definition import Authority, Escalation
 from titan.agents.loader import build_registry, load_roster
-from titan.agents.prompts import SECTION_MARKERS, build_composer
+from titan.agents.prompts import SECTION_MARKERS, PromptComposer
+from titan.evolution.resolver import EvolutionResolver
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 AGENTS_DIR = REPO_ROOT / "config" / "agents"
-PROMPTS_DIR = REPO_ROOT / "config" / "prompts"
+# Phase 83: prompts live in the SHA-pinned evolution registry, not config/prompts.
+PROMPTS_DIR = REPO_ROOT / "evolution" / "prompts"
 SAMPLE_LOCALIZATION = AGENTS_DIR / "samples" / "localization.yaml"
 
 
@@ -28,7 +30,7 @@ def roster() -> Any:
 
 @pytest.fixture(scope="module")
 def composer() -> Any:
-    return build_composer(PROMPTS_DIR)
+    return PromptComposer(EvolutionResolver.load(PROMPTS_DIR))
 
 
 def _section_indices(prompt: str) -> list[int]:

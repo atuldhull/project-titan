@@ -3,7 +3,7 @@ agent_id: qa
 display_name: QA
 tier: 3
 supervisor: pm_project
-system_prompt_template: agents/qa.j2
+system_prompt_template: qa/system.md
 
 authority:
   decides_alone:

@@ -1,0 +1,19 @@
+# /evolution/routing/policy.yaml — versioned routing policy (Vol 10 §6.4, TITAN-EVO-019).
+#
+# A routing artifact under the Evolution-Proposal flow. The OPERATIONAL resolver
+# stays canonical — config/model-policy.yaml (agent -> tier -> provider/model,
+# Phase 28) merged with config/models.yaml (alias -> provider/model, Phase 15),
+# both config-only switchable. This file is the EVOLUTION-GOVERNED declaration of
+# routing intent: a routing-optimization EP (§6.4) edits it, benchmarks it (§6.2),
+# and a human holding evolution:approve promotes it. It never bypasses the
+# operational config — it records the approved routing shape so a change is
+# reviewable, versioned, and reversible (git revert) like every other artifact.
+version: 1
+default_profile: cloud
+# (agent, task_class) -> alias overrides, populated by routing EPs once the
+# scorecard-driven quality/cost frontier (§6.4) shows a non-inferior cheaper model.
+task_class_overrides: {}
+notes: >
+  Phase 83 seeds the champion as "inherit the operational model-policy". No
+  override is active; the frontier data that would justify one is produced by the
+  Phase 84 scorecards + KPI rollup.

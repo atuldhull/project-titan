@@ -3,7 +3,7 @@ agent_id: pm_project
 display_name: Project Manager
 tier: 2
 supervisor: orchestrator
-system_prompt_template: agents/pm_project.j2
+system_prompt_template: pm_project/system.md
 
 authority:
   decides_alone:

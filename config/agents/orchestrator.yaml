@@ -3,7 +3,7 @@ agent_id: orchestrator
 display_name: Orchestrator/Planner
 tier: 1
 supervisor: ceo
-system_prompt_template: agents/orchestrator.j2
+system_prompt_template: orchestrator/system.md
 
 authority:
   decides_alone:

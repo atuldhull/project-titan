@@ -1,0 +1,180 @@
+# /evolution/manifest.yaml — the pinned, human-approved evolution champion.
+#
+# TITAN-EVO-002: the runtime resolves every evolution artifact by this manifest.
+# Each entry pins a path + content sha256 (the prompt SHA logged on every LLM
+# span) + semver + the approving EP + approved_by (a user holding
+# evolution:approve) + a signed approved_at. The orchestrator REFUSES to load
+# any artifact whose entry lacks approved_by/approved_at or whose on-disk
+# content hash does not match sha256 here (TITAN-EVO-001). Changes land only via
+# a pull request against /evolution/** (ADR-EVO-01); git revert of a change
+# restores the prior bytes byte-for-byte.
+version: 1
+base:
+  path: evolution/prompts/_base/system.md
+  sha256: 13398f1027ee0565958f9546678df9874d7ae9fbda2385d03bb7cf4e05963235
+  semver: 1.0.0
+  ep: EP-0001
+  approved_by: 00000000-0000-0000-0000-000000000083
+  approved_at: "2026-08-03T00:00:00Z"
+  diff_url: ""
+routing:
+  path: evolution/routing/policy.yaml
+  sha256: 090c2e1d4a0a07323cdabf9b5460f28fe627a3eb84046492410970b57c14e2cd
+  semver: 1.0.0
+  ep: EP-0001
+  approved_by: 00000000-0000-0000-0000-000000000083
+  approved_at: "2026-08-03T00:00:00Z"
+  diff_url: ""
+prompts:
+  architect:
+    path: evolution/prompts/architect/system.md
+    sha256: b414623b09a558971efe6e5b861e365bea132c486a7a406e59010544b124cdc5
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  ceo:
+    path: evolution/prompts/ceo/system.md
+    sha256: 979a9bebc7facdd23d025b4c54c2c85b73e7d2a4aaadba4bc36e228c506e6897
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  ceo_intake:
+    path: evolution/prompts/ceo_intake/system.md
+    sha256: 8646b25b922f17c8d049a4b1646a75f72266fbbd0f7f279011fd264ac63afd86
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  ceo_intake_clarify:
+    path: evolution/prompts/ceo_intake_clarify/system.md
+    sha256: f3a6bf46acecf89705031c9fb3de37c9f58a54f163c72557899967b2b9fdf4de
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  critic:
+    path: evolution/prompts/critic/system.md
+    sha256: b5ebdb55237a3e3f1b4a3d80f699aac842c27754f72af9433728edc267a6dcc2
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  docs:
+    path: evolution/prompts/docs/system.md
+    sha256: 35105a2a9a8d2c32f569bdf1d7000635912a2bdd60b53a89331c47f17c6fde87
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  eng_backend:
+    path: evolution/prompts/eng_backend/system.md
+    sha256: e36c896d4a2110cf8ff895e78591a893476dd55c9740dfe9c50d87934c8a2a14
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  eng_database:
+    path: evolution/prompts/eng_database/system.md
+    sha256: 5377ff38eacbb32b7b9b2b1c5a0491af732bae2797c0763b772c8f3926558fcc
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  eng_devops:
+    path: evolution/prompts/eng_devops/system.md
+    sha256: cab66993ee4f23c2c62dd609671fe6d39aa3ec309e30fa2a32eb71b6d7577845
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  eng_frontend:
+    path: evolution/prompts/eng_frontend/system.md
+    sha256: a8516f4a3b6b3da3611626509606fb8711fce61bea5078638edffc8868e71f76
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  localization:
+    path: evolution/prompts/localization/system.md
+    sha256: 5cf368cc3bc1fae5204361794a885670e7ea3935de58e77645aab57dbe8e17c3
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  memory:
+    path: evolution/prompts/memory/system.md
+    sha256: 96862b65236d7c7883cbb880fee04c59ab58c38a3aa3862c8eb30ff7a921c7e1
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  orchestrator:
+    path: evolution/prompts/orchestrator/system.md
+    sha256: 2f1f8870e12093a3bde77224e162abca32ef6496f11b14e389780cd6c98a74f2
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  pm_product:
+    path: evolution/prompts/pm_product/system.md
+    sha256: 6d46732cb828c4cc682ba28ec8ab6a02e5fed51d762398ef0ab6fd0dfe8d228c
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  pm_project:
+    path: evolution/prompts/pm_project/system.md
+    sha256: e4d2ec4248a3f0815040d19a8c9ffef8c6bbc5e29d329f207c599bcda2d25957
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  qa:
+    path: evolution/prompts/qa/system.md
+    sha256: 9c31ac3d82991d6af46a112014fb1aaffd0cf6431eb943463a9f81be3b321f8c
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  research:
+    path: evolution/prompts/research/system.md
+    sha256: 7063f8f84cc03bb7d11d6dfbd2dfbfddd64184fcedf883390b6c4438cd06abcf
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  reviewer:
+    path: evolution/prompts/reviewer/system.md
+    sha256: 7bcbd1e4a46619ddb7e978fe384ad3360265a636831f24330edc876289120936
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  security:
+    path: evolution/prompts/security/system.md
+    sha256: 0d177b48a1ac6af3735172b5948aee5e16ea70ccd72ed0dfa096a491ff2de900
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""

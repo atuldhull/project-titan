@@ -63,6 +63,10 @@ class AuditAction(enum.StrEnum):
     RATELIMIT_BLOCK = "ratelimit.block"
     SSRF_BLOCK = "ssrf.block"
     INCIDENT_TOGGLE = "incident.toggle"
+    # Vol 10 §2, Phase 83: a human approved an Evolution Proposal artifact
+    # (prompt/routing/agent-spec change). Records actor, artifact hash, diff link
+    # (TITAN-EVO-001c).
+    EVOLUTION_APPROVE = "evolution.approve"
 
 
 class Outcome(enum.StrEnum):

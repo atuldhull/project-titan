@@ -1,0 +1,18 @@
+# Code ownership → required review (ADR-EVO-01, Phase 83).
+#
+# The evolution framework's approval authenticity rests on this file PLUS branch
+# protection: a change under /evolution/** (a prompt, the manifest, routing, agent
+# specs) is a self-modification of the platform, so it MUST be reviewed and merged
+# by a human maintainer — the runtime cannot verify a GitHub merge, it can only
+# pin what the merged manifest declares (TITAN-EVO-001/002).
+#
+# OPERATOR ACTION REQUIRED: replace @titan-maintainers with your real GitHub team
+# and enable "Require review from Code Owners" branch protection on the default
+# branch, or this control is advisory only. `make check-evolution` additionally
+# enforces that every manifest approval carries a real UUID approver + signed
+# timestamp and that no prompt drifts from its pinned hash — but it cannot prove
+# the approver *decided*; branch protection is what does that.
+
+/evolution/**                 @titan-maintainers
+/evolution/manifest.yaml      @titan-maintainers
+.github/CODEOWNERS            @titan-maintainers

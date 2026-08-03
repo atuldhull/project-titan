@@ -32,7 +32,8 @@ from titan.agents.loader import (
 # apps/api/tests/<this> → parents[3] == repo root
 REPO_ROOT = Path(__file__).resolve().parents[3]
 AGENTS_DIR = REPO_ROOT / "config" / "agents"
-PROMPTS_DIR = REPO_ROOT / "config" / "prompts"
+# Phase 83: templates live in the SHA-pinned evolution registry.
+PROMPTS_DIR = REPO_ROOT / "evolution" / "prompts"
 SAMPLE_LOCALIZATION = AGENTS_DIR / "samples" / "localization.yaml"
 
 
@@ -45,7 +46,7 @@ _VALID: dict[str, Any] = {
     "display_name": "Sample",
     "tier": 3,
     "supervisor": "pm_project",
-    "system_prompt_template": "agents/sample.j2",
+    "system_prompt_template": "sample/system.md",
     "authority": {
         "decides_alone": ["thing one"],
         "must_escalate": [{"decision": "big thing", "to": ["ceo"]}],

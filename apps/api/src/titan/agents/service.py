@@ -11,6 +11,7 @@ SQLAlchemy models — cross this boundary.
 import json
 import uuid
 from datetime import datetime
+from functools import lru_cache
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
@@ -28,17 +29,18 @@ from titan.agents.definition import (
     ModelPolicy,
     roster_id_for_role,
 )
-from titan.agents.loader import RosterError, load_roster_cached
+from titan.agents.loader import RosterError, load_roster_cached, resolve_config_dir
 from titan.agents.model_policy import (
     ModelPolicyConfig,
     ModelPolicyError,
     ModelSelection,
     load_model_policy_cached,
 )
-from titan.agents.prompts import PromptComposer, build_composer
+from titan.agents.prompts import PromptComposer
 from titan.agents.registry import AgentRegistry
 from titan.db import uuid7
 from titan.events.service import STREAM_EVENTS_DOMAIN, write_event
+from titan.evolution.resolver import EvolutionResolver
 from titan.gateway.dto import JsonbDict, RejectNullFields
 from titan.gateway.pagination import Keyset, Page
 from titan.gateway.problems import ProblemException, problem_type
@@ -271,9 +273,24 @@ def get_definition(registry: AgentRegistry, agent_id: str) -> AgentDefinition:
 # ---------------------------------------------------------------------------
 
 
+@lru_cache(maxsize=4)
+def _resolver_for(prompts_dir_str: str) -> EvolutionResolver:
+    from pathlib import Path
+
+    return EvolutionResolver.load(Path(prompts_dir_str))
+
+
+def build_evolution_resolver(settings: Settings) -> EvolutionResolver:
+    """The SHA-pinned evolution resolver rooted at the prompt registry
+    (``evolution/prompts``), resolved cwd-robustly at the repo root. Process-cached
+    (the manifest is static config; ``reload()`` re-reads it after a deploy)."""
+    return _resolver_for(str(resolve_config_dir(settings.agent_prompts_dir)))
+
+
 def build_prompt_composer(settings: Settings) -> PromptComposer:
-    """The Jinja2 system-prompt composer rooted at the configured templates dir."""
-    return build_composer(settings.agent_prompts_dir)
+    """The Jinja2 system-prompt composer over the approved prompt registry
+    (Vol 10 §6.1) — the single source of truth for agent prompts."""
+    return PromptComposer(build_evolution_resolver(settings))
 
 
 def compose_system_prompt(
@@ -323,6 +340,7 @@ __all__ = [
     "RosterError",
     "agent_exists",
     "agent_in_project",
+    "build_evolution_resolver",
     "build_prompt_composer",
     "compose_system_prompt",
     "create_agent",

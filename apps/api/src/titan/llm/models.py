@@ -126,12 +126,19 @@ class ToolChoice(BaseModel):
 
 class RequestMetadata(BaseModel):
     """Attribution for routing, budgets, and audit (§8.1). ``agent_id`` is the
-    routing key consulted by ``routing.by_agent`` (e.g. ``agent.ceo``)."""
+    routing key consulted by ``routing.by_agent`` (e.g. ``agent.ceo``).
+
+    ``prompt_sha`` is the pinned content hash of the approved registry prompt that
+    produced the system message (Vol 10 §6.1, TITAN-EVO-015): the gateway logs it
+    onto the LLM span and the usage ledger so any task is traceable to the exact
+    prompt version that served it. ``None`` for calls with no registry prompt
+    (embeddings, memory rerankers)."""
 
     model_config = ConfigDict(extra="forbid")
     agent_id: str | None = None
     task_id: str | None = None
     project_id: str | None = None
+    prompt_sha: str | None = None
 
 
 class ChatRequest(BaseModel):

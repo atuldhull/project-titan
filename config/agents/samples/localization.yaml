@@ -12,7 +12,7 @@ agent_id: localization
 display_name: Localization Engineer
 tier: 3
 supervisor: pm_project
-system_prompt_template: agents/localization.j2
+system_prompt_template: localization/system.md
 
 authority:
   decides_alone:

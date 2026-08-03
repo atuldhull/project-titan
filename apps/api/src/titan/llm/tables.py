@@ -43,6 +43,9 @@ class LlmUsage(ConventionsMixin, Base):
         Boolean, nullable=False, server_default=text("false")
     )
     price_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    # The approved registry prompt version that produced the system message
+    # (Vol 10 §6.1, TITAN-EVO-015); NULL for calls with no registry prompt.
+    prompt_sha: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class BudgetHold(ConventionsMixin, Base):

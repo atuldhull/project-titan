@@ -124,10 +124,13 @@ class GatewayBinding:
         max_output_tokens: int,
         project_id: str,
         task_id: str | None,
+        prompt_sha: str | None = None,
     ) -> ChatRequest:
         """Build the canonical chat request for one agent turn. The system prompt
         leads; ``tools`` is the GRANTED-only tool list (never the full registry);
-        ``metadata.agent_id`` buckets metrics/usage to the agent role."""
+        ``metadata.agent_id`` buckets metrics/usage to the agent role. ``prompt_sha``
+        is the pinned hash of the approved registry prompt (TITAN-EVO-015) so the
+        gateway can log which prompt version served this call."""
         selection = self.selection(agent_id)
         return ChatRequest(
             model_alias=self.alias_for(selection),
@@ -136,7 +139,10 @@ class GatewayBinding:
             temperature=selection.temperature,
             max_tokens=max_output_tokens,
             metadata=RequestMetadata(
-                agent_id=f"agent.{agent_id}", task_id=task_id, project_id=project_id
+                agent_id=f"agent.{agent_id}",
+                task_id=task_id,
+                project_id=project_id,
+                prompt_sha=prompt_sha,
             ),
         )
 

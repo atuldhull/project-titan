@@ -55,6 +55,7 @@ from titan.agents.service import (
     compose_system_prompt,
 )
 from titan.conflict.service import capture_veto_verdict
+from titan.evolution.resolver import EvolutionError
 from titan.flags.service import FlagStore
 from titan.llm.service import (
     ChatRequest,
@@ -122,6 +123,8 @@ TurnOutcome = Literal[
     "escalated",  # rungs 1–2 exhausted → a blocked report went to the supervisor/human
     "failed_open",  # a fail-open agent (docs/critic) failed — logged, never escalated
     "unknown_agent",  # no such role in the roster (undeliverable)
+    "config_error",  # a PERMANENT config refusal (e.g. unapproved/drifted prompt) — acked,
+    #                  logged, alertable; NOT reprocessed (retrying repeats the same refusal)
     "error",  # an infrastructure error — transient, safe to reprocess
 ]
 
@@ -405,6 +408,19 @@ async def run_turn(
 
         try:
             result = await _execute(runtime, project_id, agent_id, trigger, definition, span)
+        except EvolutionError as exc:
+            # A prompt refused by the EP gate (unapproved / drifted / missing) is
+            # PERMANENT: reprocessing repeats the same refusal, so ack it (no poison
+            # loop) and log an operator-actionable error rather than treating it as a
+            # transient infra fault (TITAN-EVO-001). No LLM call was made.
+            logger.error(
+                "runtime.prompt_refused",
+                agent_id=agent_id,
+                error=str(exc),
+                task_id=str(trigger.task_id) if trigger.task_id else None,
+            )
+            result = TurnResult("config_error", agent_id, trigger.message_id)
+            span.set_attribute("titan.turn.config_error", True)
         except Exception:  # noqa: BLE001 — an infra failure is transient; reclaim + retry
             logger.warning("runtime.turn_error", agent_id=agent_id, exc_info=True)
             result = TurnResult("error", agent_id, trigger.message_id)
@@ -580,6 +596,12 @@ async def _execute(
         task_context=_compose_task_context(kept_lines, instruction),
         memory=memory_text,
     )
+    # Vol 10 §6.1 / TITAN-EVO-015: stamp the approved prompt version onto the turn
+    # span so any task is traceable to the exact prompt SHA that served it. The
+    # composer already gated approval when it rendered `system` above; this is the
+    # same pinned hash, threaded into the gateway request (→ span + usage ledger).
+    prompt_sha = runtime.composer.prompt_sha(definition)
+    span.set_attribute("titan.prompt_sha", prompt_sha)
     # TITAN-BRN-015 backstop: the prompt side is system + the conversation +
     # the granted tool schemas. The conversation (seed, assistant turns,
     # tool_use JSON, tool results, critique pairs) is bounded to
@@ -629,6 +651,7 @@ async def _execute(
                 definition.model_policy.max_output_tokens, budget.response_reserve
             ),
             tool_budget=tool_budget,
+            prompt_sha=prompt_sha,
         )
     except Exception as exc:  # noqa: BLE001
         if not is_transient(exc):
@@ -712,6 +735,7 @@ async def _agent_loop(
     *,
     max_output_tokens: int,
     tool_budget: int,
+    prompt_sha: str | None = None,
 ) -> AgentTurnOutput | None:
     """Drive the LLM: execute granted tool calls and react (bounded), and validate
     the final structured output with rung-1 transient retry + rung-2 self-critique.
@@ -737,6 +761,7 @@ async def _agent_loop(
             max_output_tokens=max_output_tokens,
             project_id=str(project_id),
             task_id=str(trigger.task_id) if trigger.task_id else None,
+            prompt_sha=prompt_sha,
         )
         response = await _llm_call(runtime, agent_id, ladder, skip, request, result)  # rungs 4→1
         result.model_alias = response.served_alias or response.requested_alias or response.model_id

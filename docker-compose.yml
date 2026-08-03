@@ -68,6 +68,10 @@ services:
       # Agent roster (Phase 26): the read-only config mount below also carries
       # config/agents/*.yaml; a malformed/incomplete roster refuses to boot.
       TITAN_AGENTS_CONFIG_DIR: ${TITAN_AGENTS_CONFIG_DIR:-/app/config/agents}
+      # Prompt registry (Phase 83, Vol 10 §6.1): the read-only evolution mount
+      # below carries evolution/prompts/**  + evolution/manifest.yaml; the resolver
+      # gates each prompt against the manifest's approvals (TITAN-EVO-001).
+      TITAN_AGENT_PROMPTS_DIR: ${TITAN_AGENT_PROMPTS_DIR:-/app/evolution/prompts}
       TITAN_OLLAMA_BASE_URL: ${TITAN_OLLAMA_BASE_URL:-http://ollama:11434}
       # Per-task workspace jail root (Phase 20). On the writable tmpfs like
       # artifacts; the rootfs stays read-only. Sandbox code-exec containers are
@@ -90,6 +94,7 @@ services:
       - /tmp
     volumes:
       - ./config:/app/config:ro  # models.yaml (hot-reloadable; read-only mount)
+      - ./evolution:/app/evolution:ro  # prompt registry + manifest (Phase 83, read-only)
     depends_on:
       postgres:
         condition: service_healthy
@@ -138,6 +143,9 @@ services:
       # Agent roster (Phase 26): the read-only config mount below also carries
       # config/agents/*.yaml; a malformed/incomplete roster refuses to boot.
       TITAN_AGENTS_CONFIG_DIR: ${TITAN_AGENTS_CONFIG_DIR:-/app/config/agents}
+      # Prompt registry (Phase 83): the evolution mount carries the SHA-pinned
+      # prompt registry + manifest the composer gates every agent turn against.
+      TITAN_AGENT_PROMPTS_DIR: ${TITAN_AGENT_PROMPTS_DIR:-/app/evolution/prompts}
       TITAN_OLLAMA_BASE_URL: ${TITAN_OLLAMA_BASE_URL:-http://ollama:11434}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -149,6 +157,7 @@ services:
       - /tmp
     volumes:
       - ./config:/app/config:ro  # models.yaml (hot-reloadable; read-only mount)
+      - ./evolution:/app/evolution:ro  # prompt registry + manifest (Phase 83, read-only)
     depends_on:
       postgres:
         condition: service_healthy

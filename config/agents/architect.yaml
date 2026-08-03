@@ -3,7 +3,7 @@ agent_id: architect
 display_name: System Architect
 tier: 1
 supervisor: ceo
-system_prompt_template: agents/architect.j2
+system_prompt_template: architect/system.md
 
 authority:
   decides_alone:

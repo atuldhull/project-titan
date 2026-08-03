@@ -3,7 +3,7 @@ agent_id: memory
 display_name: Memory
 tier: cross
 supervisor: orchestrator
-system_prompt_template: agents/memory.j2
+system_prompt_template: memory/system.md
 
 authority:
   decides_alone:

@@ -3,7 +3,7 @@ agent_id: eng_database
 display_name: Database Engineer
 tier: 3
 supervisor: pm_project
-system_prompt_template: agents/eng_database.j2
+system_prompt_template: eng_database/system.md
 
 authority:
   decides_alone:

@@ -79,6 +79,10 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # rides `*:read`; `flag:write` (flip a kill switch, create/retire a flag)
         # is an operator act — Owner (via "*") and Admin only, like settings:write.
         "flag:write",
+        # Approve Evolution Proposals — self-modification of prompts/routing/agent
+        # specs (Vol 10 §2, Phase 83). Human-only gate (TITAN-EVO-001); never in
+        # the operator/agent bundle. evolution:read rides *:read.
+        "evolution:approve",
         "*:read",
     ],
     "maintainer": [
@@ -101,6 +105,9 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # Secrets: §4.2 grants create/rotate (write-only) to Maintainer too.
         "secret:read",
         "secret:write",
+        # Maintainer holds the evolution approval gate too (Vol 10 §2, Phase 83) —
+        # a human sign-off on any self-modification EP. Never granted to operator.
+        "evolution:approve",
         "*:read",
     ],
     # The machine/agent bundle (TITAN-BCK-021): task flow + the sandbox

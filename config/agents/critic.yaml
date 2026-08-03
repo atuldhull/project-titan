@@ -3,7 +3,7 @@ agent_id: critic
 display_name: Critic
 tier: cross
 supervisor: architect
-system_prompt_template: agents/critic.j2
+system_prompt_template: critic/system.md
 
 authority:
   decides_alone:

@@ -384,6 +384,11 @@ class LlmGateway:
             cost_usd=float(response.cost_usd),
             latency_seconds=response.latency_ms / 1000.0,
         )
+        # TITAN-EVO-015: stamp the prompt version onto the active span so every LLM
+        # call is traceable to the prompt SHA that served it. During an agent turn
+        # the active span is `agent.turn`; a non-recording span makes this a no-op.
+        if req.metadata.prompt_sha:
+            trace.get_current_span().set_attribute("titan.prompt_sha", req.metadata.prompt_sha)
         if self._engine is not None:
             async with self._engine.begin() as conn:
                 await repo.insert_usage(
@@ -403,6 +408,7 @@ class LlmGateway:
                     latency_ms=response.latency_ms,
                     degraded_model=response.degraded_model,
                     price_version=self._price_version(served),
+                    prompt_sha=req.metadata.prompt_sha,
                 )
         # Settle AFTER the ledger commit so a Redis hiccup never unwinds the
         # durable usage row (the two stores are decoupled).
@@ -455,6 +461,8 @@ class LlmGateway:
             span.set_attribute("gen_ai.system", resolved.provider)
             span.set_attribute("gen_ai.request.model", resolved.model_id)
             span.set_attribute("llm.streaming", True)
+            if req.metadata.prompt_sha:  # TITAN-EVO-015
+                span.set_attribute("titan.prompt_sha", req.metadata.prompt_sha)
             try:
                 async for delta in adapter.stream(
                     self._client, req=req, resolved=resolved, provider=provider_cfg
@@ -528,6 +536,7 @@ class LlmGateway:
                     latency_ms=latency_ms,
                     degraded_model=False,
                     price_version=self._price_version(resolved),
+                    prompt_sha=req.metadata.prompt_sha,
                 )
         # Streaming settles its actual cost post-call (no pre-reservation), like
         # embeddings; for a local (zero-cost) model this is a no-op.

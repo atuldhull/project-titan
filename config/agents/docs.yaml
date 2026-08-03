@@ -3,7 +3,7 @@ agent_id: docs
 display_name: Documentation
 tier: 3
 supervisor: pm_project
-system_prompt_template: agents/docs.j2
+system_prompt_template: docs/system.md
 
 authority:
   decides_alone:

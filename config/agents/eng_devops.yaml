@@ -3,7 +3,7 @@ agent_id: eng_devops
 display_name: DevOps
 tier: 3
 supervisor: pm_project
-system_prompt_template: agents/eng_devops.j2
+system_prompt_template: eng_devops/system.md
 
 authority:
   decides_alone:

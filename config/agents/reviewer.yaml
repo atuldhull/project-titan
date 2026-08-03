@@ -3,7 +3,7 @@ agent_id: reviewer
 display_name: Code Reviewer
 tier: cross
 supervisor: architect
-system_prompt_template: agents/reviewer.j2
+system_prompt_template: reviewer/system.md
 
 authority:
   decides_alone:

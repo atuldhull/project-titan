@@ -3,7 +3,7 @@ agent_id: eng_frontend
 display_name: Frontend Engineer
 tier: 3
 supervisor: pm_project
-system_prompt_template: agents/eng_frontend.j2
+system_prompt_template: eng_frontend/system.md
 
 authority:
   decides_alone:

@@ -3,7 +3,7 @@ agent_id: ceo
 display_name: CEO
 tier: 0
 supervisor: human
-system_prompt_template: agents/ceo.j2
+system_prompt_template: ceo/system.md
 
 authority:
   decides_alone:

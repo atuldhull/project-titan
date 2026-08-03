@@ -294,6 +294,7 @@ jobs:
       - run: make check-alert-rules
       - run: make check-runbook-links
       - run: make check-k8s
+      - run: make check-evolution
       - run: make check-autoscaling
       - run: make check-bluegreen
       - run: make test-bluegreen-scripts

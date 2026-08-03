@@ -240,9 +240,12 @@ class Settings(BaseSettings):
     # supervises live agent workers.
     watchdog_enabled: bool = False
 
-    # --- Prompt composition + model policy (Phase 28; Vol 2 §8) ---
-    # Jinja2 system-prompt templates root (templates are agents/<id>.j2 under it).
-    agent_prompts_dir: str = "config/prompts"
+    # --- Prompt composition + model policy (Phase 28; Vol 2 §8; Vol 10 §6.1) ---
+    # The prompt REGISTRY root (Phase 83): templates are evolution/prompts/<agent>/
+    # system.md, resolved + gated through the SHA-pinned evolution manifest. This is
+    # the single source of truth for agent prompts (TITAN-EVO-015) — there is no
+    # separate templates dir.
+    agent_prompts_dir: str = "evolution/prompts"
     # agent -> tier -> provider/model policy (TITAN-AGT-021, config-only switching).
     model_policy_path: str = "config/model-policy.yaml"
     # Active model-policy profile: None = cloud tiers; "local-free" = offline Ollama.

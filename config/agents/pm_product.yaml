@@ -3,7 +3,7 @@ agent_id: pm_product
 display_name: Product Manager
 tier: 1
 supervisor: ceo
-system_prompt_template: agents/pm_product.j2
+system_prompt_template: pm_product/system.md
 
 authority:
   decides_alone:

@@ -30,6 +30,8 @@ from titan.constitution import router as constitution_router
 from titan.debt import router as debt_router
 from titan.deploy import router as deploy_router
 from titan.events import service as events_service
+from titan.evolution import router as evolution_router
+from titan.evolution import service as evolution_service
 from titan.flags import router as flags_router
 from titan.flags import service as flags_service
 from titan.gateway.idempotency import IdempotencyMiddleware
@@ -163,6 +165,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Phase 73 (Vol 8 §10): the ONE shared audit client every subsystem records
         # through — the immutable, hash-chained audit_events ledger (SEC-090..092).
         application.state.audit = audit_service.build_audit_client(application.state.engine)
+        # Phase 83 (Vol 10 §2): the SHA-pinned evolution resolver — the prompt
+        # registry + EP approval gate. Loading the manifest here fails the boot loudly
+        # if it is malformed (fail-toward-status-quo means a bad manifest must not
+        # start). Reconcile it into the immutable evolution_artifacts ledger
+        # (TITAN-EVO-002) best-effort — the runtime gate is the manifest, so a DB/git
+        # hiccup degrades only the queryable ledger, never prompt serving.
+        application.state.evolution_resolver = agents_service.build_evolution_resolver(
+            active_settings
+        )
+        try:
+            await evolution_service.sync_manifest_to_ledger(
+                application.state.engine, application.state.evolution_resolver
+            )
+        except Exception:  # noqa: BLE001 — never block boot on the ledger sync
+            logger.warning("evolution.manifest_sync_failed", exc_info=True)
         # Phase 72 (Vol 9 §5.3, TITAN-OPS-012): self-hosted feature flags + ops
         # kill switches. A two-level cache (in-process + shared Redis snapshot,
         # 10 s TTL) read through by the gateway (llm.provider_override) and the
@@ -643,6 +660,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     secrets_router.mount(app)  # /secrets — write-only vault management (Vol 8 §6)
     flags_router.mount(app)  # /flags — feature flags + ops kill switches (Vol 9 §5.3)
     audit_router.mount(app)  # /audit — immutable hash-chained audit ledger (Vol 8 §10)
+    evolution_router.mount(app)  # /evolution — prompt registry + EP approval (Vol 10)
     otel.instrument_app(active_settings, app)
 
     def custom_openapi() -> dict[str, Any]:

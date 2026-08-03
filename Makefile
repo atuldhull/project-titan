@@ -242,6 +242,12 @@ check-runbook-links:
 check-k8s:
 	cd $(API_DIR) && uv run python scripts/check_k8s.py
 
+# EVO-001/002 (Vol 10 §2/§6.1, Phase 83): the prompt registry is pinned, approved,
+# and drift-free — every core agent has a manifest entry whose sha256 matches the
+# on-disk bytes and carries an approver, no orphan prompts, valid front-matter.
+check-evolution:
+	cd $(API_DIR) && uv run python scripts/check_evolution.py
+
 # OPS-009 (§4.3): autoscaling consistency — HPA custom metrics are real app gauges, the KEDA
 # worker scaler matches the code's stream/group, worker drains, bounds pinned to the spec.
 check-autoscaling:

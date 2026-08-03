@@ -41,31 +41,24 @@ MAX_TOKENS = 1024
 # than a backlog, and a tight ceiling keeps a babbling model cheap.
 CLARIFY_MAX_TOKENS = 512
 
-_SYSTEM_PROMPT = (
-    "You are the CEO agent for PROJECT TITAN. Turn the product brief into a small "
-    "product backlog of user stories. Respond with ONLY a JSON array — no prose, no "
-    "code fences. Each element is an object: "
-    '{"title": "As a <role>, I want <capability>, so that <benefit>", '
-    '"acceptance_criteria": ["<testable criterion>", "..."]}. '
-    "Produce between 3 and 6 stories covering the core of the brief."
-)
+# Phase 83 (TITAN-EVO-015): the intake system prompts are NOT hardcoded here — the
+# registry is the single source of truth. These refs resolve to pinned, approved,
+# drift-gated prompts in evolution/prompts/, and each intake gateway call stamps the
+# resolved prompt_sha so this bootstrap CEO path carries the same provenance as a
+# real agent turn. The §2.4 clarify prompt only proposes candidates; the
+# clarification engine remains the authority on the ≤5 cap + assumption demotion.
+_BACKLOG_PROMPT_REF = "ceo_intake"
+_CLARIFY_PROMPT_REF = "ceo_intake_clarify"
 
-# The §2.4 policy is stated here so the model proposes GOOD candidates, but it is
-# only a prompt: titan.clarification.engine remains the authority that enforces the
-# ≤5 cap and demotes canonical-default/inferable topics to logged assumptions.
-_CLARIFY_SYSTEM_PROMPT = (
-    "You are the CEO agent for PROJECT TITAN. Read the product brief and decide what — "
-    "if anything — you must ask the user before building. Ask ONLY about an unknown "
-    "whose answer would materially change what gets built and that you cannot infer "
-    "from the brief. NEVER ask about the technology stack (database, cache, language, "
-    "runtime, framework, ORM, message bus, vector store, deployment, authentication, "
-    "observability): those already have canonical defaults. Respond with ONLY a JSON "
-    "object — no prose, no code fences: "
-    '{"questions": [{"topic": "<2-4 word subject>", "question": "<the question>"}], '
-    '"inferable_topics": ["<subject you could ask about but can safely assume>"]}. '
-    "Propose at most 5 questions, most important first. Every question MUST carry its "
-    "topic. If nothing is essential, return an empty questions array."
-)
+
+def _resolve_intake_prompt(ref: str) -> tuple[str, str]:
+    """(system_text, prompt_sha) for an intake prompt from the evolution registry.
+    Fails closed (EvolutionError) if the prompt is unapproved/drifted — the caller
+    logs and degrades, never serves an ungated prompt."""
+    from titan.agents.service import build_evolution_resolver
+    from titan.settings import get_settings
+
+    return build_evolution_resolver(get_settings()).resolve_standalone(ref)
 
 
 async def _open_clarification_batch(
@@ -101,16 +94,17 @@ async def _open_clarification_batch(
     """
     pid = str(project_id)
     try:
+        clarify_prompt, clarify_sha = _resolve_intake_prompt(_CLARIFY_PROMPT_REF)
         chunks: list[str] = []
         request = ChatRequest(
             model_alias=model_alias,
             messages=[
-                Message(role="system", content=_CLARIFY_SYSTEM_PROMPT),
+                Message(role="system", content=clarify_prompt),
                 Message(role="user", content=brief),
             ],
             max_tokens=CLARIFY_MAX_TOKENS,
             stream=True,
-            metadata=RequestMetadata(agent_id=agent_id, project_id=pid),
+            metadata=RequestMetadata(agent_id=agent_id, project_id=pid, prompt_sha=clarify_sha),
         )
         async for delta in gateway.stream(request, run_id=run_id):
             if delta.type == "text" and delta.text:
@@ -175,17 +169,18 @@ async def run_intake(
         agent_id=agent_id,
         run_id=run_id,
     )
-    request = ChatRequest(
-        model_alias=model_alias,
-        messages=[
-            Message(role="system", content=_SYSTEM_PROMPT),
-            Message(role="user", content=brief),
-        ],
-        max_tokens=MAX_TOKENS,
-        stream=True,
-        metadata=RequestMetadata(agent_id=agent_id, project_id=pid),
-    )
     try:
+        backlog_prompt, backlog_sha = _resolve_intake_prompt(_BACKLOG_PROMPT_REF)
+        request = ChatRequest(
+            model_alias=model_alias,
+            messages=[
+                Message(role="system", content=backlog_prompt),
+                Message(role="user", content=brief),
+            ],
+            max_tokens=MAX_TOKENS,
+            stream=True,
+            metadata=RequestMetadata(agent_id=agent_id, project_id=pid, prompt_sha=backlog_sha),
+        )
         chunks: list[str] = []
         async for delta in gateway.stream(request, run_id=run_id):
             if delta.type == "text" and delta.text:

@@ -3,7 +3,7 @@ agent_id: security
 display_name: Security
 tier: 3
 supervisor: pm_project
-system_prompt_template: agents/security.j2
+system_prompt_template: security/system.md
 
 authority:
   decides_alone:

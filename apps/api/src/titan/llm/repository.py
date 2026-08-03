@@ -33,6 +33,7 @@ async def insert_usage(
     latency_ms: int,
     degraded_model: bool,
     price_version: int,
+    prompt_sha: str | None = None,
 ) -> uuid.UUID:
     row_id = uuid7()
     await conn.execute(
@@ -40,10 +41,10 @@ async def insert_usage(
             "INSERT INTO llm_usage (id, project_id, task_id, run_id, agent_id, "
             "requested_alias, served_alias, provider, model, input_tokens, "
             "output_tokens, cached_tokens, cost_usd, latency_ms, degraded_model, "
-            "price_version) VALUES (:id, :project_id, :task_id, :run_id, :agent_id, "
+            "price_version, prompt_sha) VALUES (:id, :project_id, :task_id, :run_id, :agent_id, "
             ":requested_alias, :served_alias, :provider, :model, :input_tokens, "
             ":output_tokens, :cached_tokens, :cost_usd, :latency_ms, :degraded_model, "
-            ":price_version)"
+            ":price_version, :prompt_sha)"
         ),
         {
             "id": row_id,
@@ -62,6 +63,7 @@ async def insert_usage(
             "latency_ms": latency_ms,
             "degraded_model": degraded_model,
             "price_version": price_version,
+            "prompt_sha": prompt_sha,
         },
     )
     return row_id

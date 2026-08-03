@@ -132,6 +132,14 @@ KNOWN_SCOPES: frozenset[str] = frozenset(
         # act, never an agent's — mirroring settings:write.
         "flag:read",
         "flag:write",
+        # Evolution framework (Vol 10 §2, Phase 83). `evolution` is deliberately
+        # NOT in SENSITIVE_RESOURCES: `evolution:read` rides `*:read` so the
+        # dashboard (and agents drafting EPs) can see which prompt version served a
+        # task and browse the artifact ledger. `evolution:approve` is the human
+        # self-modification gate (TITAN-EVO-001) — Owner/Admin/Maintainer only,
+        # never an agent; approving an EP alters the platform itself.
+        "evolution:read",
+        "evolution:approve",
     }
 )
 
