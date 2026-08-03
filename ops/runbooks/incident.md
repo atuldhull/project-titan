@@ -165,3 +165,16 @@ The daily audit-chain verify found a hash discontinuity (Phase 73) — tamper-ev
 - **Check:** the `AuditChainBroken` detail; which sequence range; the last valid seal.
 - **Mitigate:** treat as a **potential compromise** — `titan incident lockdown` (revokes all sessions + freezes intake), preserve the table, do **not** truncate or "repair" the chain.
 - **Escalate:** **SEV-1** — this may be data tampering; engage security and the DR path if integrity can't be re-established from a seal.
+
+## Agent KPI Degraded
+
+The nightly evolution KPI rollup flagged a sustained agent-KPI drop (`AgentKpiDegraded`,
+Phase 84 / TITAN-EVO-007): an agent/task_class composite fell >10% below its trailing-30-day
+mean. An `evolution.investigation` record for the Memory Agent is opened automatically with the
+KPI series snapshot — this is a **quality regression, not an outage** (ticket, not page).
+- **Check:** which `{agent, task_class}`; open the investigation (`GET /api/v1/evolution/investigations`)
+  and its `series_snapshot` (recent vs baseline); check whether a recent Evolution Proposal changed
+  the agent's prompt/routing/spec (`GET /api/v1/evolution/agents/{agent}/kpis`).
+- **Mitigate:** if a merged EP caused it, `git revert` the evolution commit + redeploy (restores the
+  prior approved prompt bytes); otherwise let the Memory Agent's investigation run its course.
+- **Escalate:** SEV-3 — track the investigation to closure; no live-traffic impact.

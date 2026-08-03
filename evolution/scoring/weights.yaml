@@ -1,0 +1,111 @@
+# /evolution/scoring/weights.yaml — composite-score weights per task class
+# (Vol 10 §3, TITAN-EVO-005). Versioned through the Phase-83 EP flow: pinned in
+# evolution/manifest.yaml, drift-gated by check_evolution, changed only via an
+# approved PR against /evolution/**.
+#
+# A scorecard scores 8 dimensions 0-100 (Vol 10 §3.1); the composite is the
+# weighted mean using the task class's weights below. Each class's weights sum to
+# 1.0. task_class is derived from the executing agent's role (no task_class column
+# exists — Phase-84 scout finding); an unknown class falls back to `default`.
+version: 1
+
+dimensions:
+  - correctness          # QA/CI: % acceptance criteria passing
+  - first_pass_quality   # review cycle count (100 if merged with <=1 round)
+  - rework_ratio         # diff churn: lines rewritten after first submission
+  - efficiency           # tokens + wall-clock vs task-class baseline
+  - cost                 # normalized against task-class p50 cost
+  - standards_compliance # linters, Volume 8 rules — violations per KLoC
+  - security             # Security Agent findings weighted by severity
+  - collaboration        # message-bus analysis: blocked-time caused, handoffs
+
+weights:
+  # Implementation work: correctness + standards + security dominate.
+  code:
+    correctness: 0.28
+    first_pass_quality: 0.14
+    rework_ratio: 0.12
+    efficiency: 0.08
+    cost: 0.06
+    standards_compliance: 0.14
+    security: 0.12
+    collaboration: 0.06
+  # Review work: catching defects + citing standards is the job.
+  review:
+    correctness: 0.24
+    first_pass_quality: 0.10
+    rework_ratio: 0.10
+    efficiency: 0.08
+    cost: 0.06
+    standards_compliance: 0.20
+    security: 0.16
+    collaboration: 0.06
+  # Planning/architecture: correctness of the plan + collaboration.
+  plan:
+    correctness: 0.26
+    first_pass_quality: 0.14
+    rework_ratio: 0.10
+    efficiency: 0.10
+    cost: 0.08
+    standards_compliance: 0.08
+    security: 0.10
+    collaboration: 0.14
+  # QA: correctness + coverage; standards matter, cost less so.
+  qa:
+    correctness: 0.30
+    first_pass_quality: 0.12
+    rework_ratio: 0.10
+    efficiency: 0.10
+    cost: 0.06
+    standards_compliance: 0.14
+    security: 0.12
+    collaboration: 0.06
+  # Security: the security dimension leads.
+  security:
+    correctness: 0.20
+    first_pass_quality: 0.10
+    rework_ratio: 0.08
+    efficiency: 0.06
+    cost: 0.06
+    standards_compliance: 0.14
+    security: 0.30
+    collaboration: 0.06
+  # Docs/research: correctness + collaboration; security/standards lighter.
+  docs:
+    correctness: 0.30
+    first_pass_quality: 0.16
+    rework_ratio: 0.12
+    efficiency: 0.10
+    cost: 0.08
+    standards_compliance: 0.08
+    security: 0.04
+    collaboration: 0.12
+  # Balanced fallback for any unmapped task class.
+  default:
+    correctness: 0.25
+    first_pass_quality: 0.13
+    rework_ratio: 0.12
+    efficiency: 0.10
+    cost: 0.08
+    standards_compliance: 0.12
+    security: 0.12
+    collaboration: 0.08
+
+# Role -> task_class (Phase-84: derived from the executing agent's roster role).
+role_class:
+  eng_backend: code
+  eng_frontend: code
+  eng_database: code
+  eng_devops: code
+  reviewer: review
+  critic: review
+  architect: plan
+  pm_product: plan
+  pm_project: plan
+  orchestrator: plan
+  qa: qa
+  security: security
+  docs: docs
+  research: docs
+  memory: default
+  ceo: plan

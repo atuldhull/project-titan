@@ -251,6 +251,11 @@ class Settings(BaseSettings):
     # Active model-policy profile: None = cloud tiers; "local-free" = offline Ollama.
     model_policy_profile: str | None = None
 
+    # --- Evolution KPI rollup (Phase 84; Vol 10 §3, TITAN-EVO-006) ---
+    # How often the leader recomputes per-agent KPI rollups + scans for degradation.
+    # Nightly by default; the per-iteration units are driven directly in tests.
+    evolution_kpi_rollup_interval_seconds: float = 86400.0
+
     # OTLP trace export (TITAN-BCK-025). Empty = tracing disabled (no
     # collector running); Compose obs profile sets http://otel-collector:4317.
     otel_exporter_otlp_endpoint: str = ""

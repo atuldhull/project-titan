@@ -25,12 +25,15 @@ from prometheus_client import start_http_server
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from titan import clients
+from titan.agents.service import build_evolution_resolver
 from titan.artifacts import service as artifacts
 from titan.audit import service as audit_service
 from titan.clarification import service as clarification
 from titan.events import service as events
 from titan.events.consumers import run_domain_consumer, run_drainer, run_reaper
 from titan.events.outbox import OutboxDrainer
+from titan.evolution import consumer as evolution_consumer
+from titan.evolution import kpi as evolution_kpi
 from titan.flags import service as flags_service
 from titan.llm.service import build_gateway
 from titan.memory import service as memory
@@ -287,6 +290,11 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
         executor = LiveExecutor(runtime, make_role_resolver(engine))
     else:
         executor = StubExecutor()
+    # Phase 84 (Vol 10 §3): scorecard generation + KPI rollup. The scorecard
+    # consumer/reaper are SCALABLE (a fan-out group over the domain stream); the KPI
+    # rollup is a leader-only SINGLETON. Both use the always-built gateway (rubric
+    # eval) + the SHA-pinned evolution resolver.
+    evolution_resolver = build_evolution_resolver(settings)
     ingest_relay = memory.IngestRelay(engine, bus)
     embedder = memory.MemoryEmbedder(engine, bus, memory.QdrantIndex(qdrant_http), llm_gateway)
     # Phase 73: the audit sealer reuses the vault's age key (SEC-093). Without a
@@ -331,6 +339,8 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
             "runs-results-reaper",
             "memory-embedder",
             "memory-ingest-reaper",
+            "evolution-scorecard",
+            "evolution-scorecard-reaper",
         ],
         leader_only=[
             "outbox-drainer",
@@ -345,6 +355,7 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
             "secret-expiry-monitor",
             "audit-maintenance",
             "redaction-maintenance",
+            "evolution-kpi-rollup",
         ],
         worker_concurrency=settings.worker_concurrency,
         metrics_port=METRICS_PORT,
@@ -389,6 +400,18 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
         asyncio.create_task(run_results_reaper(engine, bus, worker_id, stop=stop)),
         asyncio.create_task(memory.run_embedder(embedder, bus, worker_id, stop=stop)),
         asyncio.create_task(memory.run_ingest_reaper(embedder, bus, worker_id, stop=stop)),
+        # Phase 84: generate a scorecard per terminal task (fan-out over the domain
+        # stream; idempotent, so parallel replicas are safe).
+        asyncio.create_task(
+            evolution_consumer.run_scorecard_consumer(
+                engine, bus, llm_gateway, evolution_resolver, worker_id, stop=stop
+            )
+        ),
+        asyncio.create_task(
+            evolution_consumer.run_scorecard_reaper(
+                engine, bus, llm_gateway, evolution_resolver, worker_id, stop=stop
+            )
+        ),
     ]
 
     # ---- SINGLETON loops: only the elected leader runs these (§8.1). The domain
@@ -426,6 +449,15 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
                     redaction_reporter,
                     service="titan-worker",
                     stop=stop,
+                )
+            ),
+            # Phase 84 (TITAN-EVO-006/007): nightly KPI rollup + degradation scan
+            # (one-per-cluster). Publishes titan_agent_kpi and opens investigations.
+            asyncio.create_task(
+                evolution_kpi.run_kpi_rollup(
+                    engine,
+                    stop=stop,
+                    interval_s=settings.evolution_kpi_rollup_interval_seconds,
                 )
             ),
         ]

@@ -84,3 +84,16 @@ groups:
         annotations:
           summary: "TLS certificate expires in < 14 days"
           runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#cert-expiry"
+
+      # Sustained agent-KPI degradation (Vol 10 §3, TITAN-EVO-007): the leader's
+      # nightly rollup lights titan_agent_kpi_degraded when an agent/task_class
+      # composite is >10% below its trailing-30d mean. The in-process detector also
+      # opens an evolution.investigation for the Memory Agent; this alert is the
+      # maintainer-visible signal. Ticket, not page — a quality regression, not an outage.
+      - alert: AgentKpiDegraded
+        expr: titan_agent_kpi_degraded == 1
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Agent {{ $labels.agent }} KPI degraded on task_class {{ $labels.task_class }}"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#agent-kpi-degraded"

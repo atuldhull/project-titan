@@ -159,9 +159,16 @@ def active_prompt_versions(resolver: EvolutionResolver) -> dict[str, dict[str, s
     return resolver.active_prompt_versions()
 
 
+async def list_investigations(
+    engine: AsyncEngine, *, status: str = "open", limit: int = 100
+) -> list[dict[str, Any]]:
+    return await repository.list_investigations(engine, status=status, limit=limit)
+
+
 __all__ = [
     "active_prompt_versions",
     "approve_artifact",
     "list_artifacts",
+    "list_investigations",
     "sync_manifest_to_ledger",
 ]

@@ -49,6 +49,23 @@ STREAM_DEPTH = Gauge(
     ["stream", "group"],
 )
 
+# Agent KPI rollups (Vol 10 §3, TITAN-EVO-006): per-agent, per-task-class KPI over
+# 7/30/90-day windows, published by the nightly evolution.kpi-rollup consumer.
+# task_class="all" carries the agent-level rollup across classes.
+AGENT_KPI = Gauge(
+    "titan_agent_kpi",
+    "Rolled-up agent KPI (composite or a named dimension) over a window (Vol 10 §3)",
+    ["agent", "task_class", "kpi", "window"],
+)
+
+# 1 when an agent/task_class KPI is in sustained degradation (>10% vs the trailing
+# 30-day mean); the degradation alert rule fires on this (TITAN-EVO-007).
+AGENT_KPI_DEGRADED = Gauge(
+    "titan_agent_kpi_degraded",
+    "1 when an agent KPI is in sustained degradation (Vol 10 §3, EVO-007)",
+    ["agent", "task_class"],
+)
+
 # Vol 9 §6.1 titan_agent_review_rejections_total: the Code Reviewer's REJECTED
 # verdicts at the G9 release-review gate — a quality signal (feeds Volume 10). Defined
 # here in the shared observability library so the handoffs gate can emit it without a

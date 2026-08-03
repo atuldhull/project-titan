@@ -602,6 +602,12 @@ async def apply_transition(
     )
     event_actor = str(actor_agent_id or actor_user_id or "system")
     await _emit(conn, f"task.{action}", updated, event_actor)
+    if updated.status in _TERMINAL_TASK_STATES:
+        # Phase 84 (TITAN-EVO-004): the ONE terminal transition triggers scorecard
+        # generation. A dedicated `task.terminal` event on the same outbox lets the
+        # evolution.scorecard consumer generate the scorecard off-transaction
+        # (within 60 s) — not a second completion listener, the same terminal path.
+        await _emit(conn, "task.terminal", updated, event_actor)
     await _emit_kanban(
         conn,
         updated,

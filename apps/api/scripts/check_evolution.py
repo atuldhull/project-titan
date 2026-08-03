@@ -130,6 +130,8 @@ def collect_errors(root: Path = REPO_ROOT, *, agents_dir: Path = AGENTS_DIR) -> 
         _check_entry(errors, "base", manifest["base"], root)
     if isinstance(manifest.get("routing"), dict):
         _check_entry(errors, "routing", manifest["routing"], root)
+    if isinstance(manifest.get("scoring"), dict):
+        _check_entry(errors, "scoring", manifest["scoring"], root)
 
     pinned_paths: set[str] = set()
     for agent_id, entry in prompts.items():

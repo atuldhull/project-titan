@@ -18,8 +18,8 @@ def test_manifest_and_prompts_are_readable_by_any_role(api: dict[str, Any]) -> N
     client, token_for = api["client"], api["token_for"]
     m = client.get("/api/v1/evolution/manifest", headers=token_for("viewer"))
     assert m.status_code == 200
-    # 16 core roster prompts + localization sample + 2 CEO-intake prompts.
-    assert m.json()["prompt_count"] == 19
+    # 16 core roster prompts + localization sample + 2 CEO-intake + 1 scorecard rubric.
+    assert m.json()["prompt_count"] == 20
 
     p = client.get("/api/v1/evolution/prompts", headers=token_for("viewer"))
     assert p.status_code == 200
@@ -78,6 +78,66 @@ def test_admin_approves_and_it_lands_in_the_audit_log(api: dict[str, Any]) -> No
     assert events.status_code == 200
     hits = [e for e in events.json() if e["resource"] == _REVIEWER_PATH]
     assert hits and hits[0]["detail"]["artifact_hash"] == sha
+
+
+def test_agent_kpis_endpoint(api: dict[str, Any]) -> None:
+    import uuid
+    from datetime import UTC, datetime
+
+    from tests.conftest import run_async
+    from tests.test_evolution_scorecard import _seed_project_task, _seed_scorecard
+
+    client, token_for, engine = api["client"], api["token_for"], api["engine"]
+    agent = f"kpiagent_{uuid.uuid4().hex[:8]}"
+
+    async def seed() -> None:
+        pid, _ = await _seed_project_task(engine, with_run=False)
+        for c in (70.0, 90.0):
+            await _seed_scorecard(
+                engine,
+                pid,
+                agent=agent,
+                task_class="code",
+                composite=c,
+                created_at=datetime.now(UTC),
+            )
+
+    run_async(seed)
+    r = client.get(f"/api/v1/evolution/agents/{agent}/kpis", headers=token_for("viewer"))
+    assert r.status_code == 200
+    windows = r.json()["windows"]
+    assert windows["7d"]["code"]["count"] == 2
+    assert abs(windows["7d"]["code"]["composite"] - 80.0) < 0.5  # reconciles with the raw mean
+
+
+def test_investigations_endpoint(api: dict[str, Any]) -> None:
+    import uuid
+
+    from tests.conftest import run_async
+    from titan.evolution import repository as repo
+
+    client, token_for, engine = api["client"], api["token_for"], api["engine"]
+    agent = f"invagent_{uuid.uuid4().hex[:8]}"
+
+    async def seed() -> None:
+        await repo.open_investigation(
+            engine,
+            agent_id=agent,
+            task_class="code",
+            window_days=3,
+            recent_value=45.0,
+            baseline_value=90.0,
+            drop_pct=50.0,
+            series_snapshot={"recent": {"count": 3}},
+        )
+
+    run_async(seed)
+    r = client.get("/api/v1/evolution/investigations", headers=token_for("viewer"))
+    assert r.status_code == 200
+    mine = [i for i in r.json()["investigations"] if i["agent_id"] == agent]
+    assert (
+        mine and mine[0]["drop_pct"] == 50.0 and mine[0]["series_snapshot"]["recent"]["count"] == 3
+    )
 
 
 def test_approve_rejects_a_phantom_hash(api: dict[str, Any]) -> None:

@@ -89,6 +89,29 @@ async def list_artifacts(
     return {"artifacts": rows}
 
 
+@router.get("/agents/{agent_id}/kpis")
+async def get_agent_kpis(request: Request, principal: _Reader, agent_id: str) -> dict[str, Any]:
+    """Per-agent, per-task-class KPI aggregates over 7/30/90-day windows
+    (TITAN-EVO-006). Reconciles with the raw scorecards (means computed directly)."""
+    from titan.evolution import kpi as kpi_mod
+
+    return await kpi_mod.agent_kpis(request.app.state.engine, agent_id)
+
+
+@router.get("/investigations")
+async def list_investigations(
+    request: Request,
+    principal: _Reader,
+    status: str = "open",
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+) -> dict[str, Any]:
+    """Open (or resolved) KPI-degradation investigations (TITAN-EVO-007)."""
+    rows = await evolution_service.list_investigations(
+        request.app.state.engine, status=status, limit=limit
+    )
+    return {"investigations": rows}
+
+
 @router.post("/artifacts:approve", status_code=201)
 async def approve_artifact(
     request: Request, principal: _Approver, body: ApproveRequest
