@@ -1,0 +1,41 @@
+# /evolution/taxonomy/failures.yaml — the fixed, versioned failure taxonomy
+# (Vol 10 §5.1, TITAN-EVO-011). Every failure — task rejection, agent-attributable
+# CI failure, incident, rollback, guardrail trip — is classified by the Memory
+# Agent into exactly ONE primary code below (+ optional secondaries). Codes are a
+# CLOSED set: root_cause_records.failure_code is CHECK-constrained to these, and an
+# RCR carrying any other code is rejected at the DB layer. Unclassifiable events
+# land in F-UNK; sustained F-UNK > 5% triggers a taxonomy-update EP against this
+# file through the Phase-83 /evolution/** flow. Changed only via an approved EP.
+version: 1
+
+codes:
+  - code: F-REQ
+    class: Requirement misunderstanding
+    examples: ["Built the wrong feature", "Missed an acceptance criterion"]
+  - code: F-CTX
+    class: Context/memory failure
+    examples: ["Ignored an existing pattern", "Lost mid-task context"]
+  - code: F-GEN
+    class: Generation defect
+    examples: ["Logic bug", "Hallucinated API", "Type error"]
+  - code: F-STD
+    class: Standards violation
+    examples: ["Broke Volume 8 conventions", "Skipped tests"]
+  - code: F-SEC
+    class: Security defect
+    examples: ["Injection risk", "Secret in code", "Missing authz"]
+  - code: F-ORCH
+    class: Orchestration failure
+    examples: ["Deadlocked dependency", "Wrong agent assigned", "Dropped handoff"]
+  - code: F-TOOL
+    class: Tool/integration failure
+    examples: ["Git conflict mishandled", "Sandbox timeout", "Plugin error"]
+  - code: F-LLM
+    class: Model/provider failure
+    examples: ["Refusal", "Truncation", "Rate-limit cascade"]
+  - code: F-HUM
+    class: Human-input gap
+    examples: ["Ambiguous client request that should have triggered clarification"]
+  - code: F-UNK
+    class: Unclassifiable (fallback)
+    examples: ["A genuinely novel failure mode not yet covered — pages for taxonomy review"]

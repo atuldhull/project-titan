@@ -66,6 +66,18 @@ AGENT_KPI_DEGRADED = Gauge(
     ["agent", "task_class"],
 )
 
+# The post-terminal evolution consumer's per-operation outcome (Vol 10 §4/§5). The
+# whole subsystem is fail-safe (a broken prompt/provider degrades to F-UNK / no
+# reflection rather than raising), so without this counter a systemic breakage would
+# be an invisible silent no-op — the consumer ACKs and queue depth stays 0. An alert
+# on a rising `failed` (or a collapse of `ok`) rate surfaces it (Phase-77 lesson).
+# op: scorecard|reflection|classify|rcr|retrospective — outcome: ok|failed|skipped
+EVOLUTION_OPS = Counter(
+    "titan_evolution_ops_total",
+    "Post-terminal evolution operations by kind and outcome (Vol 10 §4/§5)",
+    ["op", "outcome"],
+)
+
 # Vol 9 §6.1 titan_agent_review_rejections_total: the Code Reviewer's REJECTED
 # verdicts at the G9 release-review gate — a quality signal (feeds Volume 10). Defined
 # here in the shared observability library so the handoffs gate can emit it without a

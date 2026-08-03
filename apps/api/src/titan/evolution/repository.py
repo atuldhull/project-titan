@@ -219,6 +219,43 @@ async def insert_scorecard(
     }
 
 
+async def get_scorecard(engine: AsyncEngine, task_id: uuid.UUID) -> dict[str, Any] | None:
+    """The existing scorecard for a task (same shape as ``insert_scorecard``), or None.
+
+    A redelivery of a task.terminal finds ``insert_scorecard`` returns None (row
+    exists); the consumer uses this to fetch that row so the post-scorecard steps
+    (reflection, RCR) still run instead of being silently skipped on retry."""
+    async with engine.connect() as conn:
+        row = (
+            (
+                await conn.execute(
+                    text(
+                        "SELECT id, task_id, agent_id, prompt_sha, agent_spec_sha, model_id, "
+                        "task_class, dimensions, composite_score, trace_id FROM agent_scorecards "
+                        "WHERE task_id = :tid LIMIT 1"
+                    ),
+                    {"tid": task_id},
+                )
+            )
+            .mappings()
+            .first()
+        )
+    if row is None:
+        return None
+    return {
+        "id": str(row["id"]),
+        "task_id": str(row["task_id"]),
+        "agent_id": row["agent_id"],
+        "prompt_sha": row["prompt_sha"],
+        "agent_spec_sha": row["agent_spec_sha"],
+        "model_id": row["model_id"],
+        "task_class": row["task_class"],
+        "dimensions": row["dimensions"],
+        "composite_score": float(row["composite_score"]),
+        "trace_id": row["trace_id"],
+    }
+
+
 async def scorecards_since(
     engine: AsyncEngine,
     *,
@@ -340,14 +377,252 @@ async def list_investigations(
     return out
 
 
+# --- root-cause records (Phase 85, TITAN-EVO-012/013) -------------------------
+
+
+def _rcr_dict(r: Any) -> dict[str, Any]:
+    return {
+        "id": str(r["id"]),
+        "failure_code": r["failure_code"],
+        "severity": r["severity"],
+        "task_ids": [str(t) for t in (r["task_ids"] or [])],
+        "signature": r["signature"],
+        "summary": r["summary"],
+        "five_whys": r["five_whys"],
+        "contributing": r["contributing"],
+        "remediation": r["remediation"],
+        "status": r["status"],
+        "ep": r["ep"],
+        "ep_merged": r["ep_merged"],
+        "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+    }
+
+
+async def insert_rcr(
+    engine: AsyncEngine,
+    *,
+    failure_code: str,
+    severity: str,
+    task_ids: list[uuid.UUID],
+    signature: str,
+    summary: str,
+    five_whys: list[Any],
+    contributing: dict[str, Any],
+    remediation: dict[str, Any],
+    ep: str = "",
+) -> dict[str, Any] | None:
+    """Open an RCR. Idempotent on an OPEN signature (partial unique index): if one
+    is already open for this signature, returns None (the caller reopens instead)."""
+    row_id = uuid7()
+    async with engine.begin() as conn:
+        result = await conn.execute(
+            text(
+                "INSERT INTO root_cause_records (id, failure_code, severity, task_ids, signature, "
+                "summary, five_whys, contributing, remediation, ep) VALUES "
+                "(:id,:code,:sev,:tids,:sig,:sum,CAST(:fw AS JSONB),CAST(:con AS JSONB),"
+                "CAST(:rem AS JSONB),:ep) "
+                "ON CONFLICT (signature) WHERE status = 'open' DO NOTHING RETURNING id"
+            ),
+            {
+                "id": row_id,
+                "code": failure_code,
+                "sev": severity,
+                "tids": task_ids,
+                "sig": signature,
+                "sum": summary,
+                "fw": json.dumps(five_whys),
+                "con": json.dumps(contributing),
+                "rem": json.dumps(remediation),
+                "ep": ep,
+            },
+        )
+        inserted = result.first()
+        if inserted is None:
+            return None
+        row = (
+            (
+                await conn.execute(
+                    text("SELECT * FROM root_cause_records WHERE id = :id"), {"id": row_id}
+                )
+            )
+            .mappings()
+            .first()
+        )
+    return _rcr_dict(row) if row else None
+
+
+async def reopen_rcr_by_signature(
+    engine: AsyncEngine, signature: str, *, add_task_id: uuid.UUID | None = None
+) -> str | None:
+    """Recurrence (EVO-013): reopen the most recent REMEDIATED RCR for this signature
+    and flag its EP ineffective. Only 'remediated' is reopened — an 'accepted_risk'
+    RCR is a deliberate human decision to live with the failure, so its recurrence
+    must NOT silently overturn it (see ``touch_accepted_risk_rcr``). Returns the
+    reopened id, or None if no remediated RCR exists for the signature."""
+    async with engine.begin() as conn:
+        row = (
+            await conn.execute(
+                text(
+                    "SELECT id FROM root_cause_records WHERE signature = :sig AND "
+                    "status = 'remediated' ORDER BY created_at DESC LIMIT 1"
+                ),
+                {"sig": signature},
+            )
+        ).first()
+        if row is None:
+            return None
+        rcr_id = row[0]
+        await conn.execute(
+            text(
+                "UPDATE root_cause_records SET status = 'open', ep_merged = false, "
+                "task_ids = CASE WHEN CAST(:tid AS uuid) IS NULL THEN task_ids "
+                "ELSE array_append(task_ids, CAST(:tid AS uuid)) END WHERE id = :id"
+            ),
+            {"id": rcr_id, "tid": add_task_id},
+        )
+        return str(rcr_id)
+
+
+async def touch_accepted_risk_rcr(
+    engine: AsyncEngine, signature: str, *, add_task_id: uuid.UUID | None = None
+) -> str | None:
+    """A recurrence of an ACCEPTED-RISK signature: append the recurring task to the
+    existing record but leave status/ep_merged untouched — the risk was deliberately
+    accepted, so recurrence is expected and must not reopen or duplicate it. Returns
+    the touched id, or None if no accepted-risk RCR exists for the signature."""
+    async with engine.begin() as conn:
+        row = (
+            await conn.execute(
+                text(
+                    "SELECT id FROM root_cause_records WHERE signature = :sig AND "
+                    "status = 'accepted_risk' ORDER BY created_at DESC LIMIT 1"
+                ),
+                {"sig": signature},
+            )
+        ).first()
+        if row is None:
+            return None
+        rcr_id = row[0]
+        if add_task_id is not None:
+            await conn.execute(
+                text(
+                    "UPDATE root_cause_records SET task_ids = array_append(task_ids, "
+                    "CAST(:tid AS uuid)) WHERE id = :id"
+                ),
+                {"id": rcr_id, "tid": add_task_id},
+            )
+        return str(rcr_id)
+
+
+async def annotate_rcrs_for_merged_ep(engine: AsyncEngine, ep: str) -> list[str]:
+    """A merged EP annotates + remediates the RCRs it fixes (EVO-013). Moving them
+    out of 'open' is what makes a later recurrence of the same signature *reopen*
+    (proving the EP ineffective) instead of no-opping on the open-signature index —
+    without this, the recurrence-reopen path would be unreachable. Returns the ids of
+    the affected RCRs (so the approve flow can audit which failures it declared fixed)."""
+    if not ep:
+        return []
+    async with engine.begin() as conn:
+        rows = (
+            await conn.execute(
+                text(
+                    "UPDATE root_cause_records SET ep_merged = true, "
+                    "status = CASE WHEN status = 'open' THEN 'remediated' ELSE status END "
+                    "WHERE ep = :ep RETURNING id"
+                ),
+                {"ep": ep},
+            )
+        ).all()
+    return [str(r[0]) for r in rows]
+
+
+async def override_rcr(
+    engine: AsyncEngine,
+    rcr_id: uuid.UUID,
+    *,
+    failure_code: str | None = None,
+    severity: str | None = None,
+    status: str | None = None,
+) -> dict[str, Any] | None:
+    """Human override of an RCR's classification/severity/status (EVO-011: the
+    Memory Agent's code is human-overridable). Only the fixed set of columns may be
+    set — the column names are hardcoded (never caller-supplied); values are bound.
+    The DB CHECK constraints still reject an out-of-taxonomy code / bad enum. Returns
+    the updated row, or None if the RCR does not exist / nothing to change."""
+    updates = {"failure_code": failure_code, "severity": severity, "status": status}
+    provided = {col: val for col, val in updates.items() if val is not None}
+    if not provided:
+        return None
+    set_clause = ", ".join(f"{col} = :{col}" for col in provided)  # cols are hardcoded keys
+    async with engine.begin() as conn:
+        row = (
+            (
+                await conn.execute(
+                    text(f"UPDATE root_cause_records SET {set_clause} WHERE id = :id RETURNING *"),
+                    {**provided, "id": rcr_id},
+                )
+            )
+            .mappings()
+            .first()
+        )
+    return _rcr_dict(row) if row else None
+
+
+async def link_rcr_ep(engine: AsyncEngine, rcr_id: uuid.UUID, ep: str) -> dict[str, Any] | None:
+    """Link an RCR to the EP proposed to remediate it (EVO-013). Writing this BEFORE
+    the EP merges is what lets ``annotate_rcrs_for_merged_ep`` (matched on ``ep``)
+    find and remediate it on approval. Returns the updated row, or None if absent."""
+    async with engine.begin() as conn:
+        row = (
+            (
+                await conn.execute(
+                    text("UPDATE root_cause_records SET ep = :ep WHERE id = :id RETURNING *"),
+                    {"ep": ep, "id": rcr_id},
+                )
+            )
+            .mappings()
+            .first()
+        )
+    return _rcr_dict(row) if row else None
+
+
+async def list_rcrs(
+    engine: AsyncEngine, *, status: str | None = None, limit: int = 100
+) -> list[dict[str, Any]]:
+    clause = "" if status is None else " WHERE status = :status"
+    async with engine.connect() as conn:
+        rows = (
+            (
+                await conn.execute(
+                    text(
+                        "SELECT * FROM root_cause_records" + clause + " ORDER BY created_at DESC "
+                        "LIMIT :limit"
+                    ),
+                    {"status": status, "limit": limit} if status else {"limit": limit},
+                )
+            )
+            .mappings()
+            .all()
+        )
+    return [_rcr_dict(r) for r in rows]
+
+
 __all__ = [
+    "annotate_rcrs_for_merged_ep",
     "get_artifact",
+    "get_scorecard",
+    "insert_rcr",
     "insert_scorecard",
+    "link_rcr_ep",
     "list_artifacts",
     "list_investigations",
+    "list_rcrs",
     "open_investigation",
+    "override_rcr",
     "record_artifact",
+    "reopen_rcr_by_signature",
     "scorecard_exists",
     "scorecard_task_meta",
     "scorecards_since",
+    "touch_accepted_risk_rcr",
 ]

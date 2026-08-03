@@ -68,6 +68,12 @@ class AuditAction(enum.StrEnum):
     # (TITAN-EVO-001c).
     EVOLUTION_APPROVE = "evolution.approve"
 
+    # Vol 10 §5, Phase 85: a human mutated a Root-Cause Record — linked it to a
+    # remediating EP or overrode its classification/severity/status (EVO-011/013).
+    # A merged EP auto-remediates linked RCRs, so this is a trust-relevant curation
+    # act and must leave a trail, exactly like an approval.
+    EVOLUTION_RCR_UPDATE = "evolution.rcr_update"
+
 
 class Outcome(enum.StrEnum):
     SUCCESS = "success"

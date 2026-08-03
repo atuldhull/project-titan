@@ -341,6 +341,8 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
             "memory-ingest-reaper",
             "evolution-scorecard",
             "evolution-scorecard-reaper",
+            "evolution-retro",
+            "evolution-retro-reaper",
         ],
         leader_only=[
             "outbox-drainer",
@@ -409,6 +411,17 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
         ),
         asyncio.create_task(
             evolution_consumer.run_scorecard_reaper(
+                engine, bus, llm_gateway, evolution_resolver, worker_id, stop=stop
+            )
+        ),
+        # Phase 85: post-project retrospective on pipeline.updated(released).
+        asyncio.create_task(
+            evolution_consumer.run_retro_consumer(
+                engine, bus, llm_gateway, evolution_resolver, worker_id, stop=stop
+            )
+        ),
+        asyncio.create_task(
+            evolution_consumer.run_retro_reaper(
                 engine, bus, llm_gateway, evolution_resolver, worker_id, stop=stop
             )
         ),

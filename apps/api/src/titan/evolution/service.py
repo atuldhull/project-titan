@@ -138,6 +138,20 @@ async def approve_artifact(
         )
         row = await repository.get_artifact(conn, path=path, content_sha256=content_sha256)
     assert row is not None  # just inserted in this txn
+    # EVO-013: a merged/approved EP annotates the RCRs it remediates. Audit which RCRs
+    # this approval declared fixed — the free-form `ep` key means one approval can flip
+    # multiple RCRs to 'remediated', so that set must be traceable to the approver.
+    if ep:
+        remediated = await repository.annotate_rcrs_for_merged_ep(engine, ep)
+        if remediated:
+            await audit.record(
+                actor=actor,
+                action=AuditAction.EVOLUTION_RCR_UPDATE,
+                resource=f"ep:{ep}",
+                outcome=Outcome.SUCCESS,
+                source_ip=source_ip,
+                detail={"op": "auto_remediate_on_merge", "ep": ep, "rcr_ids": remediated},
+            )
     return row
 
 

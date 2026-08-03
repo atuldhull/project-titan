@@ -11,9 +11,21 @@ the human-gated approve action; it is never a second prompt source.
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
-from sqlalchemy import BigInteger, ForeignKey, Index, Integer, Numeric, Text, UniqueConstraint, text
-from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    Text,
+    UniqueConstraint,
+    text,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from titan.db import Base, ConventionsMixin, uuid7
@@ -72,3 +84,51 @@ class AgentScorecard(ConventionsMixin, Base):
     tokens_out: Mapped[int] = mapped_column(BigInteger, nullable=False)
     wall_clock_s: Mapped[int] = mapped_column(Integer, nullable=False)
     trace_id: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class RootCauseRecord(ConventionsMixin, Base):
+    """A five-whys root-cause analysis of a classified failure (Vol 10 §5.2,
+    TITAN-EVO-012). failure_code is CHECK-bound to the fixed F-* taxonomy."""
+
+    __tablename__ = "root_cause_records"
+    __table_args__ = (
+        CheckConstraint(
+            "failure_code IN ('F-REQ','F-CTX','F-GEN','F-STD','F-SEC','F-ORCH','F-TOOL','F-LLM',"
+            "'F-HUM','F-UNK')",
+            name="ck_root_cause_records_code",
+        ),
+        CheckConstraint(
+            "severity IN ('low','medium','high','critical')", name="ck_root_cause_records_severity"
+        ),
+        CheckConstraint(
+            "status IN ('open','remediated','accepted_risk')", name="ck_root_cause_records_status"
+        ),
+        Index(
+            "uq_root_cause_records_open_signature",
+            "signature",
+            unique=True,
+            postgresql_where=text("status = 'open'"),
+        ),
+        Index("ix_root_cause_records_status", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    failure_code: Mapped[str] = mapped_column(Text, nullable=False)
+    severity: Mapped[str] = mapped_column(Text, nullable=False)
+    task_ids: Mapped[list[uuid.UUID]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), nullable=False, server_default=text("'{}'")
+    )
+    signature: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    five_whys: Mapped[list[Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    contributing: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    remediation: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'open'"))
+    ep: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    ep_merged: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))

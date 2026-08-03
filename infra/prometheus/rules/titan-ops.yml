@@ -97,3 +97,18 @@ groups:
         annotations:
           summary: "Agent {{ $labels.agent }} KPI degraded on task_class {{ $labels.task_class }}"
           runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#agent-kpi-degraded"
+
+      # Vol 10 §4/§5 (Phase 85): the whole post-terminal evolution subsystem is
+      # fail-safe (a broken prompt/provider degrades to F-UNK / no reflection rather
+      # than raising), so a systemic breakage is otherwise an invisible silent no-op —
+      # the consumer ACKs and queue depth stays 0. This fires when >50% of evolution
+      # ops fail over 30m (clamp_min avoids a div-by-zero when idle). Ticket.
+      - alert: EvolutionSubsystemFailing
+        expr: |
+          sum(rate(titan_evolution_ops_total{outcome="failed"}[30m]))
+          / clamp_min(sum(rate(titan_evolution_ops_total[30m])), 1) > 0.5
+        for: 30m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Evolution subsystem failing (>50% of scorecard/reflection/RCR ops erroring)"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#evolution-subsystem-failing"

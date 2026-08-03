@@ -26,6 +26,23 @@ def _bad_request(detail: str) -> ProblemException:
     return ProblemException(status=400, title="Bad request", detail=detail)
 
 
+async def _audit_rcr_update(
+    request: Request, principal: Principal, rcr_id: Any, detail: dict[str, Any]
+) -> None:
+    """Trail a human RCR mutation (link/override) — the merged-EP path auto-remediates
+    linked RCRs, so this is trust-relevant and must be audited like an approval."""
+    from titan.audit.service import AuditAction, Outcome
+
+    await request.app.state.audit.record(
+        actor=f"user:{principal.sub}",
+        action=AuditAction.EVOLUTION_RCR_UPDATE,
+        resource=f"rcr:{rcr_id}",
+        outcome=Outcome.SUCCESS,
+        source_ip=request.client.host if request.client else None,
+        detail=detail,
+    )
+
+
 router = APIRouter(prefix="/api/v1/evolution", tags=["evolution"])
 
 _Reader = Annotated[Principal, Depends(Requires("evolution:read"))]
@@ -55,6 +72,22 @@ class ApproveRequest(BaseModel):
     semver: str = "0.0.0"
     ep: str = Field(min_length=1)
     diff_url: str = ""
+
+
+class LinkEpRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ep: str = Field(min_length=1, max_length=200)
+
+
+class OverrideRcrRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    failure_code: str | None = Field(default=None, min_length=1, max_length=16)
+    severity: str | None = None
+    status: str | None = None
+
+
+_RCR_SEVERITIES = {"low", "medium", "high", "critical"}
+_RCR_STATUSES = {"open", "remediated", "accepted_risk"}
 
 
 @router.get("/manifest", response_model=ManifestSummary)
@@ -96,6 +129,99 @@ async def get_agent_kpis(request: Request, principal: _Reader, agent_id: str) ->
     from titan.evolution import kpi as kpi_mod
 
     return await kpi_mod.agent_kpis(request.app.state.engine, agent_id)
+
+
+@router.get("/rcrs")
+async def list_rcrs(
+    request: Request,
+    principal: _Reader,
+    status: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+) -> dict[str, Any]:
+    """Root-Cause Records (TITAN-EVO-012). Also searchable in the Memory Explorer
+    (each RCR has a companion memory_records row, subtype='rcr')."""
+    from titan.evolution import repository as repo
+
+    rows = await repo.list_rcrs(request.app.state.engine, status=status, limit=limit)
+    return {"rcrs": rows}
+
+
+@router.patch("/rcrs/{rcr_id}/ep")
+async def link_rcr_ep(
+    request: Request, principal: _Approver, rcr_id: str, body: LinkEpRequest
+) -> dict[str, Any]:
+    """Link an RCR to the EP proposed to remediate it (EVO-013). Human-only, like
+    approval: asserting "this EP fixes this failure" is a curation act, and the link
+    is what lets a merged EP auto-remediate the RCR. Recorded before the EP merges."""
+    import uuid as _uuid
+
+    from titan.evolution import repository as repo
+
+    if principal.kind != "user":
+        raise ProblemException(
+            status=403, title="Forbidden", detail="linking an RCR to an EP is human-only"
+        )
+    try:
+        rid = _uuid.UUID(rcr_id)
+    except (ValueError, TypeError) as exc:
+        raise _bad_request("rcr_id is not a valid UUID") from exc
+    row = await repo.link_rcr_ep(request.app.state.engine, rid, body.ep)
+    if row is None:
+        raise ProblemException(status=404, title="Not found", detail="RCR not found")
+    await _audit_rcr_update(request, principal, rid, {"op": "link_ep", "ep": body.ep})
+    return {"linked": True, "rcr": row}
+
+
+@router.patch("/rcrs/{rcr_id}")
+async def override_rcr(
+    request: Request, principal: _Approver, rcr_id: str, body: OverrideRcrRequest
+) -> dict[str, Any]:
+    """Human override of an RCR's classification/severity/status (EVO-011: the Memory
+    Agent's automatic code is human-overridable). Human-only. The failure_code is
+    validated against the pinned taxonomy so a typo is a clean 400, not a DB 500."""
+    import uuid as _uuid
+
+    from titan.evolution import failures
+    from titan.evolution import repository as repo
+
+    if principal.kind != "user":
+        raise ProblemException(
+            status=403, title="Forbidden", detail="overriding an RCR is human-only"
+        )
+    resolver = _resolver(request)
+    if body.failure_code is not None and body.failure_code not in failures.load_taxonomy(
+        resolver.repo_root
+    ):
+        raise _bad_request("failure_code is not in the pinned taxonomy")
+    if body.severity is not None and body.severity not in _RCR_SEVERITIES:
+        raise _bad_request("severity must be one of low|medium|high|critical")
+    if body.status is not None and body.status not in _RCR_STATUSES:
+        raise _bad_request("status must be one of open|remediated|accepted_risk")
+    try:
+        rid = _uuid.UUID(rcr_id)
+    except (ValueError, TypeError) as exc:
+        raise _bad_request("rcr_id is not a valid UUID") from exc
+    row = await repo.override_rcr(
+        request.app.state.engine,
+        rid,
+        failure_code=body.failure_code,
+        severity=body.severity,
+        status=body.status,
+    )
+    if row is None:
+        raise ProblemException(status=404, title="Not found", detail="RCR not found or no change")
+    await _audit_rcr_update(
+        request,
+        principal,
+        rid,
+        {
+            "op": "override",
+            "failure_code": body.failure_code,
+            "severity": body.severity,
+            "status": body.status,
+        },
+    )
+    return {"updated": True, "rcr": row}
 
 
 @router.get("/investigations")

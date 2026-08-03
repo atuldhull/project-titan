@@ -33,6 +33,14 @@ scoring:
   approved_by: 00000000-0000-0000-0000-000000000083
   approved_at: "2026-08-03T00:00:00Z"
   diff_url: ""
+taxonomy:
+  path: evolution/taxonomy/failures.yaml
+  sha256: be33e54250e6b964cdb9aa59181a5bebfb545690e9d114cd88c752b319c23759
+  semver: 1.0.0
+  ep: EP-0001
+  approved_by: 00000000-0000-0000-0000-000000000083
+  approved_at: "2026-08-03T00:00:00Z"
+  diff_url: ""
 prompts:
   architect:
     path: evolution/prompts/architect/system.md
@@ -114,6 +122,14 @@ prompts:
     approved_by: 00000000-0000-0000-0000-000000000083
     approved_at: "2026-08-03T00:00:00Z"
     diff_url: ""
+  failure_classifier:
+    path: evolution/prompts/failure_classifier/system.md
+    sha256: aeb4f700290dbbe9405e6cb99a1662928508b4045719d5c8d40abfd0589def9e
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
   localization:
     path: evolution/prompts/localization/system.md
     sha256: 5cf368cc3bc1fae5204361794a885670e7ea3935de58e77645aab57dbe8e17c3
@@ -154,6 +170,14 @@ prompts:
     approved_by: 00000000-0000-0000-0000-000000000083
     approved_at: "2026-08-03T00:00:00Z"
     diff_url: ""
+  post_task_reflection:
+    path: evolution/prompts/post_task_reflection/system.md
+    sha256: b31d8085be16b4c70b00b6a97a55f0293a92fd56573f4134fc4534b7d3a48f30
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
   qa:
     path: evolution/prompts/qa/system.md
     sha256: 9c31ac3d82991d6af46a112014fb1aaffd0cf6431eb943463a9f81be3b321f8c
@@ -165,6 +189,14 @@ prompts:
   research:
     path: evolution/prompts/research/system.md
     sha256: 7063f8f84cc03bb7d11d6dfbd2dfbfddd64184fcedf883390b6c4438cd06abcf
+    semver: 1.0.0
+    ep: EP-0001
+    approved_by: 00000000-0000-0000-0000-000000000083
+    approved_at: "2026-08-03T00:00:00Z"
+    diff_url: ""
+  retrospective:
+    path: evolution/prompts/retrospective/system.md
+    sha256: e3b747386054135a1859d51feae71741376a2cc59921fb5148ac01283bf66cd2
     semver: 1.0.0
     ep: EP-0001
     approved_by: 00000000-0000-0000-0000-000000000083

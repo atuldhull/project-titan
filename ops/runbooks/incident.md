@@ -178,3 +178,19 @@ KPI series snapshot — this is a **quality regression, not an outage** (ticket,
 - **Mitigate:** if a merged EP caused it, `git revert` the evolution commit + redeploy (restores the
   prior approved prompt bytes); otherwise let the Memory Agent's investigation run its course.
 - **Escalate:** SEV-3 — track the investigation to closure; no live-traffic impact.
+
+## Evolution Subsystem Failing
+
+More than half of the post-terminal evolution operations (scorecard / reflection / failure
+classification / RCR) errored over 30 minutes (`EvolutionSubsystemFailing`, Phase 85). The whole
+subsystem is fail-safe by design — a broken prompt or provider degrades to `F-UNK` / no reflection
+rather than blocking task closure — so without this signal it would be an **invisible silent no-op**
+(the consumer keeps ACKing; queue depth stays 0). No live-traffic impact, but the evolution loop
+(scorecards, reflections, RCRs) is not learning.
+- **Check:** `titan_evolution_ops_total{outcome="failed"}` by `op` to see which stage fails; the
+  most common cause is an evolution registry prompt that is unapproved/drifted/missing —
+  run `uv run python scripts/check_evolution.py` (the same CI gate) and check the LLM provider
+  health (a provider outage degrades every rubric/reflection/classify call).
+- **Mitigate:** re-pin/re-approve the drifted prompt (Phase-83 EP flow) or restore provider access;
+  the subsystem self-heals on the next terminal task (steps are idempotent — no backfill needed).
+- **Escalate:** SEV-3 — quality/learning regression, not an outage.
