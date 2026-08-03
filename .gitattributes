@@ -5,3 +5,9 @@
 *.toml text eol=lf
 *.yml text eol=lf
 Makefile text eol=lf
+# The evolution registry is content-pinned by sha256 over LF bytes (Phase 83,
+# TITAN-EVO-002). A CRLF checkout (autocrlf on Windows) would change the bytes so
+# every on-disk hash mismatches the manifest → the resolver refuses every prompt.
+# Force LF for the whole tree so the content-pin holds on every platform (*.md and
+# *.yaml are otherwise not covered by the eol=lf rules above).
+evolution/** text eol=lf
