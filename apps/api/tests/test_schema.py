@@ -98,11 +98,13 @@ AUTH_HARDENING_TABLES = {
 # unlocked into memory) and the append-only secret-lifecycle + envelope-integrity
 # audit ledger.
 SECRETS_VAULT_TABLES = {"secret_metadata", "secret_audit"}
-EVOLUTION_TABLES = {  # Phase 83/84/85 (Vol 10 §2/§3/§5, migrations 0038/0039/0040)
+EVOLUTION_TABLES = {  # Phase 83-86 (Vol 10 §2/§3/§5/§6, migrations 0038-0041)
     "evolution_artifacts",
     "agent_scorecards",
     "evolution_investigations",
     "root_cause_records",
+    "evolution_deployments",
+    "evolution_ab_arms",
 }
 # NOTE: the Memory/KB/KG tables (Phases 33–39, migrations 0014–0018) live in the
 # ``brain`` schema, which inspect().get_table_names() does not enumerate by

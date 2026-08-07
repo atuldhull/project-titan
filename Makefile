@@ -248,6 +248,11 @@ check-k8s:
 check-evolution:
 	cd $(API_DIR) && uv run python scripts/check_evolution.py
 
+# EVO-017 / ADR-EVO-02 (§6): the offline bench gate — an EP that changes prompts must ship a
+# challenger bench report that is non-inferior to the champion on every track (gates.yaml).
+check-bench:
+	cd $(API_DIR) && uv run python scripts/check_bench.py
+
 # OPS-009 (§4.3): autoscaling consistency — HPA custom metrics are real app gauges, the KEDA
 # worker scaler matches the code's stream/group, worker drains, bounds pinned to the spec.
 check-autoscaling:

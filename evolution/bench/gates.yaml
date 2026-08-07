@@ -1,0 +1,16 @@
+# TITAN-Bench offline gate (Vol 10 §6, TITAN-EVO-017, ADR-EVO-02).
+#
+# Per-track NON-INFERIORITY margins: a challenger passes a track when its score is at
+# least (champion_score - margin) — i.e. it may be up to `margin` worse and still be
+# "non-inferior", but no worse. `min_score` is an absolute floor a challenger must clear
+# regardless of the champion. The CI gate (scripts/check_bench.py) blocks an EP PR whose
+# attached bench report fails ANY track. Margins are conservative for the security track
+# (no regression tolerated) and looser for subjective design (B-ARCH).
+suite_version: 1
+tracks:
+  B-CODE: { margin: 0.05, min_score: 0.70 }
+  B-REVIEW: { margin: 0.05, min_score: 0.60 }
+  B-PLAN: { margin: 0.10, min_score: 0.60 }
+  B-ARCH: { margin: 0.10, min_score: 0.55 }
+  B-SEC: { margin: 0.00, min_score: 0.80 }   # security: no regression tolerated
+  B-REG: { margin: 0.00, min_score: 1.00 }   # a regression recurring is an automatic fail

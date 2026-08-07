@@ -132,3 +132,85 @@ class RootCauseRecord(ConventionsMixin, Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'open'"))
     ep: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
     ep_merged: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+
+
+class EvolutionDeployment(ConventionsMixin, Base):
+    """An online A/B deployment of a challenger config under a monitoring contract
+    (Vol 10 §6 EVO-018 + §2 EVO-003). Carries the KPI floor + observation window that
+    the auto-rollback monitor enforces: a floor breach reverts to the champion. At most
+    one ACTIVE (shadow|canary) deployment per agent scope (the partial unique index)."""
+
+    __tablename__ = "evolution_deployments"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('shadow','canary','promoted','rolled_back','aborted')",
+            name="ck_evolution_deployments_status",
+        ),
+        CheckConstraint("mode IN ('shadow','canary')", name="ck_evolution_deployments_mode"),
+        CheckConstraint(
+            "canary_pct >= 0 AND canary_pct <= 100", name="ck_evolution_deployments_pct"
+        ),
+        Index(
+            "uq_evolution_deployments_active_agent",
+            "agent_id",
+            unique=True,
+            postgresql_where=text("status IN ('shadow','canary')"),
+        ),
+        Index("ix_evolution_deployments_status", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    ep: Mapped[str] = mapped_column(Text, nullable=False)  # the EP proposing the challenger
+    agent_id: Mapped[str] = mapped_column(Text, nullable=False)  # roster id, or 'all'
+    mode: Mapped[str] = mapped_column(Text, nullable=False)  # shadow | canary
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'shadow'"))
+    canary_pct: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    champion_ref: Mapped[str] = mapped_column(Text, nullable=False)  # champion prompt_sha
+    challenger_ref: Mapped[str] = mapped_column(Text, nullable=False)  # challenger prompt_sha
+    kpi_floor: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    min_samples: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("5"))
+    observation_window_s: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("300")
+    )
+    metrics: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    rolled_back_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    rollback_reason: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+
+
+class EvolutionAbArm(ConventionsMixin, Base):
+    """One arm's (champion|challenger) evaluation of an A/B-assigned task (EVO-018).
+
+    Kept separate from ``agent_scorecards`` (which is UNIQUE per task) so the same task
+    can carry BOTH arms' scores for a sequential (SPRT/Bayesian) comparison. Scores are
+    computed through the SAME Phase-84 composite — no second metrics store."""
+
+    __tablename__ = "evolution_ab_arms"
+    __table_args__ = (
+        CheckConstraint("arm IN ('champion','challenger')", name="ck_evolution_ab_arms_arm"),
+        CheckConstraint("mode IN ('shadow','canary')", name="ck_evolution_ab_arms_mode"),
+        # One row per (deployment, task, arm): a redelivery is idempotent.
+        Index(
+            "uq_evolution_ab_arms_dep_task_arm",
+            "deployment_id",
+            "task_id",
+            "arm",
+            unique=True,
+        ),
+        Index("ix_evolution_ab_arms_deployment_arm", "deployment_id", "arm", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    deployment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("evolution_deployments.id"), nullable=False
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id"), nullable=False)
+    arm: Mapped[str] = mapped_column(Text, nullable=False)  # champion | challenger
+    mode: Mapped[str] = mapped_column(Text, nullable=False)  # shadow | canary
+    agent_id: Mapped[str] = mapped_column(Text, nullable=False)
+    task_class: Mapped[str] = mapped_column(Text, nullable=False)
+    composite_score: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    dimensions: Mapped[dict[str, int]] = mapped_column(JSONB, nullable=False)
+    prompt_sha: Mapped[str] = mapped_column(Text, nullable=False)
+    model_id: Mapped[str] = mapped_column(Text, nullable=False)

@@ -128,6 +128,80 @@ def _benchmark_run(brief_id: str | None, profile: str, output: str | None, confi
     return 0 if report.meets_mvp else 1
 
 
+async def _run_titan_bench(track: str, manifest: str, profile: str) -> dict[str, object]:
+    """Run the TITAN-Bench suite through the offline LLM gateway (Vol 10 §6, EVO-016).
+    B-REG cases are generated live from the current root_cause_records."""
+    from titan.evolution import bench as titan_bench
+
+    base = get_settings()
+    local_models = str(Path(base.models_config_path).with_name("models.local.yaml"))
+    settings = base.model_copy(
+        update={"model_policy_profile": profile, "models_config_path": local_models}
+    )
+    guard = EgressGuard(ollama_base_url=os.environ.get("TITAN_OLLAMA_BASE_URL"))
+    base_suite = titan_bench.load_bench_suite()
+    tracks = None if track in ("all", "") else [track]
+    engine = redis = gateway = None
+    try:
+        engine = clients.create_engine(settings)
+        redis = clients.create_redis(settings)
+        gateway = build_gateway(settings, client=guarded_client(guard), engine=engine, redis=redis)
+        # Fold in live regression cases from the current Root-Cause Records (Phase 85).
+        live_reg = await titan_bench.bench_cases_from_rcrs(engine)
+        suite = titan_bench.BenchSuite(
+            suite_version=base_suite.suite_version, cases=(*base_suite.cases, *live_reg)
+        )
+
+        async def solve(case: titan_bench.BenchCase) -> dict[str, object]:
+            # B-REG is resolved against the DB, NOT the model — recurrence is a fact, not a
+            # guess (a model 'answer' would let a challenger fake passing the regression track).
+            if case.track == "B-REG":
+                sig = str(case.answer.get("signature", ""))
+                return {"recurred": await titan_bench.signature_recurred(engine, sig)}
+            return await titan_bench.gateway_solve(gateway, case, model_alias="local-default")
+
+        report = await titan_bench.run_bench_async(
+            suite, solve, tracks=tracks, manifest_sha=manifest, label="challenger"
+        )
+        return report.to_dict()
+    finally:
+        if gateway is not None:
+            await gateway.aclose()
+        if redis is not None:
+            await redis.aclose()
+        if engine is not None:
+            await engine.dispose()
+
+
+def _bench_list() -> int:
+    from titan.evolution import bench as titan_bench
+
+    suite = titan_bench.load_bench_suite()
+    print(f"TITAN-Bench suite v{suite.suite_version} ({len(suite.cases)} cases):")
+    for track in titan_bench.TRACKS:
+        cases = suite.by_track(track)
+        print(f"  {track}: {len(cases)} case(s) — {', '.join(c.id for c in cases)}")
+    return 0
+
+
+def _bench_run(track: str, manifest: str, profile: str, output: str | None) -> int:
+    """Run TITAN-Bench and write the scored JSON + Markdown report. Exit 0 always (the
+    OFFLINE GATE — scripts/check_bench.py — decides pass/fail vs gates.yaml, not the run).
+    Needs a reachable local model (Ollama) for the offline profile."""
+    from titan.evolution import bench as titan_bench
+
+    report_dict = asyncio.run(_run_titan_bench(track, manifest, profile))
+    rendered = json.dumps(report_dict, indent=2)
+    report = titan_bench.BenchReport.from_dict(report_dict)
+    md = titan_bench.render_markdown(report)
+    if output:
+        Path(output).write_text(rendered, encoding="utf-8")
+        Path(output).with_suffix(".md").write_text(md, encoding="utf-8")
+    print(rendered)
+    print(md, file=sys.stderr)
+    return 0
+
+
 async def _run_acceptance(profile: str) -> AcceptanceRecord:
     base = get_settings()
     # Force EVERY LLM path offline: model_policy_profile drives the runtime binding
@@ -443,6 +517,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Acknowledge that the run writes benchmark/chaos data to a DISPOSABLE database",
     )
 
+    tb_cmd = subcommands.add_parser("bench", help="TITAN-Bench agent-performance suite (Vol 10 §6)")
+    tb_sub = tb_cmd.add_subparsers(dest="bench_command", required=True)
+    tb_sub.add_parser("list", help="List the TITAN-Bench tracks + cases")
+    tb_run = tb_sub.add_parser("run", help="Run TITAN-Bench and emit a scored JSON+MD report")
+    tb_run.add_argument("--track", default="all", help="Track to run (B-CODE|...|all)")
+    tb_run.add_argument("--manifest", default="", help="Manifest SHA the run is pinned to")
+    tb_run.add_argument("--profile", default="local", help="Model profile (local for offline)")
+    tb_run.add_argument("--output", default=None, help="Write the report JSON (and .md) here")
+
     acc_cmd = subcommands.add_parser(
         "acceptance", help="Full-roster offline acceptance run (TITAN-AGT-007, Vol 2)"
     )
@@ -640,6 +723,15 @@ def main(argv: list[str] | None = None) -> int:
                 return _benchmark_run(args.brief, args.profile, args.output, args.confirm)
             except (ValueError, KeyError) as exc:
                 print(f"benchmark run failed: {exc}", file=sys.stderr)
+                return 2
+    if args.command == "bench":
+        if args.bench_command == "list":
+            return _bench_list()
+        if args.bench_command == "run":
+            try:
+                return _bench_run(args.track, args.manifest, args.profile, args.output)
+            except (ValueError, KeyError, OSError) as exc:
+                print(f"bench run failed: {exc}", file=sys.stderr)
                 return 2
     if args.command == "acceptance" and args.acceptance_command == "run":
         return _acceptance_run(args.profile, args.output, args.confirm)

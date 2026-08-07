@@ -1,0 +1,81 @@
+# TITAN-Bench smoke suite (Vol 10 §6.2, TITAN-EVO-016).
+#
+# A FIXED, VERSIONED corpus of agent-performance cases across the six tracks. Score
+# comparisons are only valid WITHIN a suite_version — bump the version whenever a case
+# is added/changed/removed. This is the laptop-runnable SMOKE subset (a few cases per
+# track, <=15 min against local Ollama models); the full suite is a superset with the
+# same shape. Each case carries a labeled `answer` so a track scorer is deterministic;
+# a case's `response` in production comes from running it through the agent runtime
+# (run_turn on the offline profile), scored 0..1 by the track scorer in bench.py.
+#
+# B-REG is seeded from a couple of representative signatures here; the runner ALSO
+# generates live B-REG cases from the current root_cause_records (Phase 85).
+suite_version: 1
+cases:
+  # --- B-CODE: hidden-test implementation (score = fraction of hidden tests passing) ---
+  - id: code-fizzbuzz
+    track: B-CODE
+    title: Implement fizzbuzz(n)
+    input: "Return 'Fizz'/'Buzz'/'FizzBuzz'/str(n) for 1..n."
+    answer: { hidden_tests_total: 8 }
+    weight: 1.0
+  - id: code-dedup
+    track: B-CODE
+    title: Stable de-duplication preserving order
+    input: "dedup(xs) removes later duplicates, preserves first-seen order."
+    answer: { hidden_tests_total: 6 }
+    weight: 1.0
+
+  # --- B-REVIEW: seeded-defect PRs (score = recall of seeded defects) ---
+  - id: review-sqli
+    track: B-REVIEW
+    title: Review a PR with 3 seeded defects
+    input: "PR adds a login handler."
+    answer: { seeded_defects: ["sqli-in-login", "missing-authz", "plaintext-password"] }
+    weight: 1.0
+  - id: review-races
+    track: B-REVIEW
+    title: Review a PR with 2 seeded defects
+    input: "PR adds a counter increment."
+    answer: { seeded_defects: ["toctou-race", "unbounded-retry"] }
+    weight: 1.0
+
+  # --- B-PLAN: requirements -> task-graph (score = node/edge coverage vs expected) ---
+  - id: plan-crud
+    track: B-PLAN
+    title: Plan a CRUD feature
+    input: "Add a notes CRUD API."
+    answer:
+      nodes: ["schema", "migration", "repository", "router", "tests"]
+      edges: [["schema", "migration"], ["migration", "repository"], ["repository", "router"], ["router", "tests"]]
+    weight: 1.0
+
+  # --- B-ARCH: rubric-judged design (score = judge rubric / 100) ---
+  - id: arch-idempotency
+    track: B-ARCH
+    title: Design an idempotent webhook receiver
+    input: "How do you make webhook processing exactly-once?"
+    answer: { rubric_max: 100, must_mention: ["idempotency-key", "dedup-store", "at-least-once"] }
+    weight: 1.0
+
+  # --- B-SEC: labeled vulnerable samples (score = correct vuln/safe classification) ---
+  - id: sec-vuln-eval
+    track: B-SEC
+    title: Classify a code sample (uses eval on user input)
+    input: "def run(x): return eval(x)"
+    answer: { label: vuln }
+    weight: 1.0
+  - id: sec-safe-parametrized
+    track: B-SEC
+    title: Classify a code sample (parametrized SQL)
+    input: "cur.execute('SELECT 1 WHERE id=%s', (uid,))"
+    answer: { label: safe }
+    weight: 1.0
+
+  # --- B-REG: regression cases (score = 1 if the fixed signature does NOT recur) ---
+  - id: reg-seed-sec
+    track: B-REG
+    title: Regression — a remediated F-SEC signature must not recur
+    input: "Re-run the scenario that produced F-SEC:agent.security."
+    answer: { signature: "F-SEC:agent.security" }
+    weight: 1.0

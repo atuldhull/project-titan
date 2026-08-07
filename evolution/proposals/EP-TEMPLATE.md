@@ -31,13 +31,19 @@ For each artifact: old → new (semver bump), and the new content sha256 pinned 
 
 ## Risk & monitoring contract (TITAN-EVO-003)
 
-- KPI floors this change must hold (e.g. task success rate, review acceptance).
-- Observation window and the automatic-revert trigger.
+- KPI floors this change must hold (e.g. task success rate, review acceptance) — the
+  `kpi_floor` an `evolution_deployments` row will carry.
+- Observation window and the automatic-revert trigger. A floor breach auto-rolls the
+  challenger back to the champion within the window (`titan_evolution_rollbacks_total`,
+  audit + incident RCR).
 
-## Benchmark evidence (TITAN-EVO-016/017)
+## Benchmark evidence (TITAN-EVO-016/017, ADR-EVO-02)
 
-Attach the TITAN-Bench report (added by CI in Phase 86). No EP enters online A/B
-until it beats or matches the champion on the relevant tracks.
+Run `titan bench run --track all --manifest <sha>` on the challenger and commit the report
+to `evolution/bench/reports/challenger.json`. CI (`make check-bench`) blocks this merge
+until the report is attached and passes `evolution/bench/gates.yaml` (non-inferior to the
+champion on every track; zero margin on B-SEC / B-REG). No EP enters online A/B until it
+matches or beats the champion.
 
 ## Rollback plan
 

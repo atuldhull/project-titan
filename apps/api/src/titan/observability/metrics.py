@@ -78,6 +78,27 @@ EVOLUTION_OPS = Counter(
     ["op", "outcome"],
 )
 
+# Auto-rollback of an evolution A/B deployment (Vol 10 §2/§6, EVO-003). The monitor
+# reverts a challenger to the champion on a KPI-floor breach; the counter's increase is
+# what the EvolutionAutoRollback alert fires on, and the gauge tracks live deployments.
+EVOLUTION_ROLLBACKS = Counter(
+    "titan_evolution_rollbacks_total",
+    "Automatic evolution challenger→champion rollbacks (Vol 10 §2, EVO-003)",
+    ["agent", "mode"],
+)
+EVOLUTION_DEPLOYMENTS_ACTIVE = Gauge(
+    "titan_evolution_deployments_active",
+    "Active (shadow|canary) evolution A/B deployments (Vol 10 §6, EVO-018)",
+    ["mode"],
+)
+# Deployments past their observation window still short of min_samples — a STARVED
+# deployment cannot reach a verdict, so the auto-rollback contract is silently inert for
+# it. Surfacing this makes the observation-window contract observable (review gate-4).
+EVOLUTION_DEPLOYMENTS_STARVED = Gauge(
+    "titan_evolution_deployments_starved",
+    "Active deployments past their observation window with too few samples to decide",
+)
+
 # Vol 9 §6.1 titan_agent_review_rejections_total: the Code Reviewer's REJECTED
 # verdicts at the G9 release-review gate — a quality signal (feeds Volume 10). Defined
 # here in the shared observability library so the handoffs gate can emit it without a

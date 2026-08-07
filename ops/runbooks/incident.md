@@ -194,3 +194,18 @@ rather than blocking task closure — so without this signal it would be an **in
 - **Mitigate:** re-pin/re-approve the drifted prompt (Phase-83 EP flow) or restore provider access;
   the subsystem self-heals on the next terminal task (steps are idempotent — no backfill needed).
 - **Escalate:** SEV-3 — quality/learning regression, not an outage.
+
+## Evolution Auto Rollback
+
+The A/B monitor auto-reverted a challenger evolution config to the champion after its scored
+KPI fell below the deployment's floor (`EvolutionAutoRollback`, Phase 86 / TITAN-EVO-003). **The
+revert already happened** — the champion config is serving again; this is a notification, not a
+live-traffic incident. An incident RCR is opened automatically and an `evolution.rollback` audit
+event recorded.
+- **Check:** which `{agent}` and EP (`GET /api/v1/evolution/deployments?status=rolled_back`); the
+  `rollback_reason` carries the breaching mean vs floor. Review the challenger's arm scores
+  (`evolution_ab_arms`) and the auto-opened RCR (`GET /api/v1/evolution/rcrs`).
+- **Mitigate:** nothing urgent — the champion is restored. Revise or abandon the challenger EP; a
+  new deployment starts a fresh observation window.
+- **Escalate:** SEV-3 — a rejected experiment, not an outage. Repeated rollbacks of the same EP
+  reopen the RCR (the challenger is persistently ineffective).

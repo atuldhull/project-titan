@@ -1,0 +1,15 @@
+{
+  "suite_version": 1,
+  "manifest_sha": "champion",
+  "label": "champion-baseline",
+  "overall": 0.95,
+  "tracks": {
+    "B-ARCH": { "score": 0.9, "n": 1 },
+    "B-CODE": { "score": 0.95, "n": 2 },
+    "B-PLAN": { "score": 0.9, "n": 1 },
+    "B-REG": { "score": 1.0, "n": 1 },
+    "B-REVIEW": { "score": 0.9, "n": 2 },
+    "B-SEC": { "score": 1.0, "n": 2 }
+  },
+  "cases": {}
+}

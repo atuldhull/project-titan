@@ -90,6 +90,33 @@ _RCR_SEVERITIES = {"low", "medium", "high", "critical"}
 _RCR_STATUSES = {"open", "remediated", "accepted_risk"}
 
 
+class DeployRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ep: str = Field(min_length=1, max_length=200)
+    agent_id: str = Field(min_length=1, max_length=100)
+    mode: str = Field(pattern="^(shadow|canary)$")
+    champion_ref: str = Field(min_length=1, max_length=200)
+    challenger_ref: str = Field(min_length=1, max_length=200)
+    kpi_floor: float = Field(ge=0, le=100)
+    canary_pct: int = Field(default=0, ge=0, le=100)
+    min_samples: int = Field(default=5, ge=1, le=1000)
+    observation_window_s: int = Field(default=300, ge=30, le=86400)
+
+
+class DeployDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class DebateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    question: str = Field(min_length=1, max_length=2000)
+    context: str = Field(min_length=1, max_length=20000)
+    decision_class: str = Field(min_length=1, max_length=50)
+    project_id: str | None = None
+    convening_agent_id: str | None = None
+
+
 @router.get("/manifest", response_model=ManifestSummary)
 async def get_manifest(request: Request, principal: _Reader) -> ManifestSummary:
     m = _resolver(request).manifest
@@ -236,6 +263,166 @@ async def list_investigations(
         request.app.state.engine, status=status, limit=limit
     )
     return {"investigations": rows}
+
+
+@router.get("/deployments")
+async def list_deployments(request: Request, principal: _Reader) -> dict[str, Any]:
+    """Active A/B challenger deployments under a monitoring contract (EVO-018)."""
+    from titan.evolution import rollback
+
+    rows = await rollback.list_active_deployments(request.app.state.engine)
+    return {"deployments": rows}
+
+
+@router.post("/deployments", status_code=201)
+async def create_deployment(
+    request: Request, principal: _Approver, body: DeployRequest
+) -> dict[str, Any]:
+    """Deploy a challenger config for online A/B under a KPI-floor monitoring contract
+    (EVO-018/003). Human-only: putting a challenger in front of (shadow) real traffic is a
+    curation act. Refused if an active deployment already exists for the agent."""
+    from titan.evolution import rollback
+
+    if principal.kind != "user":
+        raise ProblemException(
+            status=403, title="Forbidden", detail="deploying a challenger is human-only"
+        )
+    row = await rollback.create_deployment(
+        request.app.state.engine,
+        ep=body.ep,
+        agent_id=body.agent_id,
+        mode=body.mode,
+        champion_ref=body.champion_ref,
+        challenger_ref=body.challenger_ref,
+        kpi_floor=body.kpi_floor,
+        canary_pct=body.canary_pct,
+        min_samples=body.min_samples,
+        observation_window_s=body.observation_window_s,
+    )
+    if row is None:
+        raise _bad_request("an active deployment already exists for this agent")
+    return {"deployment": row}
+
+
+@router.get("/deployments/{deployment_id}/analysis")
+async def deployment_analysis(
+    request: Request, principal: _Reader, deployment_id: str
+) -> dict[str, Any]:
+    """The sequential (SPRT-style) promote/abort/continue recommendation (EVO-018)."""
+    import uuid as _uuid
+
+    from titan.evolution import ab
+
+    try:
+        did = _uuid.UUID(deployment_id)
+    except (ValueError, TypeError) as exc:
+        raise _bad_request("deployment_id is not a valid UUID") from exc
+    result = await ab.analyze_deployment(request.app.state.engine, did)
+    return {"analysis": result.__dict__}
+
+
+@router.post("/deployments/{deployment_id}:promote")
+async def promote_deployment(
+    request: Request, principal: _Approver, deployment_id: str, body: DeployDecisionRequest
+) -> dict[str, Any]:
+    return await _deployment_decision(request, principal, deployment_id, body, "promoted")
+
+
+@router.post("/deployments/{deployment_id}:rollback")
+async def rollback_deployment_endpoint(
+    request: Request, principal: _Approver, deployment_id: str, body: DeployDecisionRequest
+) -> dict[str, Any]:
+    return await _deployment_decision(request, principal, deployment_id, body, "rolled_back")
+
+
+async def _deployment_decision(
+    request: Request,
+    principal: Principal,
+    deployment_id: str,
+    body: DeployDecisionRequest,
+    status: str,
+) -> dict[str, Any]:
+    """Human promote/abort/rollback of a deployment (EVO-018). Human-only + audited."""
+    import uuid as _uuid
+
+    from titan.evolution import rollback
+
+    if principal.kind != "user":
+        raise ProblemException(
+            status=403, title="Forbidden", detail="deciding a deployment is human-only"
+        )
+    try:
+        did = _uuid.UUID(deployment_id)
+    except (ValueError, TypeError) as exc:
+        raise _bad_request("deployment_id is not a valid UUID") from exc
+    dep = await rollback.get_deployment(request.app.state.engine, did)
+    if dep is None or dep["status"] not in ("shadow", "canary"):
+        raise ProblemException(status=404, title="Not found", detail="no active deployment")
+    row = await rollback.set_terminal_status(
+        request.app.state.engine,
+        request.app.state.audit,
+        dep,
+        status=status,
+        actor=f"user:{principal.sub}",
+        reason=body.reason,
+    )
+    return {"deployment": row}
+
+
+@router.post("/debate", status_code=201)
+async def convene_debate_endpoint(
+    request: Request, principal: _Approver, body: DebateRequest
+) -> dict[str, Any]:
+    """Convene a multi-model debate on a decision (EVO-021/022/023). Human-only. Gated by
+    the ``evolution.debate`` flag — with it off this returns 409 (no debate can run)."""
+    import uuid as _uuid
+
+    from titan.evolution import debate as debate_mod
+
+    if principal.kind != "user":
+        raise ProblemException(
+            status=403, title="Forbidden", detail="convening a debate is human-only"
+        )
+    try:
+        project_id = _uuid.UUID(body.project_id) if body.project_id else None
+        convening = _uuid.UUID(body.convening_agent_id) if body.convening_agent_id else None
+    except (ValueError, TypeError) as exc:
+        raise _bad_request("project_id / convening_agent_id must be UUIDs") from exc
+    # A named project must exist — else the ADR/transcript writes would fail the FK check
+    # and be silently swallowed (a ruling returned but never persisted). Fail loudly instead.
+    if project_id is not None:
+        from sqlalchemy import text as _text
+
+        async with request.app.state.engine.connect() as conn:
+            exists = (
+                await conn.execute(
+                    _text("SELECT 1 FROM projects WHERE id = :pid"), {"pid": project_id}
+                )
+            ).first()
+        if exists is None:
+            raise ProblemException(status=404, title="Not found", detail="project not found")
+    policy = debate_mod.load_policy(_resolver(request).repo_root)
+    try:
+        result = await debate_mod.convene_debate(
+            request.app.state.engine,
+            request.app.state.llm_gateway,
+            request.app.state.flags,
+            question=body.question,
+            context=body.context,
+            decision_class=body.decision_class,
+            policy=policy,
+            project_id=project_id,
+            convening_agent_id=convening,
+            subject=f"user:{principal.sub}",
+            redis=getattr(request.app.state, "redis", None),
+        )
+    except debate_mod.DebateDisabled as exc:
+        raise ProblemException(status=409, title="Debate disabled", detail=str(exc)) from exc
+    except debate_mod.DebateCapExceeded as exc:
+        raise ProblemException(status=429, title="Debate cap reached", detail=str(exc)) from exc
+    except debate_mod.JudgeNotIndependent as exc:
+        raise _bad_request(str(exc)) from exc
+    return {"debate": result.__dict__}
 
 
 @router.post("/artifacts:approve", status_code=201)

@@ -256,6 +256,10 @@ class Settings(BaseSettings):
     # Nightly by default; the per-iteration units are driven directly in tests.
     evolution_kpi_rollup_interval_seconds: float = 86400.0
 
+    # How often the A/B auto-rollback monitor (EVO-003) evaluates active deployments.
+    # 30 s keeps a KPI-floor breach well inside the default 300 s (<5 min) SLA.
+    evolution_rollback_monitor_interval_seconds: float = 30.0
+
     # OTLP trace export (TITAN-BCK-025). Empty = tracing disabled (no
     # collector running); Compose obs profile sets http://otel-collector:4317.
     otel_exporter_otlp_endpoint: str = ""

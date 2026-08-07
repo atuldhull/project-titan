@@ -112,3 +112,15 @@ groups:
         annotations:
           summary: "Evolution subsystem failing (>50% of scorecard/reflection/RCR ops erroring)"
           runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#evolution-subsystem-failing"
+
+      # Vol 10 §2/§6 (Phase 86, EVO-003): the A/B monitor auto-reverted a challenger config
+      # to the champion after a KPI-floor breach. Fires immediately (a rollback is a discrete
+      # event, not a threshold) so an operator reviews why the challenger degraded. The revert
+      # already happened — this is notification, not a call to act on live traffic.
+      - alert: EvolutionAutoRollback
+        expr: increase(titan_evolution_rollbacks_total[10m]) > 0
+        for: 0m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Evolution challenger auto-rolled-back to champion (agent {{ $labels.agent }})"
+          runbook_url: "https://github.com/titan-platform/titan/blob/main/ops/runbooks/incident.md#evolution-auto-rollback"

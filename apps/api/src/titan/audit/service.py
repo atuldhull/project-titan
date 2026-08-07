@@ -74,6 +74,11 @@ class AuditAction(enum.StrEnum):
     # act and must leave a trail, exactly like an approval.
     EVOLUTION_RCR_UPDATE = "evolution.rcr_update"
 
+    # Vol 10 §2/§6, Phase 86: an A/B challenger deployment was rolled back to the
+    # champion — automatically on a KPI-floor breach (EVO-003) or by a human
+    # promote/abort decision (EVO-018). Records the deployment, reason, and actor.
+    EVOLUTION_ROLLBACK = "evolution.rollback"
+
 
 class Outcome(enum.StrEnum):
     SUCCESS = "success"

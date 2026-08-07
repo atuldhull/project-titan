@@ -528,7 +528,10 @@ async def annotate_rcrs_for_merged_ep(engine: AsyncEngine, ep: str) -> list[str]
                 text(
                     "UPDATE root_cause_records SET ep_merged = true, "
                     "status = CASE WHEN status = 'open' THEN 'remediated' ELSE status END "
-                    "WHERE ep = :ep RETURNING id"
+                    # Never auto-remediate an auto-rollback incident RCR by a bare `ep` string
+                    # collision (Phase-86 review): a rolled-back challenger's EP is ineffective,
+                    # so approving a colliding artifact must not silently close its incident.
+                    "WHERE ep = :ep AND signature NOT LIKE 'rollback:%' RETURNING id"
                 ),
                 {"ep": ep},
             )

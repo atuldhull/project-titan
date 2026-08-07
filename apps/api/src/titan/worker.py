@@ -34,6 +34,7 @@ from titan.events.consumers import run_domain_consumer, run_drainer, run_reaper
 from titan.events.outbox import OutboxDrainer
 from titan.evolution import consumer as evolution_consumer
 from titan.evolution import kpi as evolution_kpi
+from titan.evolution import rollback as evolution_rollback
 from titan.flags import service as flags_service
 from titan.llm.service import build_gateway
 from titan.memory import service as memory
@@ -471,6 +472,17 @@ async def run() -> None:  # pragma: no cover — live-verified orchestration loo
                     engine,
                     stop=stop,
                     interval_s=settings.evolution_kpi_rollup_interval_seconds,
+                )
+            ),
+            # Phase 86 (TITAN-EVO-003): the A/B auto-rollback monitor. A short-cadence
+            # leader singleton that reverts a challenger to the champion within its
+            # observation window on a KPI-floor breach (alert + audit + incident RCR).
+            asyncio.create_task(
+                evolution_rollback.run_rollback_monitor(
+                    engine,
+                    audit_service.build_audit_client(engine),
+                    stop=stop,
+                    interval_s=settings.evolution_rollback_monitor_interval_seconds,
                 )
             ),
         ]

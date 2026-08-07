@@ -1,0 +1,49 @@
+# Multi-model debate policy (Vol 10 §7, TITAN-EVO-021/022/023). CONFIG-GATED OFF: the
+# `evolution.debate` feature flag (default disabled) is the master switch — with it off,
+# NO debate can be convened regardless of this policy. This file only decides, when the
+# flag is ON, WHICH decisions get debated and how the panel is composed.
+#
+# §7.1 triggers — a decision is debated if ANY match:
+triggers:
+  high_stakes_classes: ["architecture", "security", "irreversible"]  # always debated
+  reviewer_double_reject: true      # the reviewer rejected the same artifact twice
+  low_confidence_threshold: 0.5     # self-reported confidence < this on a critical task
+  blast_radius_modules: 5           # >= N modules touched
+  public_api_change: true           # a public API contract changes
+  bench_ambiguous: true             # bench delta within the non-inferiority margin
+
+# Per-project daily cap on debates (a day-keyed counter; §7.1). 0 disables debate for the
+# project even when the flag is on.
+daily_cap_per_project: 10
+
+# The panel. On a multi-model profile each debater/judge uses a DISTINCT model_alias; on a
+# single-model (offline) profile they fall back to distinct personas + temperature variation
+# (flagged single_model=true on the record). Judge independence is enforced at convene time:
+# the judge's (model_alias, persona) must differ from every debater's.
+debaters:
+  - name: alice
+    model_alias: reasoning-large
+    persona: "a rigorous systems architect who prizes correctness and simplicity"
+    temperature: 0.3
+  - name: bob
+    model_alias: openai-default
+    persona: "a pragmatic engineer who prizes shipping and operational cost"
+    temperature: 0.7
+  - name: carol
+    model_alias: coding-default
+    persona: "a security-minded reviewer who probes for failure modes"
+    temperature: 0.5
+judge:
+  name: judge
+  model_alias: fast-cheap
+  persona: "an impartial arbiter weighing the anonymized positions on their merits"
+  temperature: 0.2
+
+# §7.3 judge protocols by decision class: single (default) / panel (3-judge majority for
+# architecture & security) / human (mandatory human-in-the-loop for EP debates).
+judge_protocol:
+  default: single
+  panel_classes: ["architecture", "security"]
+  human_classes: ["ep"]
+
+max_rebuttal_rounds: 2
