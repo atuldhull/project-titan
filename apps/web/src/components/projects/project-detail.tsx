@@ -33,20 +33,26 @@ function isTab(value: string | null): value is Tab {
   return value !== null && (TABS as readonly string[]).includes(value);
 }
 
+// Tabs backed by a real screen at their OWN sub-route (Phases 59/60/62): selecting
+// the tab navigates there rather than rendering an inline pane, so there is one home
+// per screen (and one `?task=` / live-subscription owner). Only overview/files/settings
+// render as inline panes here (files/settings have no backend screen yet).
+const ROUTED = new Set<string>(["board", "graph", "architecture", "deployments"]);
+
 export function ProjectDetail({ projectId }: { projectId: string }) {
   const router = useRouter();
   const params = useSearchParams();
   const requested = params.get("tab");
-  // `board` is a tab TRIGGER but not a tab PANE — it routes to the real board
-  // (see setTab). A bookmarked `?tab=board` must therefore go there too, not
-  // select a pane that does not exist and render blank. Fall back to overview
-  // for the render that precedes the redirect.
+  // A ROUTED tab is a TRIGGER but not a PANE — it routes to the real screen (see
+  // setTab). A bookmarked `?tab=graph` must therefore go there too, not select a
+  // pane that does not exist and render blank. Fall back to overview for the render
+  // that precedes the redirect.
   const tab: Tab =
-    isTab(requested) && requested !== "board" ? requested : "overview";
+    isTab(requested) && !ROUTED.has(requested) ? requested : "overview";
 
   useEffect(() => {
-    if (requested === "board") {
-      router.replace(`/projects/${projectId}/board`);
+    if (isTab(requested) && ROUTED.has(requested)) {
+      router.replace(`/projects/${projectId}/${requested}`);
     }
   }, [requested, projectId, router]);
 
@@ -70,11 +76,12 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   }, [sprints.data]);
 
   const setTab = (next: string) => {
-    // The board is a real route of its own (Vol 4 §6.3/§11), not a tab pane.
-    // Route to it rather than render a second copy here: two board URLs would
-    // mean two homes for the `?task=` deep link and two live subscriptions.
-    if (next === "board") {
-      router.push(`/projects/${projectId}/board`);
+    // A routed tab (board/graph/architecture/deployments) is a real screen at its
+    // own route (Vol 4 §6.3/§6.4/§6.9), not a tab pane. Navigate to it rather than
+    // render a second copy here, so each screen has one URL, one `?task=`/`?node=`
+    // deep-link owner, and one live subscription.
+    if (ROUTED.has(next)) {
+      router.push(`/projects/${projectId}/${next}`);
       return;
     }
     const qs = new URLSearchParams(params.toString());
@@ -174,29 +181,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           </div>
         </TabsContent>
 
-        {/* No "board" TabsContent: selecting that tab navigates to
-            /projects/{pid}/board, the canonical board route. */}
-        <TabsContent value="graph">
-          <StubPage
-            title="Dependency graph"
-            description="The task/architecture graph canvas (Vol 4 §6.4)."
-            milestone="Phase 60"
-          />
-        </TabsContent>
-        <TabsContent value="architecture">
-          <StubPage
-            title="Architecture"
-            description="Architecture diagrams and ADRs (Vol 4 §6.4)."
-            milestone="Phase 60"
-          />
-        </TabsContent>
-        <TabsContent value="deployments">
-          <StubPage
-            title="Deployments"
-            description="Environments, pipeline runs and stage status (Vol 4 §6.9)."
-            milestone="Phase 62"
-          />
-        </TabsContent>
+        {/* No board/graph/architecture/deployments TabsContent: those triggers are
+            ROUTED (see setTab) to their real screens at /projects/{pid}/{tab}. */}
         <TabsContent value="files">
           <StubPage
             title="Files"

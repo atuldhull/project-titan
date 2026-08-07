@@ -46,6 +46,12 @@ export default async function RootLayout({
       <head>
         <script
           nonce={nonce}
+          // The browser strips the `nonce` content attribute from the live DOM after
+          // CSP validation (only the `.nonce` IDL property survives), so hydration would
+          // otherwise flag a spurious server(nonce)↔client(empty) mismatch on this one
+          // element. The nonce still ships in the SSR HTML and the strict CSP still
+          // enforces it — there is nothing to reconcile, so suppress the warning here.
+          suppressHydrationWarning
           dangerouslySetInnerHTML={{ __html: themeScript }}
         />
       </head>
