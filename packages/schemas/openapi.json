@@ -474,6 +474,56 @@
         "title": "ApprovalResolution",
         "type": "object"
       },
+      "ApproveRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "content_sha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "diff_url": {
+            "default": "",
+            "title": "Diff Url",
+            "type": "string"
+          },
+          "ep": {
+            "minLength": 1,
+            "title": "Ep",
+            "type": "string"
+          },
+          "kind": {
+            "minLength": 1,
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "ref": {
+            "minLength": 1,
+            "title": "Ref",
+            "type": "string"
+          },
+          "semver": {
+            "default": "0.0.0",
+            "title": "Semver",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref",
+          "path",
+          "content_sha256",
+          "ep"
+        ],
+        "title": "ApproveRequest",
+        "type": "object"
+      },
       "ArtifactOut": {
         "properties": {
           "created_at": {
@@ -1936,6 +1986,58 @@
         "title": "CurationRunRequest",
         "type": "object"
       },
+      "DebateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Context",
+            "type": "string"
+          },
+          "convening_agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Convening Agent Id"
+          },
+          "decision_class": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Decision Class",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "question": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "context",
+          "decision_class"
+        ],
+        "title": "DebateRequest",
+        "type": "object"
+      },
       "DebtLedger": {
         "description": "The project's debt ledger \u2014 the open total for the dashboard plus the\ntickets (TITAN-WFL-021).",
         "properties": {
@@ -2261,6 +2363,93 @@
           "depends_on_id"
         ],
         "title": "DependencyOut",
+        "type": "object"
+      },
+      "DeployDecisionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "DeployDecisionRequest",
+        "type": "object"
+      },
+      "DeployRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "canary_pct": {
+            "default": 0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Canary Pct",
+            "type": "integer"
+          },
+          "challenger_ref": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Challenger Ref",
+            "type": "string"
+          },
+          "champion_ref": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Champion Ref",
+            "type": "string"
+          },
+          "ep": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Ep",
+            "type": "string"
+          },
+          "kpi_floor": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Kpi Floor",
+            "type": "number"
+          },
+          "min_samples": {
+            "default": 5,
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Min Samples",
+            "type": "integer"
+          },
+          "mode": {
+            "pattern": "^(shadow|canary)$",
+            "title": "Mode",
+            "type": "string"
+          },
+          "observation_window_s": {
+            "default": 300,
+            "maximum": 86400.0,
+            "minimum": 30.0,
+            "title": "Observation Window S",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ep",
+          "agent_id",
+          "mode",
+          "champion_ref",
+          "challenger_ref",
+          "kpi_floor"
+        ],
+        "title": "DeployRequest",
         "type": "object"
       },
       "DeploymentOut": {
@@ -4037,6 +4226,22 @@
         "title": "LessonResult",
         "type": "object"
       },
+      "LinkEpRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "ep": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Ep",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ep"
+        ],
+        "title": "LinkEpRequest",
+        "type": "object"
+      },
       "LlmSettingsOut": {
         "properties": {
           "agent_profile": {
@@ -4691,6 +4896,34 @@
           "stage_events"
         ],
         "title": "LoopView",
+        "type": "object"
+      },
+      "ManifestSummary": {
+        "properties": {
+          "base_sha256": {
+            "title": "Base Sha256",
+            "type": "string"
+          },
+          "prompt_count": {
+            "title": "Prompt Count",
+            "type": "integer"
+          },
+          "routing_sha256": {
+            "title": "Routing Sha256",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "prompt_count",
+          "base_sha256",
+          "routing_sha256"
+        ],
+        "title": "ManifestSummary",
         "type": "object"
       },
       "MarkAllReadResult": {
@@ -6664,6 +6897,48 @@
         "title": "OpenSprintIn",
         "type": "object"
       },
+      "OverrideRcrRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "failure_code": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "title": "OverrideRcrRequest",
+        "type": "object"
+      },
       "PacketCitation": {
         "additionalProperties": false,
         "description": "Provenance for one included chunk (\u00a76.2 rule a). ``compressed`` marks a\nchunk whose full text no longer fit the budget and was replaced by its\nparent record's summary line (\u00a78.2 mechanism 3) \u2014 the agent knows more\ndetail is one retrieval away, and nothing was dropped silently.",
@@ -8443,7 +8718,7 @@
       },
       "RequestMetadata": {
         "additionalProperties": false,
-        "description": "Attribution for routing, budgets, and audit (\u00a78.1). ``agent_id`` is the\nrouting key consulted by ``routing.by_agent`` (e.g. ``agent.ceo``).",
+        "description": "Attribution for routing, budgets, and audit (\u00a78.1). ``agent_id`` is the\nrouting key consulted by ``routing.by_agent`` (e.g. ``agent.ceo``).\n\n``prompt_sha`` is the pinned content hash of the approved registry prompt that\nproduced the system message (Vol 10 \u00a76.1, TITAN-EVO-015): the gateway logs it\nonto the LLM span and the usage ledger so any task is traceable to the exact\nprompt version that served it. ``None`` for calls with no registry prompt\n(embeddings, memory rerankers).",
         "properties": {
           "agent_id": {
             "anyOf": [
@@ -8466,6 +8741,17 @@
               }
             ],
             "title": "Project Id"
+          },
+          "prompt_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Sha"
           },
           "task_id": {
             "anyOf": [
@@ -11593,6 +11879,724 @@
         "summary": "Get Deployment",
         "tags": [
           "deployments"
+        ]
+      }
+    },
+    "/api/v1/evolution/agents/{agent_id}/kpis": {
+      "get": {
+        "description": "Per-agent, per-task-class KPI aggregates over 7/30/90-day windows\n(TITAN-EVO-006). Reconciles with the raw scorecards (means computed directly).",
+        "operationId": "get_agent_kpis_api_v1_evolution_agents__agent_id__kpis_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Agent Kpis Api V1 Evolution Agents  Agent Id  Kpis Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Agent Kpis",
+        "tags": [
+          "evolution"
+        ]
+      }
+    },
+    "/api/v1/evolution/artifacts": {
+      "get": {
+        "operationId": "list_artifacts_api_v1_evolution_artifacts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ref"
+            }
+          },
+          {
+            "in": "query",
+            "name": "approved_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Approved Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Artifacts Api V1 Evolution Artifacts Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Artifacts",
+        "tags": [
+          "evolution"
+        ]
+      }
+    },
+    "/api/v1/evolution/artifacts:approve": {
+      "post": {
+        "description": "Record a human approval of an artifact version (TITAN-EVO-001c).\n\nOnly a human may approve (ADR-EVO-01): an agent principal \u2014 even one somehow\nholding the scope \u2014 is refused. The approved bytes must exist on disk and hash\nto ``content_sha256`` so a phantom hash can never be signed off.",
+        "operationId": "approve_artifact_api_v1_evolution_artifacts_approve_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Approve Artifact Api V1 Evolution Artifacts Approve Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Artifact",
+        "tags": [
+          "evolution"
+        ]
+      }
+    },
+    "/api/v1/evolution/debate": {
+      "post": {
+        "description": "Convene a multi-model debate on a decision (EVO-021/022/023). Human-only. Gated by\nthe ``evolution.debate`` flag \u2014 with it off this returns 409 (no debate can run).",
+        "operationId": "convene_debate_endpoint_api_v1_evolution_debate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DebateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Convene Debate Endpoint Api V1 Evolution Debate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convene Debate Endpoint",
+        "tags": [
+          "evolution"
+        ]
+      }
+    },
+    "/api/v1/evolution/deployments": {
+      "get": {
+        "description": "Active A/B challenger deployments under a monitoring contract (EVO-018).",
+        "operationId": "list_deployments_api_v1_evolution_deployments_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Deployments Api V1 Evolution Deployments Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Deployments",
+        "tags": [
+          "evolution"
+        ]
+      },
+      "post": {
+        "description": "Deploy a challenger config for online A/B under a KPI-floor monitoring contract\n(EVO-018/003). Human-only: putting a challenger in front of (shadow) real traffic is a\ncuration act. Refused if an active deployment already exists for the agent.",
+        "operationId": "create_deployment_api_v1_evolution_deployments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeployRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Deployment Api V1 Evolution Deployments Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Deployment",
+        "tags": [
+          "evolution"
+        ]
+      }
+    },
+    "/api/v1/evolution/deployments/{deployment_id}/analysis": {
+      "get": {
+        "description": "The sequential (SPRT-style) promote/abort/continue recommendation (EVO-018).",
+        "operationId": "deployment_analysis_api_v1_evolution_deployments__deployment_id__analysis_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deployment_id",
+            "required": true,
+            "schema": {
+              "title": "Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Deployment Analysis Api V1 Evolution Deployments  Deployment Id  Analysis Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Deployment Analysis",
+        "tags": [
+          "evolution"
+        ]
+      }
+    },
+    "/api/v1/evolution/deployments/{deployment_id}:promote": {
+      "post": {
+        "operationId": "promote_deployment_api_v1_evolution_deployments__deployment_id__promote_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deployment_id",
+            "required": true,
+            "schema": {
+              "title": "Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeployDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Promote Deployment Api V1 Evolution Deployments  Deployment Id  Promote Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Promote Deployment",
+        "tags": [
+          "evolution"
+        ]
+      }
+    },
+    "/api/v1/evolution/deployments/{deployment_id}:rollback": {
+      "post": {
+        "operationId": "rollback_deployment_endpoint_api_v1_evolution_deployments__deployment_id__rollback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deployment_id",
+            "required": true,
+            "schema": {
+              "title": "Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeployDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rollback Deployment Endpoint Api V1 Evolution Deployments  Deployment Id  Rollback Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rollback Deployment Endpoint",
+        "tags": [
+          "evolution"
+        ]
+      }
+    },
+    "/api/v1/evolution/investigations": {
+      "get": {
+        "description": "Open (or resolved) KPI-degradation investigations (TITAN-EVO-007).",
+        "operationId": "list_investigations_api_v1_evolution_investigations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "open",
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Investigations Api V1 Evolution Investigations Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Investigations",
+        "tags": [
+          "evolution"
+        ]
+      }
+    },
+    "/api/v1/evolution/manifest": {
+      "get": {
+        "operationId": "get_manifest_api_v1_evolution_manifest_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManifestSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Manifest",
+        "tags": [
+          "evolution"
+        ]
+      }
+    },
+    "/api/v1/evolution/prompts": {
+      "get": {
+        "description": "The pinned prompt SHA + semver + EP per agent (TITAN-EVO-015c).",
+        "operationId": "get_prompt_versions_api_v1_evolution_prompts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Prompt Versions Api V1 Evolution Prompts Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Prompt Versions",
+        "tags": [
+          "evolution"
+        ]
+      }
+    },
+    "/api/v1/evolution/rcrs": {
+      "get": {
+        "description": "Root-Cause Records (TITAN-EVO-012). Also searchable in the Memory Explorer\n(each RCR has a companion memory_records row, subtype='rcr').",
+        "operationId": "list_rcrs_api_v1_evolution_rcrs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Rcrs Api V1 Evolution Rcrs Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Rcrs",
+        "tags": [
+          "evolution"
+        ]
+      }
+    },
+    "/api/v1/evolution/rcrs/{rcr_id}": {
+      "patch": {
+        "description": "Human override of an RCR's classification/severity/status (EVO-011: the Memory\nAgent's automatic code is human-overridable). Human-only. The failure_code is\nvalidated against the pinned taxonomy so a typo is a clean 400, not a DB 500.",
+        "operationId": "override_rcr_api_v1_evolution_rcrs__rcr_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rcr_id",
+            "required": true,
+            "schema": {
+              "title": "Rcr Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideRcrRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Override Rcr Api V1 Evolution Rcrs  Rcr Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Override Rcr",
+        "tags": [
+          "evolution"
+        ]
+      }
+    },
+    "/api/v1/evolution/rcrs/{rcr_id}/ep": {
+      "patch": {
+        "description": "Link an RCR to the EP proposed to remediate it (EVO-013). Human-only, like\napproval: asserting \"this EP fixes this failure\" is a curation act, and the link\nis what lets a merged EP auto-remediate the RCR. Recorded before the EP merges.",
+        "operationId": "link_rcr_ep_api_v1_evolution_rcrs__rcr_id__ep_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rcr_id",
+            "required": true,
+            "schema": {
+              "title": "Rcr Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkEpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Link Rcr Ep Api V1 Evolution Rcrs  Rcr Id  Ep Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Link Rcr Ep",
+        "tags": [
+          "evolution"
         ]
       }
     },

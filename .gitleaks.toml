@@ -55,3 +55,38 @@ description = "False positive on the Makefile's OWN secret-scan invocation: MSYS
 condition = "AND"
 paths = ['''(^|/)Makefile$''']
 regexes = ['''MSYS2_ARG_CONV_EXCL''']
+
+# Phases 69/75: the redaction detector corpus + the red-team secret-exfil cases.
+# These four files exist ONLY to hold one deliberately-fake specimen of every
+# credential shape the redaction engine must catch, so the scanner firing on them
+# is the fixtures doing their job (22 findings across 9 rules as of Phase 86).
+#
+# These are PATH-scoped, unlike the three value-scoped entries above, and that is
+# a deliberate departure. Value-scoping needs the exact fake string per finding,
+# which here would mean 22 literals across 9 rules that silently rot the moment a
+# fixture is edited — the scan goes red again and the next person adds another
+# literal. Path-scoping a file whose entire purpose is to be a corpus of fakes is
+# stable and honest about what the file is.
+#
+# The Phase-68 `\.age$` lesson still holds and is NOT violated: that mistake was a
+# GLOBAL suffix rule that would have exempted any future *.age file anywhere. These
+# are four exact, enumerated paths. The residual risk — a genuinely real secret
+# pasted into one of these four files would not trip gitleaks — is accepted and
+# covered by GitHub secret scanning + push protection on the repository, which
+# scans these paths independently (it caught two of these fixtures in Oct 2026 and
+# they were triaged as used_in_tests). Do NOT widen these globs.
+[[allowlists]]
+description = "Redaction engine detector corpus — one FAKE specimen per credential shape (AWS/GCP/GitHub/GitLab/Slack/JWT/age/private-key/titan), asserted to be masked"
+paths = ['''apps/api/tests/test_redaction_engine\.py''']
+
+[[allowlists]]
+description = "Redaction sink test — FAKE secrets asserted to be masked across the three sinks"
+paths = ['''apps/api/tests/test_redaction_sinks\.py''']
+
+[[allowlists]]
+description = "Redaction gitleaks-pattern test — FAKE token proving the gitleaks-derived patterns fire"
+paths = ['''apps/api/tests/test_redaction_gitleaks\.py''']
+
+[[allowlists]]
+description = "Red-team corpus (Phase 75, TITAN-SEC-130) — secret-exfil attack payloads carrying FAKE keys, used to prove the redaction pipeline masks a leaked credential"
+paths = ['''apps/api/src/titan/redteam/corpus\.py''']

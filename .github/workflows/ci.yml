@@ -89,6 +89,13 @@ jobs:
       - name: Start NATS JetStream
         run: docker run -d --name nats -p 4222:4222 nats:2.10-alpine -js
       - run: cd apps/api && uv sync --frozen
+      # The sandboxed tool layer (code/terminal/git/docker/deploy/browser) executes real
+      # containers built from these two images. Without them ~21 tests fail at image
+      # lookup rather than on logic. Built exactly as each Dockerfile header documents.
+      - name: Build the sandbox + browser images
+        run: |
+          docker build -f infra/docker/titan-sandbox.Dockerfile -t titan-sandbox:local .
+          docker build -f infra/docker/titan-browser.Dockerfile -t titan-browser:local .
       # pytest carries the coverage gate: --cov-fail-under=80 (TITAN-FND-064)
       - run: make test
 
@@ -352,6 +359,9 @@ jobs:
       - name: Install kustomize + kubeconform
         run: |
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar -xz -C /usr/local/bin kubeconform
+          # The hosted runner image now preinstalls kustomize and the installer
+          # refuses to overwrite it; remove it so the pinned 5.4.3 below is what runs.
+          sudo rm -f /usr/local/bin/kustomize
           curl -sSL "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s -- 5.4.3 /usr/local/bin
       - name: kubeconform base + overlays + policies
         run: |

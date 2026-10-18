@@ -468,6 +468,291 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/evolution/agents/{agent_id}/kpis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Agent Kpis
+         * @description Per-agent, per-task-class KPI aggregates over 7/30/90-day windows
+         *     (TITAN-EVO-006). Reconciles with the raw scorecards (means computed directly).
+         */
+        get: operations["get_agent_kpis_api_v1_evolution_agents__agent_id__kpis_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evolution/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Artifacts */
+        get: operations["list_artifacts_api_v1_evolution_artifacts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evolution/artifacts:approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Artifact
+         * @description Record a human approval of an artifact version (TITAN-EVO-001c).
+         *
+         *     Only a human may approve (ADR-EVO-01): an agent principal — even one somehow
+         *     holding the scope — is refused. The approved bytes must exist on disk and hash
+         *     to ``content_sha256`` so a phantom hash can never be signed off.
+         */
+        post: operations["approve_artifact_api_v1_evolution_artifacts_approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evolution/debate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convene Debate Endpoint
+         * @description Convene a multi-model debate on a decision (EVO-021/022/023). Human-only. Gated by
+         *     the ``evolution.debate`` flag — with it off this returns 409 (no debate can run).
+         */
+        post: operations["convene_debate_endpoint_api_v1_evolution_debate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evolution/deployments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Deployments
+         * @description Active A/B challenger deployments under a monitoring contract (EVO-018).
+         */
+        get: operations["list_deployments_api_v1_evolution_deployments_get"];
+        put?: never;
+        /**
+         * Create Deployment
+         * @description Deploy a challenger config for online A/B under a KPI-floor monitoring contract
+         *     (EVO-018/003). Human-only: putting a challenger in front of (shadow) real traffic is a
+         *     curation act. Refused if an active deployment already exists for the agent.
+         */
+        post: operations["create_deployment_api_v1_evolution_deployments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evolution/deployments/{deployment_id}/analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Deployment Analysis
+         * @description The sequential (SPRT-style) promote/abort/continue recommendation (EVO-018).
+         */
+        get: operations["deployment_analysis_api_v1_evolution_deployments__deployment_id__analysis_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evolution/deployments/{deployment_id}:promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Promote Deployment */
+        post: operations["promote_deployment_api_v1_evolution_deployments__deployment_id__promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evolution/deployments/{deployment_id}:rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rollback Deployment Endpoint */
+        post: operations["rollback_deployment_endpoint_api_v1_evolution_deployments__deployment_id__rollback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evolution/investigations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Investigations
+         * @description Open (or resolved) KPI-degradation investigations (TITAN-EVO-007).
+         */
+        get: operations["list_investigations_api_v1_evolution_investigations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evolution/manifest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Manifest */
+        get: operations["get_manifest_api_v1_evolution_manifest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evolution/prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Prompt Versions
+         * @description The pinned prompt SHA + semver + EP per agent (TITAN-EVO-015c).
+         */
+        get: operations["get_prompt_versions_api_v1_evolution_prompts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evolution/rcrs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rcrs
+         * @description Root-Cause Records (TITAN-EVO-012). Also searchable in the Memory Explorer
+         *     (each RCR has a companion memory_records row, subtype='rcr').
+         */
+        get: operations["list_rcrs_api_v1_evolution_rcrs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evolution/rcrs/{rcr_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Override Rcr
+         * @description Human override of an RCR's classification/severity/status (EVO-011: the Memory
+         *     Agent's automatic code is human-overridable). Human-only. The failure_code is
+         *     validated against the pinned taxonomy so a typo is a clean 400, not a DB 500.
+         */
+        patch: operations["override_rcr_api_v1_evolution_rcrs__rcr_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/evolution/rcrs/{rcr_id}/ep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Link Rcr Ep
+         * @description Link an RCR to the EP proposed to remediate it (EVO-013). Human-only, like
+         *     approval: asserting "this EP fixes this failure" is a curation act, and the link
+         *     is what lets a merged EP auto-remediate the RCR. Recorded before the EP merges.
+         */
+        patch: operations["link_rcr_ep_api_v1_evolution_rcrs__rcr_id__ep_patch"];
+        trace?: never;
+    };
     "/api/v1/flags": {
         parameters: {
             query?: never;
@@ -3147,6 +3432,29 @@ export interface components {
         };
         /** ApprovalResolution */
         ApprovalResolution: Record<string, never>;
+        /** ApproveRequest */
+        ApproveRequest: {
+            /** Content Sha256 */
+            content_sha256: string;
+            /**
+             * Diff Url
+             * @default
+             */
+            diff_url: string;
+            /** Ep */
+            ep: string;
+            /** Kind */
+            kind: string;
+            /** Path */
+            path: string;
+            /** Ref */
+            ref: string;
+            /**
+             * Semver
+             * @default 0.0.0
+             */
+            semver: string;
+        };
         /** ArtifactOut */
         ArtifactOut: {
             /**
@@ -3772,6 +4080,19 @@ export interface components {
              */
             dry_run: boolean;
         };
+        /** DebateRequest */
+        DebateRequest: {
+            /** Context */
+            context: string;
+            /** Convening Agent Id */
+            convening_agent_id?: string | null;
+            /** Decision Class */
+            decision_class: string;
+            /** Project Id */
+            project_id?: string | null;
+            /** Question */
+            question: string;
+        };
         /**
          * DebtLedger
          * @description The project's debt ledger — the open total for the dashboard plus the
@@ -3910,6 +4231,41 @@ export interface components {
              * Format: uuid
              */
             task_id: string;
+        };
+        /** DeployDecisionRequest */
+        DeployDecisionRequest: {
+            /** Reason */
+            reason: string;
+        };
+        /** DeployRequest */
+        DeployRequest: {
+            /** Agent Id */
+            agent_id: string;
+            /**
+             * Canary Pct
+             * @default 0
+             */
+            canary_pct: number;
+            /** Challenger Ref */
+            challenger_ref: string;
+            /** Champion Ref */
+            champion_ref: string;
+            /** Ep */
+            ep: string;
+            /** Kpi Floor */
+            kpi_floor: number;
+            /**
+             * Min Samples
+             * @default 5
+             */
+            min_samples: number;
+            /** Mode */
+            mode: string;
+            /**
+             * Observation Window S
+             * @default 300
+             */
+            observation_window_s: number;
         };
         /** DeploymentOut */
         DeploymentOut: {
@@ -4650,6 +5006,11 @@ export interface components {
              */
             record_id: string;
         };
+        /** LinkEpRequest */
+        LinkEpRequest: {
+            /** Ep */
+            ep: string;
+        };
         /** LlmSettingsOut */
         LlmSettingsOut: {
             /** Agent Profile */
@@ -4875,6 +5236,17 @@ export interface components {
             record: components["schemas"]["LoopRecordOut"];
             /** Stage Events */
             stage_events: components["schemas"]["LoopStageEventOut"][];
+        };
+        /** ManifestSummary */
+        ManifestSummary: {
+            /** Base Sha256 */
+            base_sha256: string;
+            /** Prompt Count */
+            prompt_count: number;
+            /** Routing Sha256 */
+            routing_sha256: string;
+            /** Version */
+            version: number;
         };
         /** MarkAllReadResult */
         MarkAllReadResult: {
@@ -5670,6 +6042,15 @@ export interface components {
             /** Sprint Number */
             sprint_number: number;
         };
+        /** OverrideRcrRequest */
+        OverrideRcrRequest: {
+            /** Failure Code */
+            failure_code?: string | null;
+            /** Severity */
+            severity?: string | null;
+            /** Status */
+            status?: string | null;
+        };
         /**
          * PacketCitation
          * @description Provenance for one included chunk (§6.2 rule a). ``compressed`` marks a
@@ -6420,12 +6801,20 @@ export interface components {
          * RequestMetadata
          * @description Attribution for routing, budgets, and audit (§8.1). ``agent_id`` is the
          *     routing key consulted by ``routing.by_agent`` (e.g. ``agent.ceo``).
+         *
+         *     ``prompt_sha`` is the pinned content hash of the approved registry prompt that
+         *     produced the system message (Vol 10 §6.1, TITAN-EVO-015): the gateway logs it
+         *     onto the LLM span and the usage ledger so any task is traceable to the exact
+         *     prompt version that served it. ``None`` for calls with no registry prompt
+         *     (embeddings, memory rerankers).
          */
         RequestMetadata: {
             /** Agent Id */
             agent_id?: string | null;
             /** Project Id */
             project_id?: string | null;
+            /** Prompt Sha */
+            prompt_sha?: string | null;
             /** Task Id */
             task_id?: string | null;
         };
@@ -8064,6 +8453,493 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeploymentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_agent_kpis_api_v1_evolution_agents__agent_id__kpis_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_artifacts_api_v1_evolution_artifacts_get: {
+        parameters: {
+            query?: {
+                kind?: string | null;
+                ref?: string | null;
+                approved_only?: boolean;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    approve_artifact_api_v1_evolution_artifacts_approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApproveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    convene_debate_endpoint_api_v1_evolution_debate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DebateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_deployments_api_v1_evolution_deployments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    create_deployment_api_v1_evolution_deployments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeployRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deployment_analysis_api_v1_evolution_deployments__deployment_id__analysis_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    promote_deployment_api_v1_evolution_deployments__deployment_id__promote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeployDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    rollback_deployment_endpoint_api_v1_evolution_deployments__deployment_id__rollback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeployDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_investigations_api_v1_evolution_investigations_get: {
+        parameters: {
+            query?: {
+                status?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_manifest_api_v1_evolution_manifest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManifestSummary"];
+                };
+            };
+        };
+    };
+    get_prompt_versions_api_v1_evolution_prompts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    list_rcrs_api_v1_evolution_rcrs_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    override_rcr_api_v1_evolution_rcrs__rcr_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rcr_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OverrideRcrRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    link_rcr_ep_api_v1_evolution_rcrs__rcr_id__ep_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rcr_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkEpRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

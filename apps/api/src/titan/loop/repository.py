@@ -97,17 +97,22 @@ async def set_loop_status(
     termination_reason: str | None = None,
     cycle_count: int | None = None,
 ) -> Row[Any]:
-    sets = ["status = :status", "version = version + 1"]
-    params: dict[str, Any] = {"id": loop_id, "status": status}
-    if termination_reason is not None:
-        sets.append("termination_reason = :tr")
-        params["tr"] = termination_reason
-    if cycle_count is not None:
-        sets.append("cycle_count = :cc")
-        params["cc"] = cycle_count
+    # Fully static SQL (TITAN-SEC-071): COALESCE leaves a column untouched when its
+    # parameter is NULL, so the optional updates need no assembled SET clause. The
+    # casts are required because asyncpg cannot infer a bare NULL parameter's type.
     result = await conn.execute(
-        text(f"UPDATE loop_records SET {', '.join(sets)} WHERE id = :id RETURNING {_LOOP_COLS}"),
-        params,
+        text(
+            "UPDATE loop_records SET status = :status, version = version + 1, "
+            "termination_reason = COALESCE(CAST(:tr AS TEXT), termination_reason), "
+            "cycle_count = COALESCE(CAST(:cc AS INTEGER), cycle_count) "
+            f"WHERE id = :id RETURNING {_LOOP_COLS}"
+        ),
+        {
+            "id": loop_id,
+            "status": status,
+            "tr": termination_reason,
+            "cc": cycle_count,
+        },
     )
     return result.one()
 
