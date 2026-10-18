@@ -128,7 +128,7 @@ lint-openapi:
 # TITAN-FND-062: secret scanning — same engine and mode CI uses (git history),
 # via Docker locally. MSYS2_ARG_CONV_EXCL stops Git Bash mangling /repo.
 secret-scan:
-	MSYS2_ARG_CONV_EXCL='*' docker run --rm -v "$(CURDIR):/repo" zricethezav/gitleaks:latest detect --source /repo --no-banner --config /repo/.gitleaks.toml
+	MSYS2_ARG_CONV_EXCL='*' docker run --rm -v "$(CURDIR):/repo" zricethezav/gitleaks:latest detect --source /repo --no-banner --redact -v --config /repo/.gitleaks.toml
 
 # TITAN-SEC-071: semgrep bans string-built SQL across production code AND
 # migrations. Docker, like gitleaks (semgrep has no first-class Windows binary),

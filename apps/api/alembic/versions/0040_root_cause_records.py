@@ -34,7 +34,12 @@ def upgrade() -> None:
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
         sa.Column("failure_code", sa.Text, nullable=False),
         sa.Column("severity", sa.Text, nullable=False),
-        sa.Column("task_ids", ARRAY(UUID(as_uuid=True)), nullable=False, server_default=sa.text("'{}'")),
+        sa.Column(
+            "task_ids",
+            ARRAY(UUID(as_uuid=True)),
+            nullable=False,
+            server_default=sa.text("'{}'"),
+        ),
         sa.Column("signature", sa.Text, nullable=False),
         sa.Column("summary", sa.Text, nullable=False),
         sa.Column("five_whys", JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
