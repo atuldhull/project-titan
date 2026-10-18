@@ -50,9 +50,11 @@ jobs:
           cache-dependency-path: |
             apps/web/package-lock.json
             packages/schemas/package-lock.json
+            packages/api-client/package-lock.json
       - run: cd apps/api && uv sync --frozen
       - run: cd apps/web && npm ci
       - run: cd packages/schemas && npm ci
+      - run: cd packages/api-client && npm ci
       - run: make typecheck
 
   test:
