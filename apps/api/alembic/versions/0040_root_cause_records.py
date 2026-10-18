@@ -72,9 +72,7 @@ def upgrade() -> None:
         unique=True,
         postgresql_where=sa.text("status = 'open'"),
     )
-    op.create_index(
-        "ix_root_cause_records_status", "root_cause_records", ["status", "created_at"]
-    )
+    op.create_index("ix_root_cause_records_status", "root_cause_records", ["status", "created_at"])
     op.execute(
         "CREATE TRIGGER trg_root_cause_records_updated_at BEFORE UPDATE ON root_cause_records "
         "FOR EACH ROW EXECUTE FUNCTION set_updated_at()"

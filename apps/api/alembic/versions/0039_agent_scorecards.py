@@ -59,9 +59,7 @@ def upgrade() -> None:
     )
     # Exactly ONE scorecard per terminal task: makes generation idempotent even
     # under a consumer redelivery/reap race (two consumers can't double-count KPIs).
-    op.create_index(
-        "uq_agent_scorecards_task", "agent_scorecards", ["task_id"], unique=True
-    )
+    op.create_index("uq_agent_scorecards_task", "agent_scorecards", ["task_id"], unique=True)
 
     # evolution_investigations (TITAN-EVO-007): a sustained agent-KPI drop opens an
     # investigation for the Memory Agent. It is deliberately NOT a project `tasks`
@@ -110,8 +108,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute(
-        "DROP TRIGGER IF EXISTS trg_evolution_investigations_updated_at "
-        "ON evolution_investigations"
+        "DROP TRIGGER IF EXISTS trg_evolution_investigations_updated_at ON evolution_investigations"
     )
     op.drop_index("ix_evolution_investigations_status", table_name="evolution_investigations")
     op.drop_table("evolution_investigations")

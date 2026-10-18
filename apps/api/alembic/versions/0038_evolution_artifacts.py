@@ -56,9 +56,7 @@ def upgrade() -> None:
         sa.Column("version", sa.Integer, nullable=False, server_default=sa.text("1")),
         sa.UniqueConstraint("path", "content_sha256", name="uq_evolution_artifacts_path_sha"),
     )
-    op.create_index(
-        "ix_evolution_artifacts_kind_ref", "evolution_artifacts", ["kind", "ref"]
-    )
+    op.create_index("ix_evolution_artifacts_kind_ref", "evolution_artifacts", ["kind", "ref"])
     op.execute(
         "CREATE TRIGGER trg_evolution_artifacts_updated_at BEFORE UPDATE ON evolution_artifacts "
         "FOR EACH ROW EXECUTE FUNCTION set_updated_at()"
