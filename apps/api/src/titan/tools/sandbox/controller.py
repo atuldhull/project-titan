@@ -14,7 +14,9 @@ the async Tool Bus is never blocked (TITAN-BCK-002 / ruff ASYNC).
 
 import asyncio
 import codecs
+import contextlib
 import io
+import os
 import tarfile
 import time
 import uuid
@@ -60,6 +62,38 @@ def _build_secrets_tar(secret_files: Mapping[str, str], *, uid: int, gid: int) -
             info.gid = gid
             tar.addfile(info, io.BytesIO(data))
     return buffer.getvalue()
+
+
+def _grant_workspace_access(root: Path, uid: int, gid: int) -> None:
+    """Make the workspace bind writable by the sandbox uid.
+
+    The workspace directory is created by the HOST process (its own uid and
+    umask), but everything inside the sandbox runs as ``uid`` (10001 by default).
+    Docker Desktop's VM-backed bind mounts paper over that mismatch, so this is
+    invisible on macOS/Windows; on native Linux the uids are real and every
+    in-sandbox write fails with EACCES — ``git init`` included, which surfaces
+    much later as "fatal: not a git repository".
+
+    Secrets already get this treatment (see :func:`_build_secrets_tar`, which
+    stamps the sandbox uid onto each file); the workspace needs the same.
+    ``chown`` is exact and is used whenever the host process is privileged
+    enough (e.g. running as root inside the api container). Otherwise the
+    directory mode is widened, which is the only option left to an unprivileged
+    host process — acceptable because the per-task workspace is ephemeral and
+    lives under a dedicated root, not because it is ideal. Best-effort by
+    design: where neither works the container still starts and the tool layer
+    reports the write failure normally.
+    """
+    # os.chown is absent on Windows, where bind-mount uids are virtualised anyway.
+    chown = getattr(os, "chown", None)
+    if chown is not None:
+        try:
+            chown(root, uid, gid)
+            return
+        except OSError:
+            pass  # unprivileged host process — fall through to widening the mode
+    with contextlib.suppress(OSError):
+        root.chmod(0o777)
 
 
 def _uid_gid(user: str) -> tuple[int, int]:
@@ -372,6 +406,9 @@ class SandboxController:
     ) -> str:
         client = self._get_client()
         name = f"titan-sbx-{task_id or uuid.uuid4()}"
+        # The bind below is the sandbox's ONLY writable mount; make sure the uid
+        # that will be writing actually owns it (see _grant_workspace_access).
+        _grant_workspace_access(workspace_root, *_uid_gid(policy.user))
         tmpfs = {path: f"rw,size={size},mode=1777" for path, size in policy.tmpfs.items()}
         if secret_files:
             # A private tmpfs for the injected secrets (mode 0700 — root-of-mount
