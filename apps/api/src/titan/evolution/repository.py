@@ -266,20 +266,18 @@ async def scorecards_since(
     """Scorecards in the trailing ``days`` window. ``before_days`` sets an UPPER
     bound (created_at < now()-before_days), so a baseline window can EXCLUDE the
     recent window it is compared against (a diluted baseline masks real drops)."""
-    clause = "" if agent_id is None else " AND agent_id = :agent"
-    upper = (
-        "" if before_days is None else " AND created_at < now() - make_interval(days => :before)"
-    )
+    # Static SQL (TITAN-SEC-071): a NULL optional parameter disables its own
+    # predicate, so neither bound needs an assembled clause. The casts are required
+    # because asyncpg cannot infer a bare NULL parameter's type.
     sql = text(
         "SELECT agent_id, task_class, dimensions, composite_score, cost_usd, tokens_in, "
         "tokens_out, wall_clock_s, created_at FROM agent_scorecards "
-        "WHERE created_at >= now() - make_interval(days => :days)" + clause + upper
+        "WHERE created_at >= now() - make_interval(days => :days) "
+        "AND (CAST(:agent AS TEXT) IS NULL OR agent_id = :agent) "
+        "AND (CAST(:before AS INTEGER) IS NULL "
+        "OR created_at < now() - make_interval(days => :before))"
     )
-    params: dict[str, Any] = {"days": days}
-    if agent_id is not None:
-        params["agent"] = agent_id
-    if before_days is not None:
-        params["before"] = before_days
+    params: dict[str, Any] = {"days": days, "agent": agent_id, "before": before_days}
     async with engine.connect() as conn:
         rows = (await conn.execute(sql, params)).mappings().all()
     out: list[dict[str, Any]] = []
@@ -556,13 +554,21 @@ async def override_rcr(
     provided = {col: val for col, val in updates.items() if val is not None}
     if not provided:
         return None
-    set_clause = ", ".join(f"{col} = :{col}" for col in provided)  # cols are hardcoded keys
+    # Static SQL (TITAN-SEC-071): COALESCE leaves a column untouched when its
+    # parameter is NULL, so the fixed column set needs no assembled SET clause. The
+    # casts are required because asyncpg cannot infer a bare NULL parameter's type.
     async with engine.begin() as conn:
         row = (
             (
                 await conn.execute(
-                    text(f"UPDATE root_cause_records SET {set_clause} WHERE id = :id RETURNING *"),
-                    {**provided, "id": rcr_id},
+                    text(
+                        "UPDATE root_cause_records SET "
+                        "failure_code = COALESCE(CAST(:failure_code AS TEXT), failure_code), "
+                        "severity = COALESCE(CAST(:severity AS TEXT), severity), "
+                        "status = COALESCE(CAST(:status AS TEXT), status) "
+                        "WHERE id = :id RETURNING *"
+                    ),
+                    {**updates, "id": rcr_id},
                 )
             )
             .mappings()
@@ -592,16 +598,19 @@ async def link_rcr_ep(engine: AsyncEngine, rcr_id: uuid.UUID, ep: str) -> dict[s
 async def list_rcrs(
     engine: AsyncEngine, *, status: str | None = None, limit: int = 100
 ) -> list[dict[str, Any]]:
-    clause = "" if status is None else " WHERE status = :status"
+    # Static SQL (TITAN-SEC-071): a NULL :status matches every row, so the optional
+    # filter needs no assembled WHERE clause. The cast is required because asyncpg
+    # cannot infer a bare NULL parameter's type.
     async with engine.connect() as conn:
         rows = (
             (
                 await conn.execute(
                     text(
-                        "SELECT * FROM root_cause_records" + clause + " ORDER BY created_at DESC "
-                        "LIMIT :limit"
+                        "SELECT * FROM root_cause_records "
+                        "WHERE (CAST(:status AS TEXT) IS NULL OR status = :status) "
+                        "ORDER BY created_at DESC LIMIT :limit"
                     ),
-                    {"status": status, "limit": limit} if status else {"limit": limit},
+                    {"status": status, "limit": limit},
                 )
             )
             .mappings()
