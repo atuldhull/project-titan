@@ -37,7 +37,12 @@ function isTab(value: string | null): value is Tab {
 // the tab navigates there rather than rendering an inline pane, so there is one home
 // per screen (and one `?task=` / live-subscription owner). Only overview/files/settings
 // render as inline panes here (files/settings have no backend screen yet).
-const ROUTED = new Set<string>(["board", "graph", "architecture", "deployments"]);
+const ROUTED = new Set<string>([
+  "board",
+  "graph",
+  "architecture",
+  "deployments",
+]);
 
 export function ProjectDetail({ projectId }: { projectId: string }) {
   const router = useRouter();
