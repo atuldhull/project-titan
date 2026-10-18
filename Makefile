@@ -9,7 +9,7 @@ SCHEMAS_DIR := packages/schemas
 # Overridden in CI with the digest-pinned build tag; a sane default for local runs.
 TITAN_IMAGE ?= titan-api:local
 
-.PHONY: dev test test-web test-schema test-llm-live lint lint-style boundaries route-guards \
+.PHONY: dev test test-web test-schema test-llm-live test-sandbox lint lint-style boundaries route-guards \
         agent-purity typecheck migrate seed generate-types check-types-drift \
         lint-openapi secret-scan eval-retrieval eval-baseline bench-memory \
         budget-web e2e-web stories-web visual-web visual-web-update check-stale-flags
@@ -21,8 +21,18 @@ dev:
 	( cd $(WEB_DIR) && npm run dev ) & \
 	wait
 
+# The blocking suite. `sandbox` is excluded by its own definition in
+# pyproject.toml ("needs a reachable Docker daemon + the sandbox base image;
+# non-blocking CI job") — those run in `test-sandbox`, mirroring how `live_llm`
+# runs in `test-llm-live`. Without this they execute here and fail on any runner
+# whose daemon cannot host a rootless Docker-in-Docker sidecar.
 test:
-	cd $(API_DIR) && uv run pytest -q
+	cd $(API_DIR) && uv run pytest -q -m "not sandbox"
+
+## test-sandbox: the sandbox/DinD suite — needs a Docker daemon that can run a
+## rootless DinD sidecar. Non-blocking in CI, like test-llm-live.
+test-sandbox:
+	cd $(API_DIR) && uv run pytest -m sandbox --no-cov
 
 # Phase 57: the frontend data layer (vitest — BFF route handlers, the WS state
 # machine incl. seq-gap/reconnect, RBAC gating, toast policy). jsdom, no browser.
@@ -183,10 +193,15 @@ audit-python:
 audit-web:
 	cd $(WEB_DIR) && npm audit --omit=dev --audit-level=high
 
-# SEC-104/105: cross-ecosystem OSV scan of the committed lockfiles.
+# SEC-104/105: cross-ecosystem OSV scan of the committed lockfiles. The config is
+# RENDERED from security/scan-exceptions.yaml on every run (SEC-100), so the
+# registry is the single source of truth and the two cannot drift: an entry
+# suppresses a finding only while it is listed and unexpired.
 osv-scan:
+	cd $(API_DIR) && uv run python scripts/gen_osv_config.py
 	MSYS2_ARG_CONV_EXCL='*' docker run --rm -v "$(CURDIR):/repo" ghcr.io/google/osv-scanner:latest \
-		scan --lockfile=/repo/apps/api/uv.lock --lockfile=/repo/apps/web/package-lock.json
+		scan --config=/repo/osv-scanner.toml \
+		--lockfile=/repo/apps/api/uv.lock --lockfile=/repo/apps/web/package-lock.json
 
 # SEC-101: SBOM (CycloneDX) for the repo, emitted as a CI artifact.
 sbom:

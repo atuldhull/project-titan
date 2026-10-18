@@ -174,7 +174,7 @@ def test_re_enroll_when_already_confirmed_raises(migrated_engine: Any) -> None:
 
 def test_org_policy_roundtrip_and_required_predicate(migrated_engine: Any) -> None:
     async def go() -> dict[str, bool]:
-        org = f"org-{uuid7().hex[:10]}"  # unique — policy rows persist across the session
+        org = f"org-{uuid7().hex[-12:]}"  # unique — policy rows persist across the session
         owner = await _new_user(migrated_engine)
         viewer = await _new_user(migrated_engine)
         admin = await _new_user(migrated_engine)  # privileged but never enrolls

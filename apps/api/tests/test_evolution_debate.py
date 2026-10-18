@@ -78,7 +78,7 @@ async def _seed_project_agent(engine: Any) -> tuple[uuid.UUID, uuid.UUID]:
                 "INSERT INTO projects (id, name, display_name, brief, mode, created_by) "
                 "VALUES (:id, :n, 'D', 'b', 'autonomous', :u)"
             ),
-            {"id": pid, "n": f"dbt-{pid.hex[:10]}", "u": uid},
+            {"id": pid, "n": f"dbt-{pid.hex[-12:]}", "u": uid},
         )
         await conn.execute(
             text(

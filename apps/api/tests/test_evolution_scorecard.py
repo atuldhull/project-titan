@@ -71,7 +71,11 @@ async def _seed_project_task(
     with_run: bool = True,
 ) -> tuple[uuid.UUID, uuid.UUID]:
     pid, tid, aid, uid, rid = uuid7(), uuid7(), uuid7(), uuid7(), uuid7()
-    slug = f"evo-{pid.hex[:10]}"
+    # uuid7 puts a 48-bit ms timestamp in the LEADING hex digits; hex[:10] keeps only
+    # 40 of them, so the slug changes just once per 256 ms and two projects seeded in
+    # that window collide on projects_name_key. The trailing digits are the random
+    # ones — use those.
+    slug = f"evo-{pid.hex[-12:]}"
     async with engine.begin() as conn:
         await conn.execute(
             text(
@@ -196,7 +200,7 @@ def test_terminal_transition_emits_task_terminal(migrated_engine: Any) -> None:
                     "INSERT INTO projects (id, name, display_name, brief, mode, created_by) "
                     "VALUES (:id, :n, 'E', 'b', 'autonomous', :u)"
                 ),
-                {"id": pid, "n": f"evo-{pid.hex[:10]}", "u": uid},
+                {"id": pid, "n": f"evo-{pid.hex[-12:]}", "u": uid},
             )
             task = await orch.create_task(
                 conn, pid, orch.TaskCreate(title="cancel me"), actor=str(uid)

@@ -16,4 +16,80 @@
 #   expires:  YYYY-MM-DD — the build fails once this date passes (max 90 days out)
 #
 # Keep this list EMPTY whenever possible.
-exceptions: []
+#
+# The three entries below are all UNFIXABLE as of 2026-10-19 — not deferred work.
+# Every finding that HAD a fix was taken instead (next 15.5.28 for a critical RCE,
+# vitest 4 which drops tinypool entirely, plus pyjwt/urllib3/cryptography/anyio/
+# soupsieve/mako and overrides for browserslist/image-size/js-yaml/postcss/
+# brace-expansion). pip-audit and `npm audit --omit=dev` both report clean; these
+# are what osv-scanner still sees.
+exceptions:
+  # transformers 4.57.6 — six advisories, one entry each because osv-scanner
+  # reports (and ignores) them individually. Same justification throughout:
+  # reached ONLY through the optional `rerank` extra (sentence-transformers[onnx]);
+  # the default RERANKER=llm|off path never installs it, so it is not in the
+  # shipped runtime. PYSEC-2025-217 / -2026-2290 / -2026-4174 have NO fixed
+  # version at all; the rest need transformers 5.x, which sentence-transformers
+  # 5.6.0 (the latest release) does not permit — blocked upstream, not deferred.
+  # Re-check all six when sentence-transformers supports transformers 5.
+  - tool: osv-scanner
+    id: PYSEC-2025-217
+    reason: >-
+      transformers 4.57.6 via the optional `rerank` extra only; no fixed version
+      exists. Not present in the default runtime.
+    owner: atuldhull
+    expires: 2027-01-15
+  - tool: osv-scanner
+    id: PYSEC-2026-2290
+    reason: >-
+      transformers 4.57.6 via the optional `rerank` extra only; no fixed version
+      exists. Not present in the default runtime.
+    owner: atuldhull
+    expires: 2027-01-15
+  - tool: osv-scanner
+    id: PYSEC-2026-4174
+    reason: >-
+      transformers 4.57.6 via the optional `rerank` extra only; no fixed version
+      exists. Not present in the default runtime.
+    owner: atuldhull
+    expires: 2027-01-15
+  - tool: osv-scanner
+    id: PYSEC-2026-2288
+    reason: >-
+      transformers 4.57.6 via the optional `rerank` extra only; the fix is
+      transformers 5.0.0, which sentence-transformers 5.6.0 does not permit.
+    owner: atuldhull
+    expires: 2027-01-15
+  - tool: osv-scanner
+    id: PYSEC-2026-2289
+    reason: >-
+      transformers 4.57.6 via the optional `rerank` extra only; the fix is
+      transformers 5.3.0, which sentence-transformers 5.6.0 does not permit.
+    owner: atuldhull
+    expires: 2027-01-15
+  - tool: osv-scanner
+    id: PYSEC-2026-3929
+    reason: >-
+      transformers 4.57.6 via the optional `rerank` extra only; the fix is
+      transformers 5.10.0, which sentence-transformers 5.6.0 does not permit.
+    owner: atuldhull
+    expires: 2027-01-15
+  - tool: osv-scanner
+    id: GHSA-vfj7-8cjw-p6xm
+    reason: >-
+      braces 3.0.3 (dev-only), pulled by eslint-config-next 15.5.20 ->
+      @next/eslint-plugin-next -> fast-glob -> micromatch. No fixed version
+      exists upstream. Escaping it requires eslint-config-next 16.x, which is
+      tied to a Next.js 16 migration — not justified by a lint-time DoS that
+      never runs in production. Re-check when micromatch ships a fix.
+    owner: atuldhull
+    expires: 2027-01-15
+  - tool: osv-scanner
+    id: GHSA-82fw-gwwq-j7x9
+    reason: >-
+      @vitest/mocker 3.2.4 (dev-only), pinned inside storybook 9.1.20's own
+      dependency tree. The project's direct vitest is already 4.1.12, the fixed
+      line; npm overrides do not dislodge storybook's nested copy. Test-time
+      only, never shipped. Re-check when storybook moves to vitest 4.
+    owner: atuldhull
+    expires: 2027-01-15

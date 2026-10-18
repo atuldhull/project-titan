@@ -89,15 +89,47 @@ jobs:
       - name: Start NATS JetStream
         run: docker run -d --name nats -p 4222:4222 nats:2.10-alpine -js
       - run: cd apps/api && uv sync --frozen
-      # The sandboxed tool layer (code/terminal/git/docker/deploy/browser) executes real
-      # containers built from these two images. Without them ~21 tests fail at image
-      # lookup rather than on logic. Built exactly as each Dockerfile header documents.
+      # pytest carries the coverage gate: --cov-fail-under=80 (TITAN-FND-064).
+      # `make test` excludes the `sandbox` marker — see the test-sandbox job below.
+      - run: make test
+
+  # The `sandbox` marker is defined in pyproject.toml as "needs a reachable Docker
+  # daemon + the sandbox base image; non-blocking CI job" — the same contract as
+  # `live_llm`/test-llm-live above. These drive real containers, and the docker.*
+  # tools additionally need a rootless Docker-in-Docker sidecar, which a stock
+  # hosted runner's daemon cannot always host. Non-blocking, so an unsupported
+  # runner never gates the merge, while the suite still runs and reports.
+  test-sandbox:
+    needs: typecheck
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: titan
+          POSTGRES_PASSWORD: titan
+          POSTGRES_DB: titan_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      TITAN_TEST_DATABASE_URL: postgresql+asyncpg://titan:titan@localhost:5432/titan_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: cd apps/api && uv sync --frozen
+      # Built exactly as each Dockerfile header documents; docker:dind-rootless is
+      # pulled ahead of time so the first sidecar start does not race the pull.
       - name: Build the sandbox + browser images
         run: |
           docker build -f infra/docker/titan-sandbox.Dockerfile -t titan-sandbox:local .
           docker build -f infra/docker/titan-browser.Dockerfile -t titan-browser:local .
-      # pytest carries the coverage gate: --cov-fail-under=80 (TITAN-FND-064)
-      - run: make test
+          docker pull docker:dind-rootless
+      - run: make test-sandbox
 
   # Phase 57 frontend data layer: vitest over the BFF route handlers, the WS
   # state machine (seq-gap / reconnect / degradation), RBAC gating and the toast
