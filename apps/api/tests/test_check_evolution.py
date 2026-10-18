@@ -8,7 +8,7 @@ actually catches an un-pinned or unapproved prompt change.
 import importlib.util
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import yaml
@@ -33,7 +33,7 @@ def tree(tmp_path: Path) -> Path:
 
 
 def _errors(root: Path) -> list[str]:
-    return check_evolution.collect_errors(root, agents_dir=AGENTS_DIR)
+    return cast(list[str], check_evolution.collect_errors(root, agents_dir=AGENTS_DIR))
 
 
 def test_shipped_tree_passes() -> None:

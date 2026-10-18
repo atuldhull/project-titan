@@ -16,7 +16,7 @@ gl_events: Any = load_connector("gitlab", "gitlab_events")
 gl_plugin: Any = load_connector("gitlab", "gitlab_plugin")
 
 
-def _resp(status: int, body: dict[str, Any], **headers: str) -> Any:
+def _resp(status: int, body: dict[str, Any] | list[Any], **headers: str) -> Any:
     return gl_http.HttpResponse(status, dict(headers), json.dumps(body))
 
 

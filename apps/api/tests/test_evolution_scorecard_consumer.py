@@ -5,13 +5,14 @@ non-terminal delivery is a harmless ack, and a redelivery is idempotent.
 """
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from tests.conftest import run_async
 from tests.test_evolution_scorecard import _DIMS, _DimsGateway, _seed_project_task
 from titan.agents.service import build_evolution_resolver
+from titan.events.bus import QueueBus
 from titan.evolution import consumer as evo_consumer
 from titan.evolution import repository as repo
 from titan.settings import Settings
@@ -44,13 +45,21 @@ def test_terminal_delivery_generates_scorecard_and_acks(migrated_engine: Any) ->
         bus, gateway = _Bus(), _DimsGateway(_DIMS)
         resolver = build_evolution_resolver(Settings())
         await evo_consumer.handle_scorecard_delivery(
-            migrated_engine, bus, gateway, resolver, _delivery("task.terminal", str(tid))
+            migrated_engine,
+            cast(QueueBus, bus),
+            gateway,
+            resolver,
+            _delivery("task.terminal", str(tid)),
         )
         assert len(bus.acked) == 1 and not bus.nacked
         assert await repo.scorecard_exists(migrated_engine, tid)
         # A non-terminal event is acked without generating anything (fan-out group).
         await evo_consumer.handle_scorecard_delivery(
-            migrated_engine, bus, gateway, resolver, _delivery("task.created", str(tid))
+            migrated_engine,
+            cast(QueueBus, bus),
+            gateway,
+            resolver,
+            _delivery("task.created", str(tid)),
         )
         assert len(bus.acked) == 2
 
@@ -98,7 +107,11 @@ def test_failed_terminal_drives_scorecard_reflection_and_rcr(migrated_engine: An
         bus, gateway = _Bus(), _ShapeAwareGateway()
         resolver = build_evolution_resolver(Settings())
         await evo_consumer.handle_scorecard_delivery(
-            migrated_engine, bus, gateway, resolver, _delivery("task.terminal", str(tid), "failed")
+            migrated_engine,
+            cast(QueueBus, bus),
+            gateway,
+            resolver,
+            _delivery("task.terminal", str(tid), "failed"),
         )
         assert len(bus.acked) == 1 and not bus.nacked
         assert await repo.scorecard_exists(migrated_engine, tid)

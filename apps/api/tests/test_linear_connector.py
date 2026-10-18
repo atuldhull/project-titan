@@ -5,7 +5,7 @@ GraphQL-error handling), Linear-webhook → task.* translation, and the sync_con
 (same algorithm as Jira). Skips cleanly if the connector directory is absent (INT-011)."""
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from tests.connector_loader import load_connector
 
@@ -34,7 +34,7 @@ def _connector(transport: Any, caps: Any = None, config: dict[str, str] | None =
 
 
 def _body(tx: Any, i: int = 0) -> dict[str, Any]:
-    return json.loads(tx.calls[i][3])
+    return cast(dict[str, Any], json.loads(tx.calls[i][3]))
 
 
 # --- GraphQL tracker I/O -----------------------------------------------------

@@ -5,7 +5,7 @@ End-to-end over the real app + schema: read endpoints ride evolution:read
 Maintainer, human-only) and lands in the audit log (TITAN-EVO-001c).
 """
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -159,7 +159,7 @@ def test_rcrs_list_and_human_only_ep_link(api: dict[str, Any]) -> None:
             summary="router-test RCR",
         )
         assert created is not None
-        return created["id"]
+        return cast(str, created["id"])
 
     rcr_id = run_async(seed)
 
@@ -209,7 +209,7 @@ def test_rcr_override_is_human_only_and_taxonomy_validated(api: dict[str, Any]) 
             engine, failure_code="F-GEN", severity="low", signature=sig, summary="override-test"
         )
         assert created is not None
-        return created["id"]
+        return cast(str, created["id"])
 
     rcr_id = run_async(seed)
 
@@ -260,7 +260,7 @@ def test_merged_ep_remediates_its_linked_rcr(api: dict[str, Any]) -> None:
         assert created is not None
         linked = await repo.link_rcr_ep(engine, uuid.UUID(created["id"]), ep)
         assert linked is not None and linked["status"] == "open"
-        return created["id"]
+        return cast(str, created["id"])
 
     rcr_id = run_async(seed)
 

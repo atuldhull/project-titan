@@ -73,10 +73,12 @@ def test_resolver_serves_approved_prompt_sha_matching_manifest() -> None:
 def test_composer_renders_seven_sections_from_registry() -> None:
     roster = load_roster(AGENTS_DIR)
     composer = PromptComposer(EvolutionResolver.load(PROMPTS_DIR))
-    prompt = composer.compose(roster.get("ceo"), task_context="Build X", memory="(mem)")
+    ceo = roster.get("ceo")
+    assert ceo is not None
+    prompt = composer.compose(ceo, task_context="Build X", memory="(mem)")
     idx = [prompt.find(m) for m in SECTION_MARKERS]
     assert all(i >= 0 for i in idx) and idx == sorted(idx)
-    assert composer.prompt_sha(roster.get("ceo")) == resolver_sha("ceo")
+    assert composer.prompt_sha(ceo) == resolver_sha("ceo")
 
 
 def resolver_sha(agent_id: str) -> str:
@@ -127,6 +129,7 @@ def test_composer_refuses_to_render_unapproved(registry_copy: Path) -> None:
     _rewrite_manifest(registry_copy, blank_approval)
     composer = PromptComposer(EvolutionResolver.load(registry_copy / "prompts"))
     ceo = load_roster(AGENTS_DIR).get("ceo")
+    assert ceo is not None
     with pytest.raises(EvolutionError):
         composer.compose(ceo)
 

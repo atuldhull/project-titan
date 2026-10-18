@@ -143,7 +143,7 @@ def test_convene_enforces_daily_cap(migrated_engine: Any) -> None:
         pid, aid = await _seed_project_agent(migrated_engine)
         redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
         policy = {**debate.load_policy(), "daily_cap_per_project": 1}
-        kw = dict(
+        kw: dict[str, Any] = dict(
             question="Q?",
             context="C",
             decision_class="routine",
